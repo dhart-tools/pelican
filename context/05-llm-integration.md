@@ -1,4 +1,4 @@
-# Part 5: LLM Integration
+# Part 5: LLM Integration (OllamaService + PromptLoader)
 
 > **Prerequisite**: Read `00-base-context.md` first.
 
