@@ -12,6 +12,17 @@ import { loadConfig } from "../config.js";
 import { SuggestView } from "../ui/components/SuggestView.js";
 import type { IFileEntry, ISuggestionResult } from "../types.js";
 
+// ─── Simple Glob Matcher ───────────────────────────────────
+
+function matchesPattern(file: string, pattern: string): boolean {
+  const regexStr = pattern
+    .replace(/\./g, "\\.")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*") + "$";
+  const regex = new RegExp(regexStr);
+  return regex.test(file);
+}
+
 function SuggestApp() {
   const [state, setState] = useState<{
     status: "detecting" | "analyzing" | "matching" | "ranking" | "done" | "error";

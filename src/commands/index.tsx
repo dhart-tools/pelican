@@ -10,6 +10,19 @@ import { PromptLoader } from "../llm/prompts.js";
 import { loadConfig } from "../config.js";
 import { IndexView } from "../ui/components/IndexView.js";
 
+// ─── Simple Glob Matcher ───────────────────────────────────
+
+function matchesPattern(file: string, pattern: string): boolean {
+  // Convert glob to simple regex
+  // **/*.ts -> .*\.ts$
+  const regexStr = pattern
+    .replace(/\./g, "\\.")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*") + "$";
+  const regex = new RegExp(regexStr);
+  return regex.test(file);
+}
+
 function IndexApp() {
   const [state, setState] = useState<{
     status: "scanning" | "analyzing" | "saving" | "done" | "error";
@@ -56,11 +69,10 @@ function IndexApp() {
         }
 
         // 2. Filter files based on patterns
-        // Simple filter for now, can be improved with glob patterns
         const filteredFiles = changedFiles.filter(file => {
-          const isSource = config.sourcePatterns.some(p => file.endsWith(p.replace("*", "")));
-          const isTest = config.testPatterns.some(p => file.endsWith(p.replace("*", "")));
-          const isIgnored = config.ignorePatterns.some(p => file.includes(p));
+          const isSource = config.sourcePatterns.some(p => matchesPattern(file, p));
+          const isTest = config.testPatterns.some(p => matchesPattern(file, p));
+          const isIgnored = config.ignorePatterns.some(p => matchesPattern(file, p) || file.includes(p));
           return (isSource || isTest) && !isIgnored;
         });
 
