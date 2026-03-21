@@ -1,5 +1,6 @@
 node_modules
 dist
-.suggestorrc.json.tmp
-descriptor.json.tmp
 .DS_Store
+descriptor.json
+.suggestorrc.json
+sandbox
