@@ -1,4 +1,4 @@
-# Part 4: AST Extractor
+# Part 4: AST Extractor (ASTExtractor Class)
 
 > **Prerequisite**: Read `00-base-context.md` first.
 
