@@ -3,4 +3,3 @@ dist
 .DS_Store
 descriptor.json
 .suggestorrc.json
-sandbox
