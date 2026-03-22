@@ -129,7 +129,7 @@ export class ASTExtractor {
     if (
       normalized.includes("__tests__/") ||
       normalized.includes("/tests/") ||
-      normalized.match(/\.(test|spec)\.(ts|tsx)$/)
+      normalized.match(/\.(test|spec|cy|e2e|pw|playwright)\.(ts|tsx)$/)
     ) {
       return "test";
     }

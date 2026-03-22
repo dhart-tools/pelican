@@ -49,6 +49,7 @@ export interface ISuggestorConfig {
   model: string;
   testPatterns: string[];
   sourcePatterns: string[];
+  sourceDirs: string[];
   ignorePatterns: string[];
   maxParallelAnalysis: number;
   ollamaHost: string;

@@ -17,6 +17,18 @@ interface SuggestViewProps {
 }
 
 export function SuggestView({ status, changedFiles, results, error }: SuggestViewProps) {
+  const getDetail = () => {
+    switch (status) {
+      case "detecting": return "Analyzing current git changes...";
+      case "analyzing": return "Analyzing changed files with AST/LLM...";
+      case "matching": return "Matching files against indexed tests...";
+      case "ranking": return "Ranking test suggestions by relevance...";
+      case "done": return "Analysis complete.";
+      case "error": return "Process encountered an error.";
+      default: return undefined;
+    }
+  };
+
   return (
     <Box flexDirection="column" padding={1}>
       <Text bold>{theme.header("🔍 Test Suggestions")}</Text>
@@ -25,8 +37,8 @@ export function SuggestView({ status, changedFiles, results, error }: SuggestVie
       <Box flexDirection="column" marginBottom={1}>
         <StatusLine
           status={status === "done" ? "success" : status === "error" ? "error" : "loading"}
-          message={`Current Phase: ${status}`}
-          detail={status === "detecting" ? "Checking git diff..." : undefined}
+          message={`Phase: ${status}`}
+          detail={getDetail()}
         />
       </Box>
 

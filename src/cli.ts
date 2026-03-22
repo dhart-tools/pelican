@@ -24,9 +24,10 @@ program
 program
   .command("index")
   .description("Index source and test files for suggestion matching")
-  .action(async () => {
+  .option("--all", "Index all files, ignoring changes")
+  .action(async (options) => {
     try {
-      await indexCommand();
+      await indexCommand(options);
     } catch (error) {
       console.error("\n❌ Indexing failed:", error instanceof Error ? error.message : error);
       process.exit(1);

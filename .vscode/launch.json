@@ -1,0 +1,31 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Suggestor: setup",
+      "runtimeArgs": ["-r", "tsx"],
+      "args": ["setup"],
+      "program": "${workspaceFolder}/src/cli.ts"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Suggestor: index",
+      "runtimeArgs": ["-r", "tsx"],
+      "args": ["index"],
+      "program": "${workspaceFolder}/src/cli.ts",
+      "console": "integratedTerminal"
+    },
+    {
+      "type": "node",
+      "request": "launch",
+      "name": "Suggestor: suggest",
+      "runtimeArgs": ["-r", "tsx"],
+      "args": ["suggest"],
+      "program": "${workspaceFolder}/src/cli.ts",
+      "console": "integratedTerminal"
+    }
+  ]
+}

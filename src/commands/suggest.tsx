@@ -74,7 +74,12 @@ function SuggestApp() {
             // Quick analysis for new file
             const absolutePath = join(projectRoot, filePath);
             const content = await readFile(absolutePath, "utf-8");
-            const result = await analyzer.analyzeFile(filePath, content);
+            const isTest = config.testPatterns.some(p => matchesPattern(filePath, p));
+            const result = await analyzer.analyzeFile(
+                filePath, 
+                content, 
+                (isTest ? "test" : "source") as "test" | "source"
+            );
             const entry: IFileEntry = {
               name: filePath,
               description: result.description,

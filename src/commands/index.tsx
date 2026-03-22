@@ -23,7 +23,7 @@ function matchesPattern(file: string, pattern: string): boolean {
   return regex.test(file);
 }
 
-function IndexApp() {
+function IndexApp({ all }: { all: boolean }) {
   const [state, setState] = useState<{
     status: "scanning" | "analyzing" | "saving" | "done" | "error";
     totalFiles: number;
@@ -56,12 +56,12 @@ function IndexApp() {
         }
 
         const currentSha = await git.getCurrentSha();
-        const storedSha = descriptor.sha;
+        const storedSha = all ? "" : descriptor.sha;
 
         // 1. Get changed files
         let changedFiles: string[] = [];
         if (!storedSha) {
-          // First run: get all tracked files
+          // First run or all: get all tracked files
           const allFiles = await git.getChangedFilesSinceSha(""); // Empty string gets all tracked
           changedFiles = allFiles;
         } else {
@@ -70,7 +70,8 @@ function IndexApp() {
 
         // 2. Filter files based on patterns
         const filteredFiles = changedFiles.filter(file => {
-          const isSource = config.sourcePatterns.some(p => matchesPattern(file, p));
+          const isSource = config.sourcePatterns.some(p => matchesPattern(file, p)) &&
+                           (config.sourceDirs.length === 0 || config.sourceDirs.some(dir => file.startsWith(dir)));
           const isTest = config.testPatterns.some(p => matchesPattern(file, p));
           const isIgnored = config.ignorePatterns.some(p => matchesPattern(file, p) || file.includes(p));
           return (isSource || isTest) && !isIgnored;
@@ -89,10 +90,14 @@ function IndexApp() {
         const analyzer = new Analyzer(projectRoot, ollama, promptLoader, config.maxParallelAnalysis);
 
         const filesToAnalyze = await Promise.all(
-          filteredFiles.map(async (f) => ({
-            path: f,
-            content: await readFile(join(projectRoot, f), "utf-8"),
-          }))
+          filteredFiles.map(async (f) => {
+            const isTest = config.testPatterns.some(p => matchesPattern(f, p));
+            return {
+              path: f,
+              content: await readFile(join(projectRoot, f), "utf-8"),
+              type: (isTest ? "test" : "source") as "test" | "source",
+            };
+          })
         );
 
         // 4. Run Batch Analysis
@@ -142,7 +147,7 @@ function IndexApp() {
   return <IndexView {...state} />;
 }
 
-export async function indexCommand(): Promise<void> {
-  const { waitUntilExit } = render(<IndexApp />);
+export async function indexCommand(options: { all: boolean }): Promise<void> {
+  const { waitUntilExit } = render(<IndexApp all={options.all} />);
   await waitUntilExit();
 }

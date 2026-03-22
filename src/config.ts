@@ -7,8 +7,9 @@ const CONFIG_FILENAME = ".suggestorrc.json";
 
 export const DEFAULT_CONFIG: ISuggestorConfig = {
   model: "qwen2.5-coder:3b",
-  testPatterns: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+  testPatterns: ["**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx", "**/*.cy.ts", "**/*.cy.tsx", "**/*.pw.ts", "**/*.playwright.ts"],
   sourcePatterns: ["**/*.ts", "**/*.tsx"],
+  sourceDirs: ["src"],
   ignorePatterns: ["node_modules", "dist", ".git", "context"],
   maxParallelAnalysis: 4,
   ollamaHost: env.OLLAMA_HOST,

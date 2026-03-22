@@ -42,12 +42,13 @@ export class Analyzer {
 
   async analyzeFile(
     filePath: string,
-    fileContent: string
+    fileContent: string,
+    forcedType?: "source" | "test"
   ): Promise<IAnalysisResult> {
     // Phase 1: AST pass — instant, deterministic
     const astResult = await this.astExtractor.extractFromFile(filePath);
     const astKeywords = this.astExtractor.toKeywords(astResult);
-    const fileType = this.astExtractor.detectFileType(filePath);
+    const fileType = forcedType || this.astExtractor.detectFileType(filePath);
 
     // Phase 2: LLM pass — semantic extraction
     let llmResult: ILLMAnalysisResult | null = null;
@@ -55,6 +56,7 @@ export class Analyzer {
       const prompt = await this.promptLoader.load("analyze", {
         filePath,
         fileContent: truncateContent(fileContent),
+        initialKeywords: astKeywords.join(", "),
       });
       llmResult = await this.ollama.generateJSON<ILLMAnalysisResult>(prompt);
     } catch (err) {
@@ -91,7 +93,7 @@ export class Analyzer {
   // ─── Batch File Analysis ───────────────────────────────────
 
   async analyzeFiles(
-    files: Array<{ path: string; content: string }>,
+    files: Array<{ path: string; content: string; type?: "source" | "test" }>,
     onProgress?: (completed: number, total: number, currentFile: string) => void
   ): Promise<IAnalysisResult[]> {
     const limit = pLimit(this.maxParallel);
@@ -100,7 +102,7 @@ export class Analyzer {
     const tasks = files.map((file) =>
       limit(async () => {
         try {
-          const result = await this.analyzeFile(file.path, file.content);
+          const result = await this.analyzeFile(file.path, file.content, file.type);
           completed++;
           onProgress?.(completed, files.length, file.path);
           return result;
@@ -121,7 +123,7 @@ export class Analyzer {
             description: `File: ${file.path}`,
             keywords: astKeywords,
             components: [...astResult.classes, ...astResult.functions],
-            type: this.astExtractor.detectFileType(file.path),
+            type: file.type || this.astExtractor.detectFileType(file.path),
           } as IAnalysisResult;
         }
       })

@@ -8,6 +8,8 @@ You are a senior software engineer acting as a **code analysis assistant** for a
 
 **File path:** `{{filePath}}`
 
+**Initial Keywords (from AST):** `{{initialKeywords}}`
+
 **File content:**
 ```
 {{fileContent}}
@@ -26,7 +28,15 @@ A concise 1–3 sentence summary of what this file does. Focus on:
 - **Domain context** (e.g., "Part of the payments module")
 
 ### 2. `keywords` (string[])
-An array of **5–20 semantic keywords** that describe the file's purpose, domain, patterns, and technologies. These keywords are used for fuzzy matching against test files, so be thorough.
+An array of **semantic keywords** that describe the file's purpose, domain, patterns, and technologies.
+
+**Instructions for keyword selection:**
+- Start with the provided `initialKeywords` as a base.
+- **Filter:** Remove generic, low-value, or noise words from the `initialKeywords`.
+- **Refine/Add:** Add specific, highly relevant semantic keywords to describe the file's purpose, domain, patterns, and technologies.
+- There is no upper limit on the number of keywords — include as many as necessary to accurately describe the file.
+- Keywords must be lowercase, hyphen-separated.
+- Be thorough.
 
 Include keywords from ALL of the following categories:
 
