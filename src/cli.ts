@@ -6,10 +6,7 @@ import { suggestCommand } from "./commands/suggest.js";
 
 const program = new Command();
 
-program
-  .name("suggestor")
-  .description("AI-powered test suggestion CLI")
-  .version("0.1.0");
+program.name("suggestor").description("AI-powered test suggestion CLI").version("0.1.0");
 
 program
   .command("setup")
@@ -49,8 +46,11 @@ program
   });
 
 // Handle unknown commands
-program.on('command:*', () => {
-  console.error('Invalid command: %s\nSee --help for a list of available commands.', program.args.join(' '));
+program.on("command:*", () => {
+  console.error(
+    "Invalid command: %s\nSee --help for a list of available commands.",
+    program.args.join(" "),
+  );
   process.exit(1);
 });
 
