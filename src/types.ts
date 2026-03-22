@@ -1,6 +1,7 @@
 // ─── Descriptor Types ────────────────────────────────────
 export interface IDescriptor {
   sha: string;
+  projectDescription?: string;
   files: IFileEntry[];
 }
 

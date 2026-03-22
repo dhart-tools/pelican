@@ -52,21 +52,23 @@ function SuggestApp() {
 
         // 1. Get working changes
         const changes = await git.getWorkingChanges();
-        if (changes.all.length === 0) {
+        const relevantChanges = changes.all.filter(f => f !== "descriptor.json");
+        if (relevantChanges.length === 0) {
           setState(s => ({ ...s, status: "done", changedFiles: [] }));
           return;
         }
 
-        setState(s => ({ ...s, status: "analyzing", changedFiles: changes.all }));
+        setState(s => ({ ...s, status: "analyzing", changedFiles: relevantChanges }));
 
         const ollama = new OllamaService(config.ollamaHost, config.model);
         const promptLoader = new PromptLoader();
-        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, config.maxParallelAnalysis);
+        const descriptor = store.getDescriptor();
+        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, descriptor?.projectDescription || "General purpose TypeScript/React project", config.maxParallelAnalysis);
         const matcher = new Matcher(store, ollama, promptLoader);
 
         // 2. Map changed files to IFileEntry (cached or fresh)
         const changedEntries: IFileEntry[] = [];
-        for (const filePath of changes.all) {
+        for (const filePath of relevantChanges) {
           const existing = store.getFileEntry(filePath);
           if (existing) {
             changedEntries.push(existing);
@@ -96,7 +98,8 @@ function SuggestApp() {
           setState(s => ({ ...s, status: phase }));
         });
 
-        setState(s => ({ ...s, status: "done", results }));
+        setState(s => ({ ...s, status: "done", results: results }));
+
 
       } catch (err: any) {
         setState(s => ({ ...s, status: "error", error: err.message }));

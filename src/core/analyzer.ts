@@ -14,8 +14,18 @@ function truncateContent(content: string, maxLines = 200): string {
   return lines.slice(0, maxLines).join("\n") + "\n\n... (truncated)";
 }
 
+const GLOBAL_NOISE_WORDS = new Set([
+  "string", "number", "boolean", "any", "void", "object", "array", "null", "undefined", "true", "false",
+  "class", "function", "const", "let", "var", "export", "import", "return", "if", "else", "async", "await",
+  "promise", "then", "catch", "setter", "getter", "constructor", "method", "property", "item", "the", "a",
+  "an", "is", "get", "set", "has", "to", "from", "with", "for", "of", "in", "on", "at", "by", "do", "be",
+  "it", "or", "as", "up", "so", "no", "me", "my", "we", "us"
+]);
+
 function deduplicateKeywords(keywords: string[]): string[] {
-  return [...new Set(keywords.map((k) => k.toLowerCase()))].sort();
+  return [...new Set(keywords.map((k) => k.toLowerCase()))]
+    .filter(k => !GLOBAL_NOISE_WORDS.has(k) && k.length > 2)
+    .sort();
 }
 
 // ─── Analyzer Class ────────────────────────────────────────
@@ -25,16 +35,19 @@ export class Analyzer {
   private ollama: OllamaService;
   private promptLoader: PromptLoader;
   private maxParallel: number;
+  private projectDescription: string;
 
   constructor(
     cwd: string,
     ollama: OllamaService,
     promptLoader: PromptLoader,
+    projectDescription: string,
     maxParallel = 5
   ) {
     this.astExtractor = new ASTExtractor(cwd);
     this.ollama = ollama;
     this.promptLoader = promptLoader;
+    this.projectDescription = projectDescription;
     this.maxParallel = maxParallel;
   }
 
@@ -55,6 +68,7 @@ export class Analyzer {
     try {
       const prompt = await this.promptLoader.load("analyze", {
         filePath,
+        projectDescription: this.projectDescription,
         fileContent: truncateContent(fileContent),
         initialKeywords: astKeywords.join(", "),
       });

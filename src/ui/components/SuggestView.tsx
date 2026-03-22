@@ -19,13 +19,20 @@ interface SuggestViewProps {
 export function SuggestView({ status, changedFiles, results, error }: SuggestViewProps) {
   const getDetail = () => {
     switch (status) {
-      case "detecting": return "Analyzing current git changes...";
-      case "analyzing": return "Analyzing changed files with AST/LLM...";
-      case "matching": return "Matching files against indexed tests...";
-      case "ranking": return "Ranking test suggestions by relevance...";
-      case "done": return "Analysis complete.";
-      case "error": return "Process encountered an error.";
-      default: return undefined;
+      case "detecting":
+        return "Analyzing current git changes...";
+      case "analyzing":
+        return "Analyzing changed files with AST/LLM...";
+      case "matching":
+        return "Matching files against indexed tests...";
+      case "ranking":
+        return "Ranking test suggestions by relevance...";
+      case "done":
+        return "Analysis complete.";
+      case "error":
+        return "Process encountered an error.";
+      default:
+        return undefined;
     }
   };
 
@@ -42,17 +49,27 @@ export function SuggestView({ status, changedFiles, results, error }: SuggestVie
         />
       </Box>
 
+      {/* RENDER TABLE UNCONDITIONALLY */}
+      <ResultsTable results={results} />
+
       {changedFiles.length > 0 && (
-        <Box flexDirection="column" marginBottom={1} borderStyle="single" borderColor={theme.dim.toString()} paddingX={1}>
-          <Text bold color={theme.secondary.toString()}>Changes Detected:</Text>
+        <Box
+          flexDirection="column"
+          marginBottom={1}
+          borderStyle="single"
+          borderColor={theme.dim.toString()}
+          paddingX={1}
+        >
+          <Text bold color={theme.secondary.toString()}>
+            Changes Detected:
+          </Text>
           {changedFiles.map((file, i) => (
-            <Text key={i} color={theme.dim.toString()}>  {theme.icons.bullet} {file}</Text>
+            <Text key={i} color={theme.dim.toString()}>
+              {" "}
+              {theme.icons.bullet} {file}
+            </Text>
           ))}
         </Box>
-      )}
-
-      {status === "done" && (
-        <ResultsTable results={results} />
       )}
 
       {status === "done" && changedFiles.length === 0 && (
@@ -63,7 +80,9 @@ export function SuggestView({ status, changedFiles, results, error }: SuggestVie
 
       {error && (
         <Box marginTop={1}>
-          <Text color={theme.error.toString()} bold>{theme.icons.error} Error: </Text>
+          <Text color={theme.error.toString()} bold>
+            {theme.icons.error} Error:{" "}
+          </Text>
           <Text color={theme.error.toString()}>{error}</Text>
         </Box>
       )}

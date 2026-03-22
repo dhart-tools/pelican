@@ -87,7 +87,7 @@ function IndexApp({ all }: { all: boolean }) {
         // 3. Prepare for analysis
         const ollama = new OllamaService(config.ollamaHost, config.model);
         const promptLoader = new PromptLoader();
-        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, config.maxParallelAnalysis);
+        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, descriptor.projectDescription || "General purpose TypeScript/React project", config.maxParallelAnalysis);
 
         const filesToAnalyze = await Promise.all(
           filteredFiles.map(async (f) => {

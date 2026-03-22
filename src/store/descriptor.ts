@@ -61,6 +61,12 @@ export class DescriptorStore {
     }
   }
 
+  setProjectDescription(description: string): void {
+    if (this.descriptor) {
+      this.descriptor.projectDescription = description;
+    }
+  }
+
   getFileEntry(filePath: string): IFileEntry | undefined {
     return this.descriptor?.files.find(f => f.name === filePath);
   }
@@ -109,10 +115,12 @@ export class DescriptorStore {
   }
 
   computeKeywordOverlap(entryA: IFileEntry, entryB: IFileEntry): { score: number; matched: string[] } {
-    const wordsA = new Set(entryA.keywords.map(k => k.toLowerCase()));
+    const wordsA = entryA.keywords.map(k => k.toLowerCase());
     const wordsB = entryB.keywords.map(k => k.toLowerCase());
     
-    const matched = wordsB.filter(w => wordsA.has(w));
+    // Fuzzy match: check if a word from B is contained in any keyword of A
+    const matched = wordsB.filter(w => wordsA.some(a => a.includes(w) || w.includes(a)));
+    
     return {
       score: matched.length,
       matched

@@ -30,52 +30,40 @@ export class Matcher {
     const testFiles = this.store.getTestFiles();
     if (testFiles.length === 0) return [];
 
-    // Score every test file against all changed files
-    const scoreMap = new Map<
-      string,
-      { testFile: IFileEntry; score: number; matchedKeywords: string[] }
-    >();
+    // Always include all test files as candidates, 
+    // but rank them based on keyword overlap
+    const candidates = testFiles.map(testEntry => {
+        let bestScore = 0;
+        let bestMatched: string[] = [];
 
-    for (const changedEntry of changedFiles) {
-      for (const testEntry of testFiles) {
-        // Keyword overlap (40% weight)
-        const keywordOverlap = this.store.computeKeywordOverlap(
-          changedEntry,
-          testEntry
-        );
-        const keywordScore =
-          keywordOverlap.matched.length /
-          Math.max(changedEntry.keywords.length, 1);
-
-        // Component overlap (60% weight)
-        const changedComponents = new Set(
-          changedEntry.components.map((c) => c.toLowerCase())
-        );
-        const componentMatches = testEntry.components.filter((c) =>
-          changedComponents.has(c.toLowerCase())
-        );
-        const componentScore =
-          componentMatches.length /
-          Math.max(changedEntry.components.length, 1);
-
-        const finalScore = keywordScore * 0.4 + componentScore * 0.6;
-
-        const existing = scoreMap.get(testEntry.name);
-        if (!existing || finalScore > existing.score) {
-          scoreMap.set(testEntry.name, {
-            testFile: testEntry,
-            score: Math.min(finalScore, 1),
-            matchedKeywords: keywordOverlap.matched,
-          });
+        for (const changedEntry of changedFiles) {
+            const keywordOverlap = this.store.computeKeywordOverlap(changedEntry, testEntry);
+            const keywordScore = keywordOverlap.matched.length / Math.max(changedEntry.keywords.length, 1);
+            
+            const changedComponents = new Set(changedEntry.components.map((c) => c.toLowerCase()));
+            const componentMatches = testEntry.components.filter((c) => changedComponents.has(c.toLowerCase()));
+            const componentScore = componentMatches.length / Math.max(changedEntry.components.length, 1);
+            
+            const finalScore = keywordScore * 0.4 + componentScore * 0.6;
+            
+            if (finalScore > bestScore) {
+                bestScore = finalScore;
+                bestMatched = keywordOverlap.matched;
+            }
         }
-      }
-    }
+        
+        return {
+            testFile: testEntry,
+            score: bestScore,
+            matchedKeywords: bestMatched
+        };
+    });
 
-    return [...scoreMap.values()]
-      .filter((item) => item.score > 0)
+    return candidates
       .sort((a, b) => b.score - a.score)
       .slice(0, 15);
   }
+
 
   // ─── Phase 2: LLM Semantic Ranking ───────────────────────
 
@@ -98,7 +86,7 @@ export class Matcher {
     const candidateTestsContext = candidates
       .map(
         (c) =>
-          `- **${c.testFile.name}**: ${c.testFile.description} (keywords: ${c.testFile.keywords.slice(0, 10).join(", ")})`
+          `- **${c.testFile.name}**: ${c.testFile.description} (components: ${c.testFile.components.join(", ")}) (keywords: ${c.testFile.keywords.slice(0, 10).join(", ")})`
       )
       .join("\n");
 
@@ -129,7 +117,10 @@ export class Matcher {
             matchedKeywords: phase1?.matchedKeywords || [],
           };
         })
-        .filter((r) => r.confidence > 0.3)
+        .filter((r) => {
+          const isTestFile = this.store.getTestFiles().some(t => t.name === r.testFile);
+          return isTestFile && r.confidence > 0.3;
+        })
         .sort((a, b) => b.confidence - a.confidence);
     } catch (err) {
       // Graceful degradation: use Phase 1 scores only
@@ -164,10 +155,9 @@ export class Matcher {
       return [];
     }
 
-    // Phase 2: Semantic ranking
+    // Phase 2: LLM semantic ranking
     onStatus?.("ranking");
     const results = await this.semanticRank(changedFiles, candidates);
-
     onStatus?.("done");
     return results;
   }
