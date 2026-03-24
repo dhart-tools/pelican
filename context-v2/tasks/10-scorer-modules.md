@@ -224,6 +224,31 @@ export class ReduxChainScorer extends BaseScorer {
           }];
         }
       }
+
+      // Fallback for E2E Tests: Use selectors to find components
+      const testEntry = registry.getFile(testFile);
+      const testSelectors = testEntry?.cypress?.selectors || [];
+      const selectorIndex = registry.getSelectorIndex();
+
+      for (const testSel of testSelectors) {
+         if (testSel.type !== 'testid' && testSel.type !== 'data-cy') continue;
+
+         const componentPaths = selectorIndex.get(testSel.value);
+         if (!componentPaths) continue;
+
+         for (const compPath of componentPaths) {
+           if (chain.consumers.includes(compPath)) {
+              return [{
+                source: this.name,
+                type: 'redux-chain', // or just redux-chain
+                weight: this.weight * 0.90, // E2E inference slightly lower than direct import
+                matched: true,
+                reason: `E2E test uses selector '${testSel.value}' found in Redux consumer "${compPath}"`,
+                metadata: { changedFile, testFile, sliceName, testedFile: compPath, selector: testSel.value }
+              }];
+           }
+         }
+      }
     }
 
     return [{

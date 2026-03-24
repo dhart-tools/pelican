@@ -140,7 +140,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
     // A file is a consumer of a slice if it imports from that slice's
     // selectors file. importedFiles is populated by the source extractor.
     for (const extraction of extractions) {
-      if (extraction.role === 'unknown' || extraction.role === 'types') continue;
+      if (extraction.role === 'types') continue;
 
       for (const [, chain] of chains) {
         if (!chain.files.selectors) continue;
@@ -159,35 +159,32 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
   }
 
   private addToChain(chain: IReduxChain, extraction: IReduxExtractionResult): void {
-    switch (extraction.role) {
-      case 'actions':
-        chain.files.actions = extraction.filePath;
-        chain.actionTypes.push(...extraction.actionTypes);
-        break;
+    if (extraction.actionTypes.length > 0) {
+      chain.actionTypes.push(...extraction.actionTypes);
+      chain.files.actions = chain.files.actions ?? extraction.filePath;
+    }
 
-      case 'reducer':
-        chain.files.reducer = extraction.filePath;
-        break;
+    if (extraction.selectors.length > 0) {
+      chain.files.selectors = chain.files.selectors ?? extraction.filePath;
+      chain.selectorNames.push(...extraction.selectors.map((s) => s.name));
+    }
 
-      case 'selectors':
-        chain.files.selectors = extraction.filePath;
-        chain.selectorNames.push(...extraction.selectors.map((s) => s.name));
-        break;
+    if (extraction.sagas.length > 0) {
+      if (!chain.files.sagas) {
+        chain.files.sagas = [];
+      }
+      if (!chain.files.sagas.includes(extraction.filePath)) {
+        chain.files.sagas.push(extraction.filePath);
+      }
+    }
 
-      case 'sagas':
-        if (!chain.files.sagas) {
-          chain.files.sagas = [];
-        }
-        chain.files.sagas!.push(extraction.filePath);
-        break;
-
-      // FIX 2: slice is treated as both actions + reducer
-      case 'slice':
-        chain.files.slice = extraction.filePath;
-        chain.files.reducer = extraction.filePath;
-        chain.files.actions = chain.files.actions ?? extraction.filePath;
-        chain.actionTypes.push(...extraction.actionTypes);
-        break;
+    // Role handles the base slice and reducer assignments
+    if (extraction.role === 'slice') {
+      chain.files.slice = extraction.filePath;
+      chain.files.reducer = extraction.filePath;
+      chain.files.actions = chain.files.actions ?? extraction.filePath;
+    } else if (extraction.role === 'reducer') {
+      chain.files.reducer = extraction.filePath;
     }
   }
 
@@ -214,12 +211,15 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
       this.detectCreateSlice(node, result);
       this.detectCreateAction(node, result);
       this.detectCreateSelector(node, result);
-      this.detectSagas(node, result);
     }
 
-    // Detect function declarations (selectors, reducers)
+    // Detect function declarations (selectors, reducers, sagas)
     if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) {
-      this.detectSelectorOrReducer(node, result);
+      if (ts.isFunctionDeclaration(node) && node.asteriskToken) {
+        this.detectGeneratorSaga(node, result);
+      } else {
+        this.detectSelectorOrReducer(node, result);
+      }
     }
 
     // Detect class methods (redux-thunk actions)
@@ -290,38 +290,17 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
     result.selectors.push(selector);
   }
 
-  private detectSagas(node: ts.CallExpression, result: IReduxExtractionResult): void {
-    const expr = node.expression;
+  private detectGeneratorSaga(node: ts.FunctionDeclaration, result: IReduxExtractionResult): void {
+    result.role = 'sagas';
 
-    if (ts.isIdentifier(expr)) {
-      const name = expr.text;
+    const sagaMetadata: SagaMetadata = {
+      name: node.name?.getText() || 'anonymous',
+      actionsTaken: [],
+      actionsPut: []
+    };
 
-      if (['take', 'takeEvery', 'takeLatest', 'put', 'call', 'select'].includes(name)) {
-        result.role = 'sagas';
-
-        const sagaMetadata: SagaMetadata = {
-          name: this.inferSagaName(node),
-          actionsTaken: this.extractActionsTaken(node),
-          actionsPut: this.extractActionsPut(node)
-        };
-
-        result.sagas.push(sagaMetadata);
-      }
-    }
-
-    // Generator functions are sagas
-    if (ts.isFunctionDeclaration(node) && node.asteriskToken) {
-      result.role = 'sagas';
-
-      const sagaMetadata: SagaMetadata = {
-        name: node.name?.getText() || 'anonymous',
-        actionsTaken: [],
-        actionsPut: []
-      };
-
-      this.analyzeSagaBody(node, sagaMetadata);
-      result.sagas.push(sagaMetadata);
-    }
+    this.analyzeSagaBody(node, sagaMetadata);
+    result.sagas.push(sagaMetadata);
   }
 
   private analyzeSagaBody(
@@ -415,18 +394,23 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
   }
 
   private extractSliceNameFromPath(filePath: string): string | undefined {
-    // e.g., src/store/user/actions.ts → 'user'
-    const match = filePath.match(/store\/([^\/]+)\//);
+    // Matches src/store/user/, src/state/user/, src/features/user/, src/redux/user/
+    const match = filePath.match(/(?:store|state|features|redux)\/([^\/]+)\//);
     return match ? match[1] : undefined;
   }
 
   private inferSelectorName(node: ts.CallExpression): string {
-    // Try to infer selector name from assignment context
+    let current: ts.Node = node;
+    while (current.parent) {
+      if (ts.isVariableDeclaration(current.parent) && ts.isIdentifier(current.parent.name)) {
+        return current.parent.name.text;
+      }
+      if (ts.isPropertyAssignment(current.parent) && ts.isIdentifier(current.parent.name)) {
+        return current.parent.name.text;
+      }
+      current = current.parent;
+    }
     return 'anonymous-selector';
-  }
-
-  private inferSagaName(node: ts.CallExpression): string {
-    return 'anonymous-saga';
   }
 
   private checkUsesRootState(node: ts.CallExpression): boolean {
@@ -435,14 +419,6 @@ export class ReduxChainAnalyzer extends BaseAnalyzer {
 
   private extractSelectorDependencies(node: ts.CallExpression): string[] {
     return []; // Implementation would extract input selectors
-  }
-
-  private extractActionsTaken(node: ts.CallExpression): string[] {
-    return []; // Implementation would extract saga action patterns
-  }
-
-  private extractActionsPut(node: ts.CallExpression): string[] {
-    return []; // Implementation would extract put() calls
   }
 
   private isRootStateType(param: ts.ParameterDeclaration): boolean {
@@ -584,7 +560,7 @@ console.log(userChain);
    - Test `createSlice(...)` as named import (FIX 3)
    - Test `rtk.createSlice(...)` as namespace import (FIX 3)
    - Test ActionType extraction from reducers object
-   - Test slice name inference from file path
+   - Test slice name inference from file path across varied directory structures (`features/`, `state/`, `redux/`, `store/`)
 
 2. **Reducer Detection**
    - Test `(state, action)` pattern
@@ -594,9 +570,10 @@ console.log(userChain);
    - Test RootState parameter
    - Test `createSelector(...)` as named import (FIX 3)
    - Test selector dependency extraction
+   - Test inferring selector name from variable declarations and property assignments
 
 4. **Saga Detection**
-   - Test generator functions
+   - Test standard generator functions are detected as sagas
    - Test take/takeEvery/takeLatest
    - Test put action extraction
 
@@ -605,16 +582,174 @@ console.log(userChain);
    - Test that a component NOT importing from selectors does not appear
    - Test deduplication (component imported by two chains only appears once per chain)
 
-6. **Slice Role Conflict (FIX 2)**
+6. **Role Conflict & Multi-Role Files (FIX 2)**
    - Test that a `createSlice` file populates both `files.reducer` and `files.actions`
-   - Test that a separate `actions.ts` file is not overwritten by the slice file
+   - Test that a file with both actions and selectors preserves all roles without overwriting
+
+### 1. Tests for `inferSelectorName` (AST Parent Walking)
+We need to ensure that the analyzer correctly traverses up the AST to find the variable or property name assigned to `createSelector`.
+
+```typescript
+// Proposed Test in: redux-chain-analyzer.spec.ts
+it('should infer selector name from variable declaration', async () => {
+  const sourceCode = `
+    import { createSelector } from '@reduxjs/toolkit';
+    export const selectCurrentUser = createSelector(
+      (state) => state.user,
+      (user) => user.profile
+    );
+  `;
+  const result = await analyzer.analyze({ filePath: 'src/features/user/selectors.ts', sourceCode });
+  
+  expect(result.selectors).toHaveLength(1);
+  expect(result.selectors[0].name).toBe('selectCurrentUser'); // Previously returned 'anonymous-selector'
+});
+
+it('should infer selector name from property assignment', async () => {
+  const sourceCode = `
+    const selectors = {
+      selectIsLoading: createSelector((state) => state.user, (user) => user.loading)
+    };
+  `;
+  const result = await analyzer.analyze({ filePath: 'src/features/user/selectors.ts', sourceCode });
+  
+  expect(result.selectors[0].name).toBe('selectIsLoading');
+});
+```
+
+### 2. Tests for Generator Saga Detection
+We need to verify that standard generator functions are correctly identified as sagas, which was previously failing due to the AST node type mismatch.
+
+```typescript
+// Proposed Test in: redux-chain-analyzer.spec.ts
+it('should detect generator functions as sagas', async () => {
+  const sourceCode = `
+    import { takeLatest, put } from 'redux-saga/effects';
+    
+    export function* fetchUserSaga() {
+      yield put({ type: 'user/fetchSuccess' });
+    }
+    
+    export default function* rootSaga() {
+      yield takeLatest('user/fetchRequest', fetchUserSaga);
+    }
+  `;
+  const result = await analyzer.analyze({ filePath: 'src/features/user/sagas.ts', sourceCode });
+  
+  expect(result.sagas).toHaveLength(2);
+  expect(result.sagas.find(s => s.name === 'fetchUserSaga')).toBeDefined();
+  expect(result.sagas.find(s => s.name === 'rootSaga')).toBeDefined();
+});
+```
+
+### 3. Tests for Multi-Role Files (Role Overwrite Fix)
+We need to prove that a file containing both actions and a reducer (or selectors) doesn't lose its metadata when built into a chain.
+
+```typescript
+// Proposed Test in: redux-chain-analyzer.spec.ts
+it('should preserve all roles when a file exports multiple Redux constructs', async () => {
+  const sourceCode = `
+    import { createAction, createSelector } from '@reduxjs/toolkit';
+    
+    export const loginAction = createAction('auth/login');
+    
+    export const selectAuth = createSelector((state) => state.auth, auth => auth);
+    
+    export default function authReducer(state = {}, action) {
+      return state;
+    }
+  `;
+  const extraction = await analyzer.analyze({ filePath: 'src/features/auth/index.ts', sourceCode });
+  const chains = await analyzer.buildChains([extraction]);
+  const authChain = chains.get('auth');
+
+  // Ensure nothing was overwritten by a single 'role' string
+  expect(authChain?.files.actions).toBe('src/features/auth/index.ts');
+  expect(authChain?.files.reducer).toBe('src/features/auth/index.ts');
+  expect(authChain?.files.selectors).toBe('src/features/auth/index.ts');
+  expect(authChain?.actionTypes).toContain('auth/login');
+  expect(authChain?.selectorNames).toContain('selectAuth');
+});
+```
+
+### 4. Tests for Broadened `extractSliceNameFromPath` Regex
+We need to guarantee that slice names are extracted correctly across different standard architectural patterns (`features/`, `state/`, `redux/`, `store/`).
+
+```typescript
+// Proposed Test in: redux-chain-analyzer.spec.ts
+it('should correctly extract slice name from various directory conventions', async () => {
+  const paths = [
+    'src/store/cart/slice.ts',
+    'src/features/cart/index.ts',
+    'src/state/cart/reducers.ts',
+    'src/redux/cart/actions.ts'
+  ];
+
+  for (const filePath of paths) {
+    const result = await analyzer.analyze({ filePath, sourceCode: '' });
+    expect(result.sliceName).toBe('cart'); // Previously failed for 3 out of 4
+  }
+});
+```
+
+### 5. Tests for Component ↔ Test Mapping (Scoring Engine)
+We need to mock the `Registry` to prove that if a Cypress test uses a selector (e.g., `data-testid="login-btn"`) that is defined in a component, and that component is a consumer of the `auth` Redux chain, the scorer correctly issues a Redux Chain match signal.
+
+```typescript
+// Proposed Test in: redux-chain-scorer.spec.ts
+it('should yield a match if a Cypress test uses a selector from a Redux consumer', () => {
+  const scorer = new ReduxChainScorer();
+  
+  // 1. Mock the Redux Chain with a known consumer
+  const mockChains = new Map();
+  mockChains.set('auth', {
+    sliceName: 'auth',
+    files: { reducer: 'src/features/auth/slice.ts' },
+    consumers: ['src/components/LoginForm.tsx'] // The Component
+  });
+
+  // 2. Mock the Selector Index mapping the DOM selector to the Component
+  const mockSelectorIndex = new Map();
+  mockSelectorIndex.set('login-btn', new Set(['src/components/LoginForm.tsx']));
+
+  // 3. Mock the Registry
+  const mockRegistry = {
+    getReduxChains: () => mockChains,
+    getSelectorIndex: () => mockSelectorIndex,
+    getFile: (path) => {
+      if (path === 'cypress/e2e/login.cy.ts') {
+        return {
+          path,
+          cypress: { selectors: [{ type: 'testid', value: 'login-btn' }] }
+        };
+      }
+      return {};
+    }
+  };
+
+  const context = {
+    registry: mockRegistry,
+    changedFile: { path: 'src/features/auth/slice.ts' }, // Changed the reducer
+    testFile: { path: 'cypress/e2e/login.cy.ts' } // Running the E2E test
+  };
+
+  const signals = scorer.evaluate(
+    'src/features/auth/slice.ts', 
+    'cypress/e2e/login.cy.ts', 
+    context
+  );
+
+  expect(signals).toHaveLength(1);
+  expect(signals[0].matched).toBe(true);
+  expect(signals[0].reason).toContain('E2E test uses selector \'login-btn\'');
+});
 
 ### Integration Tests
 
 1. Test chain building from a real store with separate files
 2. Test chain building from a store using `createSlice` (single file per slice)
 3. Test consumer detection end-to-end with a component file
-4. Test chain propagation logic in scoring engine
+4. Test chain propagation logic in scoring engine (including Cypress E2E component mapping via DOM selectors)
 
 ## Dependencies
 
