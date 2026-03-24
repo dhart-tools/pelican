@@ -1,46 +1,59 @@
-import * as ts from 'typescript';
-import { BaseAnalyzer } from '../base';
+import * as ts from "typescript";
+import { BaseAnalyzer } from "@v2/core/analyzers/base";
+import { ICypressExtractionResult, ICypressSelector } from "@v2/types/analyzers";
 import {
-  ICypressExtractionResult,
-  ICypressSelector,
-  IAPIIntercept,
-  IURLAssertion
-} from '../../../types/cypress-extractor';
-
-const BUILTIN_CYPRESS_COMMANDS = new Set([
-  'visit', 'get', 'find', 'contains', 'click', 'type', 'submit', 'trigger',
-  'check', 'uncheck', 'select', 'deselect', 'scrollIntoView', 'scrollTo',
-  'dblclick', 'rightclick', 'hover', 'focus', 'blur', 'clear',
-  'selectFile', 'clearFile',
-  'intercept', 'request', 'wait', 'as', 'spread', 'wrap', 'within',
-  'should', 'and', 'then', 'invoke', 'its', 'spy', 'stub',
-  'clock', 'tick', 'viewport',
-  'url', 'location', 'hash', 'go', 'reload', 'back', 'forward',
-  'document', 'window',
-  'log', 'debug', 'pause'
-]);
-
-export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; sourceCode: string }, ICypressExtractionResult> {
-  name = 'cypress-extractor';
-  version = '1.0.0';
+  BUILTIN_CYPRESS_COMMANDS,
+  REGEX_TEST_ID,
+  REGEX_DATA_CY,
+  REGEX_SELECTOR_SPLIT,
+} from "@v2/utils/constants";
+import {
+  ECypressCommand,
+  EHttpMethod,
+  ETestBlockType,
+  EAssertionType,
+  ESelectorAttr,
+} from "@v2/utils/enums";
+/**
+ * Analyzer that extracts semantic information from Cypress test files.
+ *
+ * @example
+ * const analyzer = new CypressExtractorAnalyzer();
+ * const result = await analyzer.extract({
+ *   filePath: 'cypress/e2e/login.cy.ts',
+ *   sourceCode: 'describe("Login", () => { cy.visit("/login"); });'
+ * });
+ * console.log(result.visitedRoutes); // ['/login']
+ */
+export class CypressExtractorAnalyzer extends BaseAnalyzer<
+  { filePath: string; sourceCode: string },
+  ICypressExtractionResult
+> {
+  name = "cypress-extractor";
+  version = "1.0.0";
   dependencies = [];
 
+  /**
+   * Placeholder implementation for indexing.
+   * @param output The result of the extraction
+   */
   index(output: ICypressExtractionResult): void {
     // Placeholder implementation for indexing
   }
 
+  /**
+   * Extracts semantic information from the provided Cypress test file code.
+   *
+   * @param input The input containing file path and source code.
+   * @returns A promise resolving to the Cypress extraction result.
+   */
   async extract(input: {
     filePath: string;
     sourceCode: string;
   }): Promise<ICypressExtractionResult> {
     const { filePath, sourceCode } = input;
 
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      sourceCode,
-      ts.ScriptTarget.Latest,
-      true
-    );
+    const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
     const result: ICypressExtractionResult = {
       filePath,
@@ -51,7 +64,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
       containsText: [],
       interceptedAPIs: [],
       urlAssertions: [],
-      customCommandsUsed: []
+      customCommandsUsed: [],
     };
 
     this.visitNode(sourceFile, result);
@@ -59,44 +72,48 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     return result;
   }
 
+  /**
+   * Recursively visits AST nodes to extract Cypress commands and test structure.
+   *
+   * @param node The current AST node to visit.
+   * @param result The result object to populate.
+   */
   private visitNode(node: ts.Node, result: ICypressExtractionResult): void {
-    // Extract describe blocks
     if (ts.isCallExpression(node)) {
       this.extractCypressCommand(node, result);
       this.extractDescribeOrIt(node, result);
     }
 
-    // Recursively visit children
     ts.forEachChild(node, (child) => this.visitNode(child, result));
   }
 
-  private extractDescribeOrIt(
-    node: ts.CallExpression,
-    result: ICypressExtractionResult
-  ): void {
+  /**
+   * Extracts describe, context, and it block names from the AST.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
+  private extractDescribeOrIt(node: ts.CallExpression, result: ICypressExtractionResult): void {
     const expr = node.expression;
 
     if (ts.isIdentifier(expr)) {
       const name = expr.text;
 
-      // describe('suite name', () => { ... })
-      if (name === 'describe' && node.arguments.length > 0) {
+      if (name === ETestBlockType.DESCRIBE && node.arguments.length > 0) {
         const firstArg = node.arguments[0];
         if (ts.isStringLiteral(firstArg)) {
           result.describeBlocks.push(firstArg.text);
         }
       }
 
-      // it('test name', () => { ... })
-      if (name === 'it' && node.arguments.length > 0) {
+      if (name === ETestBlockType.IT && node.arguments.length > 0) {
         const firstArg = node.arguments[0];
         if (ts.isStringLiteral(firstArg)) {
           result.itBlocks.push(firstArg.text);
         }
       }
 
-      // context('group name', () => { ... })
-      if (name === 'context' && node.arguments.length > 0) {
+      if (name === ETestBlockType.CONTEXT && node.arguments.length > 0) {
         const firstArg = node.arguments[0];
         if (ts.isStringLiteral(firstArg)) {
           result.describeBlocks.push(firstArg.text);
@@ -105,10 +122,13 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     }
   }
 
-  private extractCypressCommand(
-    node: ts.CallExpression,
-    result: ICypressExtractionResult
-  ): void {
+  /**
+   * Extracts Cypress commands from a call expression.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
+  private extractCypressCommand(node: ts.CallExpression, result: ICypressExtractionResult): void {
     if (!this.isCypressCommand(node)) {
       return;
     }
@@ -116,58 +136,66 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     const commandName = this.getCommandName(node);
 
     switch (commandName) {
-      case 'visit':
+      case ECypressCommand.VISIT:
         this.extractVisit(node, result);
         break;
 
-      case 'get':
-      case 'find':
+      case ECypressCommand.GET:
+      case ECypressCommand.FIND:
         this.extractSelector(node, result);
         break;
 
-      case 'contains':
+      case ECypressCommand.CONTAINS:
         this.extractContains(node, result);
         break;
 
-      case 'intercept':
+      case ECypressCommand.INTERCEPT:
         this.extractIntercept(node, result);
         break;
 
-      case 'url':
+      case ECypressCommand.URL:
         this.extractURLAssertion(node, result);
         break;
 
       default:
-        // Check if it's a custom command
         if (!BUILTIN_CYPRESS_COMMANDS.has(commandName)) {
           result.customCommandsUsed.push(commandName);
         }
     }
   }
 
+  /**
+   * Extracts URL from a cy.visit() command.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
   private extractVisit(node: ts.CallExpression, result: ICypressExtractionResult): void {
     if (node.arguments.length === 0) return;
 
     const urlArg = node.arguments[0];
 
-    // cy.visit('/path')
     if (ts.isStringLiteral(urlArg)) {
       result.visitedRoutes.push(urlArg.text);
     }
 
-    // cy.visit('/path/${id}') - extract static prefix
     if (ts.isTemplateExpression(urlArg)) {
       const staticPrefix = urlArg.head.text;
       result.visitedRoutes.push(staticPrefix);
     }
   }
 
+  /**
+   * Extracts a selector from a cy.get() or cy.find() command.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
   private extractSelector(node: ts.CallExpression, result: ICypressExtractionResult): void {
     if (node.arguments.length === 0) return;
 
     const selectorArg = node.arguments[0];
 
-    // cy.get('[data-testid="submit-btn"]')
     if (ts.isStringLiteral(selectorArg)) {
       const selectorString = selectorArg.text;
       const parsed = this.parseCSSSelector(selectorString);
@@ -178,97 +206,111 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     }
   }
 
+  /**
+   * Parses a CSS selector into a structured object.
+   *
+   * @param cssSelector The raw CSS selector string.
+   * @returns The parsed selector, or null if parsing fails.
+   */
   private parseCSSSelector(cssSelector: string): ICypressSelector | null {
-    // Parse [data-testid="X"]
-    const testidMatch = cssSelector.match(/\[data-testid=(["'])(.*?)\1\]/);
+    const testidMatch = cssSelector.match(REGEX_TEST_ID);
     if (testidMatch) {
       return {
-        type: 'testid',
+        type: ESelectorAttr.TEST_ID,
         value: testidMatch[2],
-        raw: cssSelector
+        raw: cssSelector,
       };
     }
 
-    // Parse [data-cy="X"]
-    const dataCyMatch = cssSelector.match(/\[data-cy=(["'])(.*?)\1\]/);
+    const dataCyMatch = cssSelector.match(REGEX_DATA_CY);
     if (dataCyMatch) {
       return {
-        type: 'data-cy',
+        type: ESelectorAttr.DATA_CY,
         value: dataCyMatch[2],
-        raw: cssSelector
+        raw: cssSelector,
       };
     }
 
-    // Parse #id
-    if (cssSelector.startsWith('#')) {
+    if (cssSelector.startsWith("#")) {
       return {
-        type: 'id',
-        value: cssSelector.substring(1).split(/[.#\[:]|\s+/)[0],
-        raw: cssSelector
+        type: ESelectorAttr.ID,
+        value: cssSelector.substring(1).split(REGEX_SELECTOR_SPLIT)[0],
+        raw: cssSelector,
       };
     }
 
-    // Parse .class
-    if (cssSelector.startsWith('.')) {
+    if (cssSelector.startsWith(".")) {
       return {
-        type: 'class',
-        value: cssSelector.substring(1).split(/[.#\[:]|\s+/)[0],
-        raw: cssSelector
+        type: ESelectorAttr.CLASS,
+        value: cssSelector.substring(1).split(REGEX_SELECTOR_SPLIT)[0],
+        raw: cssSelector,
       };
     }
 
-    // Complex selector
     return {
-      type: 'complex',
+      type: ESelectorAttr.COMPLEX,
       value: cssSelector,
-      raw: cssSelector
+      raw: cssSelector,
     };
   }
 
+  /**
+   * Extracts text content from a cy.contains() command.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
   private extractContains(node: ts.CallExpression, result: ICypressExtractionResult): void {
     if (node.arguments.length === 0) return;
 
     const textArg = node.arguments[0];
 
-    // cy.contains('Sign In')
     if (ts.isStringLiteral(textArg)) {
       result.containsText.push(textArg.text);
     }
 
-    // cy.contains(/pattern/)
     if (ts.isRegularExpressionLiteral(textArg)) {
       result.containsText.push(textArg.text);
     }
   }
 
+  /**
+   * Extracts API interception details from a cy.intercept() command.
+   *
+   * @param node The call expression node.
+   * @param result The result object to populate.
+   */
   private extractIntercept(node: ts.CallExpression, result: ICypressExtractionResult): void {
-    // cy.intercept('GET', '/api/users')
-    // cy.intercept('/api/users')
-
-    let method = '';
-    let urlPattern = '';
+    let method = "";
+    let urlPattern = "";
 
     if (node.arguments.length === 1) {
-      // cy.intercept('/api/*')
       const arg = node.arguments[0];
       if (ts.isStringLiteral(arg)) {
         urlPattern = arg.text;
-        method = 'GET'; // Default
+        method = EHttpMethod.GET;
       }
     } else if (node.arguments.length === 2) {
-      // cy.intercept('GET', '/api/users')
       const firstArg = node.arguments[0];
       const secondArg = node.arguments[1];
 
       if (ts.isStringLiteral(firstArg)) {
-        if (['GET', 'POST', 'PUT', 'DELETE', 'PATCH'].includes(firstArg.text)) {
+        if (
+          [
+            EHttpMethod.GET,
+            EHttpMethod.POST,
+            EHttpMethod.PUT,
+            EHttpMethod.DELETE,
+            EHttpMethod.PATCH,
+          ].includes(firstArg.text as EHttpMethod)
+        ) {
           method = firstArg.text;
           if (ts.isStringLiteral(secondArg)) {
             urlPattern = secondArg.text;
           }
         } else {
           urlPattern = firstArg.text;
-          method = 'GET';
+          method = EHttpMethod.GET;
         }
       }
     }
@@ -278,28 +320,27 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     }
   }
 
+  /**
+   * Extracts URL assertions from a cy.url().should() chain.
+   *
+   * @param node The cy.url() call expression node.
+   * @param result The result object to populate.
+   */
   private extractURLAssertion(node: ts.CallExpression, result: ICypressExtractionResult): void {
-    // cy.url().should('include', '/dashboard')
-
-    // Check if it's chained with .should()
-    // node is cy.url()
-    // node.parent is the .should (PropertyAccessExpression)
-    // node.parent.parent is the call expression .should(...)
     const grandparent = node.parent.parent;
-    if (
-      grandparent &&
-      ts.isCallExpression(grandparent)
-    ) {
+    if (grandparent && ts.isCallExpression(grandparent)) {
       const callExpr = grandparent;
-      // Ensure the expression is the property access '.should'
-      if (ts.isPropertyAccessExpression(callExpr.expression) && callExpr.expression.name.text === 'should') {
+      if (
+        ts.isPropertyAccessExpression(callExpr.expression) &&
+        callExpr.expression.name.text === EAssertionType.SHOULD
+      ) {
         const shouldArgs = callExpr.arguments;
         if (shouldArgs.length > 0) {
           const firstArg = shouldArgs[0];
           if (ts.isStringLiteral(firstArg)) {
             const operator = firstArg.text;
 
-            let expectedValue = '';
+            let expectedValue = "";
             if (shouldArgs.length > 1 && ts.isStringLiteral(shouldArgs[1])) {
               expectedValue = shouldArgs[1].text;
             }
@@ -313,21 +354,31 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
     }
   }
 
+  /**
+   * Checks if a call expression is a Cypress command (starts with `cy.`).
+   *
+   * @param node The call expression node.
+   * @returns True if it's a Cypress command, false otherwise.
+   */
   private isCypressCommand(node: ts.CallExpression): boolean {
     const expr = node.expression;
 
-    // cy.visit()
     if (ts.isPropertyAccessExpression(expr)) {
       const obj = expr.expression;
-      if (ts.isIdentifier(obj) && obj.text === 'cy') {
+      if (ts.isIdentifier(obj) && obj.text === "cy") {
         return true;
       }
     }
 
-    // visit() (if inside cy.$() or similar)
     return false;
   }
 
+  /**
+   * Gets the name of the Cypress command.
+   *
+   * @param node The call expression node.
+   * @returns The command name string.
+   */
   private getCommandName(node: ts.CallExpression): string {
     const expr = node.expression;
 
@@ -339,6 +390,6 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; s
       return expr.text;
     }
 
-    return '';
+    return "";
   }
 }

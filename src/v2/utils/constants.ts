@@ -1,0 +1,62 @@
+/**
+ * Cypress built-in commands used for semantic extraction.
+ */
+export const BUILTIN_CYPRESS_COMMANDS = new Set([
+  "visit",
+  "get",
+  "find",
+  "contains",
+  "click",
+  "type",
+  "submit",
+  "trigger",
+  "check",
+  "uncheck",
+  "select",
+  "deselect",
+  "scrollIntoView",
+  "scrollTo",
+  "dblclick",
+  "rightclick",
+  "hover",
+  "focus",
+  "blur",
+  "clear",
+  "selectFile",
+  "clearFile",
+  "intercept",
+  "request",
+  "wait",
+  "as",
+  "spread",
+  "wrap",
+  "within",
+  "should",
+  "and",
+  "then",
+  "invoke",
+  "its",
+  "spy",
+  "stub",
+  "clock",
+  "tick",
+  "viewport",
+  "url",
+  "location",
+  "hash",
+  "go",
+  "reload",
+  "back",
+  "forward",
+  "document",
+  "window",
+  "log",
+  "debug",
+  "pause",
+]);
+
+export const REGEX_TEST_ID = /\[data-testid=(["'])(.*?)\1\]/;
+export const REGEX_DATA_CY = /\[data-cy=(["'])(.*?)\1\]/;
+export const REGEX_SELECTOR_SPLIT = /[.#\[:]|\s+/;
+
+export const SELECTOR_ATTRIBUTES = ["data-testid", "data-cy", "id", "aria-label"];

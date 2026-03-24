@@ -3,6 +3,16 @@ import { SourceExtractorAnalyzer } from "./source-extractor";
 describe("SourceExtractorAnalyzer", () => {
   const extractor = new SourceExtractorAnalyzer();
 
+  /**
+   * @description Verifies the fundamental extraction capabilities of the SourceExtractorAnalyzer.
+   *
+   * @example
+   * // Input source code:
+   * import { t } from 'i18n';
+   * export function App() { return <div data-testid="test" />; }
+   *
+   * @expected Expects the analyzer to capture the file path and identify 'App' as an exported function.
+   */
   test("extract(): should process a complete file successfully", async () => {
     const sourceCode = `
       import { t } from 'i18n';
@@ -13,6 +23,18 @@ describe("SourceExtractorAnalyzer", () => {
     expect(result.functions).toContain("App");
   });
 
+  /**
+   * @description Validates the extraction of different import and export patterns.
+   *
+   * @example
+   * // Input source code:
+   * import { a, b as c } from 'module';
+   * import d from 'default-module';
+   * export { e };
+   *
+   * @expected Expects 'module' and 'default-module' to be in imports.
+   * @expected Expects 'a', 'c', 'd', and 'e' to be in exports.
+   */
   test("extractImport() and extractExport(): should handle named and default imports/exports", async () => {
     const sourceCode = `
       import { a, b as c } from 'module';
@@ -28,6 +50,15 @@ describe("SourceExtractorAnalyzer", () => {
     expect(result.exports).toContain("e");
   });
 
+  /**
+   * @description Ensures the analyzer correctly parses JSX attributes used for testing (selectors).
+   *
+   * @example
+   * // Input source code:
+   * <div data-testid="t1" data-cy="c1" id="id1" aria-label="a1" random="ignored" />
+   *
+   * @expected Expects all four supported selectors (data-testid, data-cy, id, aria-label) to be extracted, ignoring 'random'.
+   */
   test("extractJSXAttributes(): should extract specific data attributes", async () => {
     const sourceCode = `
       export const Comp = () => (
@@ -42,6 +73,18 @@ describe("SourceExtractorAnalyzer", () => {
     expect(result.selectors.some((s) => s.attr === "aria-label" && s.value === "a1")).toBe(true);
   });
 
+  /**
+   * @description Tests the identification of specific function calls commonly used for translation and Redux state management.
+   *
+   * @example
+   * // Input source code:
+   * t('hello');
+   * useSelector((state) => state.val);
+   * dispatch(action());
+   * createSlice({ name: 'mySlice' });
+   *
+   * @expected Expects 'hello' in translationKeys, the selector string in selectorsUsed, 'action' in actionsDispatched, and 'mySlice' in slicesDefined.
+   */
   test("extractFunctionCalls(): should extract i18n and Redux patterns", async () => {
     const sourceCode = `
       t('hello');
@@ -56,6 +99,15 @@ describe("SourceExtractorAnalyzer", () => {
     expect(result.reduxUsage.slicesDefined).toContain("mySlice");
   });
 
+  /**
+   * @description Checks if React Router 'Route' components are correctly identified and their path/component extracted.
+   *
+   * @example
+   * // Input source code:
+   * <Route path="/home" element={<Home />} />;
+   *
+   * @expected Expects the path '/home' and component 'Home' to be captured in routesDefined.
+   */
   test("extractRouteFromJSX(): should extract Route components", async () => {
     const sourceCode = `
       import { Route } from 'react-router-dom';

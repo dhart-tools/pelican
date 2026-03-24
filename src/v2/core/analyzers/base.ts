@@ -1,4 +1,4 @@
-import { IAnalyzer } from "@v2/types/analyzer";
+import { IAnalyzer } from "@v2/types/analyzers";
 
 /**
  * Base class for all analyzer modules.
@@ -11,4 +11,3 @@ export abstract class BaseAnalyzer<TInput, TOutput> implements IAnalyzer<TInput,
   abstract index(output: TOutput): void;
   abstract extract(input: TInput): Promise<TOutput>;
 }
-
