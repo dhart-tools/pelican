@@ -1,5 +1,3 @@
-import { describe, test } from "node:test";
-import assert from "node:assert";
 import { SourceExtractorAnalyzer } from "./source-extractor";
 
 describe("SourceExtractorAnalyzer", () => {
@@ -11,8 +9,8 @@ describe("SourceExtractorAnalyzer", () => {
       export function App() { return <div data-testid="test" />; }
     `;
     const result = await extractor.extract({ filePath: "app.ts", sourceCode });
-    assert.strictEqual(result.filePath, "app.ts");
-    assert.ok(result.functions.includes("App"));
+    expect(result.filePath).toBe("app.ts");
+    expect(result.functions).toContain("App");
   });
 
   test("extractImport() and extractExport(): should handle named and default imports/exports", async () => {
@@ -22,12 +20,12 @@ describe("SourceExtractorAnalyzer", () => {
       export { e };
     `;
     const result = await extractor.extract({ filePath: "imports.ts", sourceCode });
-    assert.ok(result.imports.includes("module"));
-    assert.ok(result.imports.includes("default-module"));
-    assert.ok(result.exports.includes("a"));
-    assert.ok(result.exports.includes("c"));
-    assert.ok(result.exports.includes("d"));
-    assert.ok(result.exports.includes("e"));
+    expect(result.imports).toContain("module");
+    expect(result.imports).toContain("default-module");
+    expect(result.exports).toContain("a");
+    expect(result.exports).toContain("c");
+    expect(result.exports).toContain("d");
+    expect(result.exports).toContain("e");
   });
 
   test("extractJSXAttributes(): should extract specific data attributes", async () => {
@@ -37,11 +35,11 @@ describe("SourceExtractorAnalyzer", () => {
       );
     `;
     const result = await extractor.extract({ filePath: "jsx.tsx", sourceCode });
-    assert.strictEqual(result.selectors.length, 4);
-    assert.ok(result.selectors.some((s) => s.attr === "data-testid" && s.value === "t1"));
-    assert.ok(result.selectors.some((s) => s.attr === "data-cy" && s.value === "c1"));
-    assert.ok(result.selectors.some((s) => s.attr === "id" && s.value === "id1"));
-    assert.ok(result.selectors.some((s) => s.attr === "aria-label" && s.value === "a1"));
+    expect(result.selectors.length).toBe(4);
+    expect(result.selectors.some((s) => s.attr === "data-testid" && s.value === "t1")).toBe(true);
+    expect(result.selectors.some((s) => s.attr === "data-cy" && s.value === "c1")).toBe(true);
+    expect(result.selectors.some((s) => s.attr === "id" && s.value === "id1")).toBe(true);
+    expect(result.selectors.some((s) => s.attr === "aria-label" && s.value === "a1")).toBe(true);
   });
 
   test("extractFunctionCalls(): should extract i18n and Redux patterns", async () => {
@@ -52,10 +50,10 @@ describe("SourceExtractorAnalyzer", () => {
       createSlice({ name: 'mySlice' });
     `;
     const result = await extractor.extract({ filePath: "calls.ts", sourceCode });
-    assert.ok(result.translationKeys.includes("hello"));
-    assert.ok(result.reduxUsage.selectorsUsed.some((s) => s.includes("state.val")));
-    assert.ok(result.reduxUsage.actionsDispatched.includes("action"));
-    assert.ok(result.reduxUsage.slicesDefined.includes("mySlice"));
+    expect(result.translationKeys).toContain("hello");
+    expect(result.reduxUsage.selectorsUsed.some((s) => s.includes("state.val"))).toBe(true);
+    expect(result.reduxUsage.actionsDispatched).toContain("action");
+    expect(result.reduxUsage.slicesDefined).toContain("mySlice");
   });
 
   test("extractRouteFromJSX(): should extract Route components", async () => {
@@ -64,8 +62,8 @@ describe("SourceExtractorAnalyzer", () => {
       const routes = () => <Route path="/home" element={<Home />} />;
     `;
     const result = await extractor.extract({ filePath: "routes.tsx", sourceCode });
-    assert.strictEqual(result.routesDefined.length, 1);
-    assert.strictEqual(result.routesDefined[0].path, "/home");
-    assert.strictEqual(result.routesDefined[0].component, "Home");
+    expect(result.routesDefined.length).toBe(1);
+    expect(result.routesDefined[0].path).toBe("/home");
+    expect(result.routesDefined[0].component).toBe("Home");
   });
 });
