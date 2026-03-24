@@ -67,9 +67,29 @@ export class OllamaService {
     return text;
   }
 
-  async generateJSON<T>(prompt: string): Promise<T> {
-    const raw = await this.generate(prompt);
-    return OllamaService.extractJSON<T>(raw);
+  async generateJSON<T>(
+    prompt: string,
+    onToken?: (token: string) => void
+  ): Promise<T> {
+    console.error(`[OllamaService] Sending request to model: ${this.model}`);
+    
+    try {
+        const response = await this.client.generate({
+          model: this.model,
+          prompt,
+          stream: false,
+          options: { temperature: 0.1 },
+        });
+
+        const raw = response.response.trim();
+        if (!raw) throw new Error("Empty response from LLM");
+        
+        console.error(`[OllamaService] Received response, length: ${raw.length}`);
+        return OllamaService.extractJSON<T>(raw);
+    } catch (err) {
+        console.error(`[OllamaService] Error:`, err);
+        throw err;
+    }
   }
 
   // ─── JSON Extraction (static, testable) ──────────────────

@@ -104,14 +104,16 @@ export class Matcher {
       // Blend: finalConfidence = (phase1Score * 0.3) + (llmConfidence * 0.7)
       return llmResults
         .map((llmResult) => {
+          // Use 'testFile' if provided by LLM, fallback to 'file'
+          const testFilePath = (llmResult as any).testFile || (llmResult as any).file;
           const phase1 = candidates.find(
-            (c) => c.testFile.name === llmResult.testFile
+            (c) => c.testFile.name === testFilePath
           );
           const phase1Score = phase1?.score || 0;
           const blended = phase1Score * 0.3 + llmResult.confidence * 0.7;
 
           return {
-            testFile: llmResult.testFile,
+            testFile: testFilePath,
             confidence: Math.min(blended, 1),
             reason: llmResult.reason,
             matchedKeywords: phase1?.matchedKeywords || [],

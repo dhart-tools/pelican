@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
@@ -13,8 +13,11 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "jsx": "react-jsx"
-  },
+    "baseUrl": ".",
+    "paths": {
+      "@v2/*": ["src/v2/*"],
+      "@root/*": ["src/*"]
+    },  },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "context"]
 }

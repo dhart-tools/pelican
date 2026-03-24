@@ -18,7 +18,59 @@ function splitCamelCase(name: string): string[] {
     .filter((word) => word.length > 1 && !NOISE_WORDS.has(word));
 }
 
+function mineJsxAttributes(node: ts.Node, result: IASTExtractionResult): void {
+  if (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) {
+    node.attributes.properties.forEach((attr) => {
+      if (ts.isJsxAttribute(attr)) {
+        const name = attr.name.getText();
+        if (["data-testid", "data-cy", "id", "aria-label", "name"].includes(name)) {
+          const value = attr.initializer ? attr.initializer.getText().replace(/["']/g, "") : "";
+          result.selectors.push({ attr: name, value });
+        }
+      }
+    });
+  }
+}
+
+function mineJsxText(node: ts.Node, result: IASTExtractionResult): void {
+  if (ts.isJsxText(node)) {
+    const text = node.text.trim();
+    if (text && text.length > 3) result.jsxTextContent.push(text);
+  }
+}
+
+function mineTranslationKeys(node: ts.Node, result: IASTExtractionResult): void {
+  // Simple check for t('key')
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "t") {
+    if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
+      result.translationKeys.push(node.arguments[0].text);
+    }
+  }
+}
+
+function mineRedux(node: ts.Node, result: IASTExtractionResult): void {
+  // Simple check for useSelector(selector)
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "useSelector") {
+    if (node.arguments.length > 0 && ts.isIdentifier(node.arguments[0])) {
+        result.reduxUsage.selectorsUsed.push(node.arguments[0].text);
+    }
+  }
+  // Simple check for dispatch(action())
+  if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === "dispatch") {
+      if (node.arguments.length > 0 && ts.isCallExpression(node.arguments[0])) {
+          const arg = node.arguments[0];
+          if (ts.isIdentifier(arg.expression)) {
+              result.reduxUsage.actionsDispatched.push(arg.expression.text);
+          }
+      }
+  }
+}
+
 function walk(node: ts.Node, result: IASTExtractionResult): void {
+  mineJsxAttributes(node, result);
+  mineJsxText(node, result);
+  mineTranslationKeys(node, result);
+  mineRedux(node, result);
   const isExported = (node as ts.HasModifiers).modifiers?.some(
     (m) => m.kind === ts.SyntaxKind.ExportKeyword
   );
@@ -75,6 +127,14 @@ export class ASTExtractor {
       functions: [],
       interfaces: [],
       imports: [],
+      selectors: [],
+      jsxTextContent: [],
+      translationKeys: [],
+      reduxUsage: {
+        selectorsUsed: [],
+        actionsDispatched: [],
+        slicesDefined: [],
+      },
     };
 
     const ext = filePath.split(".").pop()?.toLowerCase();

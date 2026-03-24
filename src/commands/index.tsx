@@ -13,8 +13,6 @@ import { IndexView } from "../ui/components/IndexView.js";
 // ─── Simple Glob Matcher ───────────────────────────────────
 
 function matchesPattern(file: string, pattern: string): boolean {
-  // Convert glob to simple regex
-  // **/*.ts -> .*\.ts$
   const regexStr = pattern
     .replace(/\./g, "\\.")
     .replace(/\*\*/g, ".*")
@@ -23,12 +21,13 @@ function matchesPattern(file: string, pattern: string): boolean {
   return regex.test(file);
 }
 
-function IndexApp({ all }: { all: boolean }) {
+function IndexApp({ all, verbose }: { all: boolean; verbose: boolean }) {
   const [state, setState] = useState<{
     status: "scanning" | "analyzing" | "saving" | "done" | "error";
     totalFiles: number;
     processedFiles: number;
     currentFile?: string;
+    thoughtOutput?: string;
     newFiles: number;
     updatedFiles: number;
     error?: string;
@@ -61,8 +60,7 @@ function IndexApp({ all }: { all: boolean }) {
         // 1. Get changed files
         let changedFiles: string[] = [];
         if (!storedSha) {
-          // First run or all: get all tracked files
-          const allFiles = await git.getChangedFilesSinceSha(""); // Empty string gets all tracked
+          const allFiles = await git.getChangedFilesSinceSha(""); 
           changedFiles = allFiles;
         } else {
           changedFiles = await git.getChangedFilesSinceSha(storedSha);
@@ -87,7 +85,7 @@ function IndexApp({ all }: { all: boolean }) {
         // 3. Prepare for analysis
         const ollama = new OllamaService(config.ollamaHost, config.model);
         const promptLoader = new PromptLoader();
-        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, descriptor.projectDescription || "General purpose TypeScript/React project", config.maxParallelAnalysis);
+        const analyzer = new Analyzer(projectRoot, ollama, promptLoader, descriptor.projectDescription || "General purpose TypeScript/React project", config.maxParallelAnalysis, verbose);
 
         const filesToAnalyze = await Promise.all(
           filteredFiles.map(async (f) => {
@@ -101,13 +99,20 @@ function IndexApp({ all }: { all: boolean }) {
         );
 
         // 4. Run Batch Analysis
-        const results = await analyzer.analyzeFiles(filesToAnalyze, (completed, total, current) => {
-          setState(s => ({
-            ...s,
-            processedFiles: completed,
-            currentFile: current,
-          }));
-        });
+        const results = await analyzer.analyzeFiles(
+            filesToAnalyze, 
+            (completed, total, current) => {
+                setState(s => ({
+                  ...s,
+                  processedFiles: completed,
+                  currentFile: current,
+                  thoughtOutput: "",
+                }));
+            },
+            (token) => {
+                setState(s => ({ ...s, thoughtOutput: (s.thoughtOutput || "") + token }));
+            }
+        );
 
         // 5. Update Store
         setState(s => ({ ...s, status: "saving" }));
@@ -147,7 +152,7 @@ function IndexApp({ all }: { all: boolean }) {
   return <IndexView {...state} />;
 }
 
-export async function indexCommand(options: { all: boolean }): Promise<void> {
-  const { waitUntilExit } = render(<IndexApp all={options.all} />);
+export async function indexCommand(options: { all: boolean; verbose: boolean }): Promise<void> {
+  const { waitUntilExit } = render(<IndexApp all={options.all} verbose={options.verbose} />);
   await waitUntilExit();
 }

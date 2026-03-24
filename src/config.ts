@@ -11,7 +11,7 @@ export const DEFAULT_CONFIG: ISuggestorConfig = {
   sourcePatterns: ["**/*.ts", "**/*.tsx"],
   sourceDirs: ["src"],
   ignorePatterns: ["node_modules", "dist", ".git", "context"],
-  maxParallelAnalysis: 4,
+  maxParallelAnalysis: 1,
   ollamaHost: env.OLLAMA_HOST,
 };
 

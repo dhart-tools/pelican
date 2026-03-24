@@ -20,6 +20,14 @@ export interface IASTExtractionResult {
   functions: string[];         // Function names
   interfaces: string[];        // Interface/type names
   imports: string[];           // Imported module names
+  selectors: { attr: string; value: string }[];
+  jsxTextContent: string[];
+  translationKeys: string[];
+  reduxUsage: {
+    selectorsUsed: string[];
+    actionsDispatched: string[];
+    slicesDefined: string[];
+  };
 }
 
 export interface ILLMAnalysisResult {

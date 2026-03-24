@@ -1,7 +1,7 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import pLimit from "p-limit";
-import type { IAnalysisResult, ILLMAnalysisResult } from "../types.js";
+import type { IAnalysisResult, ILLMAnalysisResult, IASTExtractionResult } from "../types.js";
 import { ASTExtractor } from "./ast-extractor.js";
 import { OllamaService } from "../llm/ollama.js";
 import { PromptLoader } from "../llm/prompts.js";
@@ -36,49 +36,84 @@ export class Analyzer {
   private promptLoader: PromptLoader;
   private maxParallel: number;
   private projectDescription: string;
+  private verbose: boolean;
 
   constructor(
     cwd: string,
     ollama: OllamaService,
     promptLoader: PromptLoader,
     projectDescription: string,
-    maxParallel = 5
+    maxParallel = 5,
+    verbose = false
   ) {
     this.astExtractor = new ASTExtractor(cwd);
     this.ollama = ollama;
     this.promptLoader = promptLoader;
     this.projectDescription = projectDescription;
     this.maxParallel = maxParallel;
+    this.verbose = verbose;
   }
 
   // ─── Single File Analysis ──────────────────────────────────
 
+  // ─── Formatting Helpers ────────────────────────────────────
+
+  private formatASTStructure(result: IASTExtractionResult): string {
+    return [
+      `Exports: ${result.exports.join(", ")}`,
+      `Classes: ${result.classes.join(", ")}`,
+      `Functions: ${result.functions.join(", ")}`,
+      `Interfaces: ${result.interfaces.join(", ")}`,
+      `Imports: ${result.imports.join(", ")}`,
+    ].join("\n");
+  }
+
+  // ─── Single File Analysis ──────────────────────────────────
+
+  // Increased timeout to 120s for heavier models
+  private async callLLMWithRetry(prompt: string, filePath: string, onToken?: (token: string) => void, retries = 2): Promise<ILLMAnalysisResult> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        if (this.verbose) {
+            console.error(`\n[Analyzer] Analyzing ${filePath} (Attempt ${i + 1}/${retries})...`);
+            console.error(`[Analyzer] Prompt: ${prompt.slice(0, 200)}...`);
+        }
+        const result = await this.ollama.generateJSON<ILLMAnalysisResult>(prompt, onToken);
+        if (this.verbose) {
+            console.error(`[Analyzer] Success for ${filePath}:`, JSON.stringify(result));
+        }
+        return result;
+      } catch (err) {
+        if (i === retries - 1) throw err;
+        console.warn(`Retry ${i + 1}/${retries} after error:`, err instanceof Error ? err.message : err);
+      }
+    }
+    throw new Error("Max retries exceeded");
+  }
+
   async analyzeFile(
     filePath: string,
     fileContent: string,
+    onToken?: (token: string) => void,
     forcedType?: "source" | "test"
   ): Promise<IAnalysisResult> {
-    // Phase 1: AST pass — instant, deterministic
     const astResult = await this.astExtractor.extractFromFile(filePath);
     const astKeywords = this.astExtractor.toKeywords(astResult);
     const fileType = forcedType || this.astExtractor.detectFileType(filePath);
 
-    // Phase 2: LLM pass — semantic extraction
     let llmResult: ILLMAnalysisResult | null = null;
     try {
       const prompt = await this.promptLoader.load("analyze", {
         filePath,
         projectDescription: this.projectDescription,
+        astStructure: this.formatASTStructure(astResult),
         fileContent: truncateContent(fileContent),
         initialKeywords: astKeywords.join(", "),
       });
-      llmResult = await this.ollama.generateJSON<ILLMAnalysisResult>(prompt);
+      // deterministic response:
+      llmResult = await this.callLLMWithRetry(prompt, filePath, onToken);
     } catch (err) {
-      // Graceful degradation: AST-only if LLM fails
-      console.warn(
-        `⚠️ LLM analysis failed for ${filePath}, using AST-only:`,
-        err instanceof Error ? err.message : err
-      );
+      console.warn(`⚠️ LLM analysis failed for ${filePath}, using AST-only:`, err instanceof Error ? err.message : err);
     }
 
     // Phase 3: Merge results
@@ -108,7 +143,8 @@ export class Analyzer {
 
   async analyzeFiles(
     files: Array<{ path: string; content: string; type?: "source" | "test" }>,
-    onProgress?: (completed: number, total: number, currentFile: string) => void
+    onProgress?: (completed: number, total: number, currentFile: string) => void,
+    onToken?: (token: string) => void
   ): Promise<IAnalysisResult[]> {
     const limit = pLimit(this.maxParallel);
     let completed = 0;
@@ -116,7 +152,7 @@ export class Analyzer {
     const tasks = files.map((file) =>
       limit(async () => {
         try {
-          const result = await this.analyzeFile(file.path, file.content, file.type);
+          const result = await this.analyzeFile(file.path, file.content, onToken, file.type);
           completed++;
           onProgress?.(completed, files.length, file.path);
           return result;

@@ -25,6 +25,7 @@ program
   .command("index")
   .description("Index source and test files for suggestion matching")
   .option("--all", "Index all files, ignoring changes")
+  .option("-v, --verbose", "Enable verbose logging for debugging")
   .action(async (options) => {
     try {
       await indexCommand(options);

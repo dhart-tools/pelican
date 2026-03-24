@@ -8,6 +8,7 @@ interface IndexViewProps {
   totalFiles: number;
   processedFiles: number;
   currentFile?: string;
+  thoughtOutput?: string;
   newFiles: number;
   updatedFiles: number;
   error?: string;
@@ -18,6 +19,7 @@ export function IndexView({
   totalFiles,
   processedFiles,
   currentFile,
+  thoughtOutput,
   newFiles,
   updatedFiles,
   error
@@ -43,9 +45,13 @@ export function IndexView({
         />
 
         {currentFile && status !== "done" && (
-          <Box marginTop={1}>
-            <Text dimColor>Analyzing: </Text>
-            <Text color={theme.secondary.toString()}>{currentFile}</Text>
+          <Box marginTop={1} flexDirection="column">
+            <Text dimColor>Analyzing: {currentFile}</Text>
+            {thoughtOutput && (
+                <Box marginTop={1} borderStyle="single" borderColor="dim">
+                    <Text dimColor>{thoughtOutput.slice(-500)}</Text>
+                </Box>
+            )}
           </Box>
         )}
       </Box>

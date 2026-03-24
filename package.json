@@ -12,7 +12,8 @@
     "start": "node dist/cli.js",
     "setup-env": "node scripts/setup-env.js",
     "suggestor": "node dist/cli.js",
-    "link": "npm link"
+    "link": "npm link",
+    "test:v2": "tsx --test src/v2/**/*.test.ts"
   },
   "dependencies": {
     "@t3-oss/env-core": "^0.11.1",

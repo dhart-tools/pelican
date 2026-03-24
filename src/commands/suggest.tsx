@@ -80,6 +80,7 @@ function SuggestApp() {
             const result = await analyzer.analyzeFile(
                 filePath, 
                 content, 
+                undefined,
                 (isTest ? "test" : "source") as "test" | "source"
             );
             const entry: IFileEntry = {
