@@ -168,7 +168,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<{ filePath: string; so
   }
 
   private getAttributeValue(attr: ts.JsxAttribute): string {
-    if (ts.isStringLiteral(attr.initializer)) {
+    if (attr.initializer && ts.isStringLiteral(attr.initializer)) {
       return attr.initializer.text;
     }
     return '';
