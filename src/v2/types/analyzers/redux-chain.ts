@@ -1,3 +1,5 @@
+import { EReduxRole } from "../../utils/enums";
+
 /**
  * The structure of a Redux Chain, linking a slice to its related files and consumers.
  */
@@ -21,7 +23,7 @@ export interface IReduxChain {
  */
 export interface IReduxExtractionResult {
   filePath: string;
-  role: 'actions' | 'reducer' | 'selectors' | 'sagas' | 'slice' | 'types' | 'unknown';
+  role: EReduxRole;
   sliceName?: string;
   actionTypes: string[];
   selectors: SelectorMetadata[];

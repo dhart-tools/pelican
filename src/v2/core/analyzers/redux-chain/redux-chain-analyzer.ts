@@ -6,7 +6,7 @@ import {
   SelectorMetadata,
   SagaMetadata,
 } from "@v2/types/analyzers";
-import { ERedux, EFunctionCall } from "@v2/utils/enums";
+import { ERedux, EFunctionCall, EReduxRole, EAnalyzerName } from "@v2/utils/enums";
 
 /**
  * ReduxChainAnalyzer: Detects and builds Redux chains (actions -> reducer -> selectors -> sagas).
@@ -19,9 +19,9 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
   { filePath: string; sourceCode: string },
   IReduxExtractionResult
 > {
-  name = "redux-chain";
+  name = EAnalyzerName.REDUX_CHAIN_ANALYZER;
   version = "1.0.0";
-  dependencies = ["source-extractor"]; // Needs imports from source-extractor for consumer logic
+  dependencies = [EAnalyzerName.SOURCE_EXTRACTOR]; // Needs imports from source-extractor for consumer logic
 
   /**
    * Phase 1: Extract Redux information from a single file.
@@ -33,7 +33,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
 
     const result: IReduxExtractionResult = {
       filePath,
-      role: "unknown",
+      role: EReduxRole.UNKNOWN,
       actionTypes: [],
       selectors: [],
       sagas: [],
@@ -90,7 +90,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
     // --- Pass 2 (FIX 1): Find consumers via import scanning ---
     // We check if a file imports from a slice's selectors file.
     for (const extraction of extractions) {
-      if (extraction.role === "types") continue;
+      if (extraction.role === EReduxRole.TYPES) continue;
 
       for (const [, chain] of chains) {
         if (!chain.files.selectors) continue;
@@ -129,11 +129,11 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
     }
 
     // FIX 2: Handle Multi-Role Files (Slice + Reducer + Actions)
-    if (extraction.role === "slice") {
+    if (extraction.role === EReduxRole.SLICE) {
       chain.files.slice = extraction.filePath;
       chain.files.reducer = extraction.filePath;
       chain.files.actions = chain.files.actions ?? extraction.filePath;
-    } else if (extraction.role === "reducer") {
+    } else if (extraction.role === EReduxRole.REDUCER) {
       chain.files.reducer = extraction.filePath;
     }
   }
@@ -188,7 +188,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
   private detectCreateSlice(node: ts.CallExpression, result: IReduxExtractionResult): void {
     if (this.getCalledFunctionName(node) !== EFunctionCall.CREATE_SLICE) return;
 
-    result.role = "slice";
+    result.role = EReduxRole.SLICE;
 
     const firstArg = node.arguments[0];
     if (ts.isObjectLiteralExpression(firstArg)) {
@@ -212,7 +212,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
 
   private detectCreateAction(node: ts.CallExpression, result: IReduxExtractionResult): void {
     if (this.getCalledFunctionName(node) !== EFunctionCall.CREATE_ACTION) return;
-    result.role = "actions";
+    result.role = EReduxRole.ACTIONS;
 
     if (node.arguments.length > 0 && ts.isStringLiteral(node.arguments[0])) {
       result.actionTypes.push(node.arguments[0].text);
@@ -221,7 +221,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
 
   private detectCreateSelector(node: ts.CallExpression, result: IReduxExtractionResult): void {
     if (this.getCalledFunctionName(node) !== EFunctionCall.CREATE_SELECTOR) return;
-    result.role = "selectors";
+    result.role = EReduxRole.SELECTORS;
 
     result.selectors.push({
       name: this.inferSelectorName(node),
@@ -231,7 +231,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
   }
 
   private detectGeneratorSaga(node: ts.FunctionDeclaration, result: IReduxExtractionResult): void {
-    result.role = "sagas";
+    result.role = EReduxRole.SAGAS;
     const sagaMetadata: SagaMetadata = {
       name: node.name?.getText() || "anonymous",
       actionsTaken: [],
@@ -249,7 +249,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
 
       // Simple selector check: (state: RootState) => ...
       if (firstParam.type?.getText().includes("RootState")) {
-        result.role = "selectors";
+        result.role = EReduxRole.SELECTORS;
         result.selectors.push({
           name: node.name?.getText() || "anonymous",
           usesRootState: true,
@@ -260,7 +260,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
 
       // Simple reducer check: (state, action) => ...
       if (node.parameters.length >= 2) {
-        result.role = "reducer";
+        result.role = EReduxRole.REDUCER;
         return;
       }
     }

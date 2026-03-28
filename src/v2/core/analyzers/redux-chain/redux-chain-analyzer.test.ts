@@ -1,5 +1,6 @@
 import { ReduxChainAnalyzer } from "./redux-chain-analyzer";
 import { IReduxExtractionResult } from "@v2/types/analyzers";
+import { EReduxRole } from "@v2/utils/enums";
 
 describe("ReduxChainAnalyzer", () => {
   const analyzer = new ReduxChainAnalyzer();
@@ -29,7 +30,7 @@ describe("ReduxChainAnalyzer", () => {
     `;
     const result = await analyzer.extract({ filePath: "src/store/user/slice.ts", sourceCode });
     
-    expect(result.role).toBe("slice");
+    expect(result.role).toBe(EReduxRole.SLICE);
     expect(result.sliceName).toBe("user");
     expect(result.actionTypes).toContain("user/login");
     expect(result.actionTypes).toContain("user/logout");
@@ -54,7 +55,7 @@ describe("ReduxChainAnalyzer", () => {
     `;
     const result = await analyzer.extract({ filePath: "src/store/test/slice.ts", sourceCode });
     
-    expect(result.role).toBe("slice");
+    expect(result.role).toBe(EReduxRole.SLICE);
     expect(result.sliceName).toBe("test");
   });
 
@@ -76,7 +77,7 @@ describe("ReduxChainAnalyzer", () => {
     `;
     const result = await analyzer.extract({ filePath: "src/store/user/selectors.ts", sourceCode });
     
-    expect(result.role).toBe("selectors");
+    expect(result.role).toBe(EReduxRole.SELECTORS);
     expect(result.selectors[0].name).toBe("selectUserName");
   });
 
@@ -99,7 +100,7 @@ describe("ReduxChainAnalyzer", () => {
     `;
     const result = await analyzer.extract({ filePath: "src/store/auth/sagas.ts", sourceCode });
     
-    expect(result.role).toBe("sagas");
+    expect(result.role).toBe(EReduxRole.SAGAS);
     expect(result.sagas[0].name).toBe("watchLogin");
   });
 
@@ -112,7 +113,7 @@ describe("ReduxChainAnalyzer", () => {
     const extractions: IReduxExtractionResult[] = [
       {
         filePath: "src/store/user/slice.ts",
-        role: "slice",
+        role: EReduxRole.SLICE,
         sliceName: "user",
         actionTypes: ["user/login"],
         selectors: [],
@@ -121,7 +122,7 @@ describe("ReduxChainAnalyzer", () => {
       },
       {
         filePath: "src/store/user/selectors.ts",
-        role: "selectors",
+        role: EReduxRole.SELECTORS,
         sliceName: "user",
         actionTypes: [],
         selectors: [{ name: "selectUser", usesRootState: true, selectorDependencies: [] }],
@@ -152,7 +153,7 @@ describe("ReduxChainAnalyzer", () => {
     const extractions: IReduxExtractionResult[] = [
       {
         filePath: "src/store/user/selectors.ts",
-        role: "selectors",
+        role: EReduxRole.SELECTORS,
         sliceName: "user",
         actionTypes: [],
         selectors: [{ name: "selectUser", usesRootState: true, selectorDependencies: [] }],
@@ -161,7 +162,7 @@ describe("ReduxChainAnalyzer", () => {
       },
       {
         filePath: "src/containers/Profile.tsx",
-        role: "unknown",
+        role: EReduxRole.UNKNOWN,
         actionTypes: [],
         selectors: [],
         sagas: [],
@@ -183,7 +184,7 @@ describe("ReduxChainAnalyzer", () => {
   test("buildChains(): (FIX 2) should handle multi-role 'slice' files", async () => {
     const extraction: IReduxExtractionResult = {
       filePath: "src/store/user/slice.ts",
-      role: "slice",
+      role: EReduxRole.SLICE,
       sliceName: "user",
       actionTypes: ["user/login"],
       selectors: [],
@@ -225,7 +226,7 @@ describe("ReduxChainAnalyzer", () => {
     const extractions: IReduxExtractionResult[] = [
       {
         filePath: "src/store/user/selectors.ts",
-        role: "selectors",
+        role: EReduxRole.SELECTORS,
         sliceName: "user",
         actionTypes: [],
         selectors: [{ name: "selectUser", usesRootState: true, selectorDependencies: [] }],
@@ -234,7 +235,7 @@ describe("ReduxChainAnalyzer", () => {
       },
       {
         filePath: "src/containers/Profile.tsx",
-        role: "unknown",
+        role: EReduxRole.UNKNOWN,
         actionTypes: [],
         selectors: [],
         sagas: [],
