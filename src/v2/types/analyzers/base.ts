@@ -12,11 +12,13 @@
  * }
  */
 export interface ISignal {
-  source: string; // Analyzer name
-  type: string; // Signal type
-  weight: number; // Confidence weight (0-1)
+  source: string;              // Analyzer name
+  type: string;               // Signal type
+  weight: number;             // 0.0 - 1.0
+  originalWeight?: number;    // Weight before any dampening
   matched: boolean;
   metadata?: any;
+  reason?: string;            // Human-readable reason
 }
 
 /**
