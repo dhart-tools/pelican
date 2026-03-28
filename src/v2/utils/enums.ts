@@ -49,6 +49,7 @@ export enum EFunctionCall {
   DISPATCH = "dispatch",
   CREATE_SELECTOR = "createSelector",
   CREATE_SLICE = "createSlice",
+  CREATE_ACTION = "createAction",
 }
 
 export enum EAssertionType {
