@@ -70,4 +70,6 @@ export enum EAnalyzerName {
   SOURCE_EXTRACTOR = "source-extractor",
   CYPRESS_EXTRACTOR = "cypress-extractor",
   REDUX_CHAIN_ANALYZER = "redux-chain-analyzer",
+  I18N_ANALYZER = "i18n-analyzer",
 }
+
