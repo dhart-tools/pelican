@@ -1,6 +1,6 @@
 import * as ts from "typescript";
 import { BaseAnalyzer } from "../base";
-import { EFunctionCall, ERedux, EReactRouter, EReactComponent } from "@v2/utils/enums";
+import { EFunctionCall, ERedux, EReactRouter, EReactComponent, EAnalyzerName } from "@v2/utils/enums";
 import { ISourceExtractionResult } from "@v2/types/analyzers";
 import { SELECTOR_ATTRIBUTES } from "@v2/utils/constants";
 
@@ -19,7 +19,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
   { filePath: string; sourceCode: string },
   ISourceExtractionResult
 > {
-  name = "source-extractor";
+  name = EAnalyzerName.SOURCE_EXTRACTOR;
   version = "1.0.0";
 
   /**

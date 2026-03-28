@@ -49,8 +49,25 @@ export enum EFunctionCall {
   DISPATCH = "dispatch",
   CREATE_SELECTOR = "createSelector",
   CREATE_SLICE = "createSlice",
+  CREATE_ACTION = "createAction",
 }
 
 export enum EAssertionType {
   SHOULD = "should",
+}
+
+export enum EReduxRole {
+  ACTIONS = "actions",
+  REDUCER = "reducer",
+  SELECTORS = "selectors",
+  SAGAS = "sagas",
+  SLICE = "slice",
+  TYPES = "types",
+  UNKNOWN = "unknown",
+}
+
+export enum EAnalyzerName {
+  SOURCE_EXTRACTOR = "source-extractor",
+  CYPRESS_EXTRACTOR = "cypress-extractor",
+  REDUX_CHAIN_ANALYZER = "redux-chain-analyzer",
 }

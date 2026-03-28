@@ -13,6 +13,7 @@ import {
   ETestBlockType,
   EAssertionType,
   ESelectorAttr,
+  EAnalyzerName,
 } from "@v2/utils/enums";
 /**
  * Analyzer that extracts semantic information from Cypress test files.
@@ -29,7 +30,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
   { filePath: string; sourceCode: string },
   ICypressExtractionResult
 > {
-  name = "cypress-extractor";
+  name = EAnalyzerName.CYPRESS_EXTRACTOR;
   version = "1.0.0";
   dependencies = [];
 
