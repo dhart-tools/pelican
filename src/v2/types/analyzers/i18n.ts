@@ -1,5 +1,3 @@
-import { ISourceExtractionResult } from "./source-extractor";
-
 /**
  * Result of the i18n analysis.
  */
