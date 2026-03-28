@@ -146,9 +146,9 @@ Follow this order to implement the system:
 
 ## Adding a New Analyzer
 
-1. Create a new file in `src/analyzers/` extending `BaseAnalyzer`
+1. Create a new file in `src/v2/core/analyzers/` (e.g., `my-analyzer/my-analyzer.ts`) extending `BaseAnalyzer`
 2. Implement `analyze()` method
-3. Register in `src/commands/analyze.ts` or let auto-discovery handle it
+3. Register in `src/v2/core/analyzer-registry.ts` or let auto-discovery handle it
 4. Contributed signals can be used by scorers
 
 Example:
@@ -174,9 +174,9 @@ export class MyAnalyzer extends BaseAnalyzer {
 
 ## Adding a New Scorer
 
-1. Create a new file in `src/scorers/` extending `BaseScorer`
+1. Create a new file in `src/v2/core/scoring/scorers/` extending `BaseScorer`
 2. Implement `evaluate()` method
-3. Register in `registerAllScorers()` function
+3. Register in `ScoringEngine` manually or via a registration helper
 4. Enable in config
 
 Example:
