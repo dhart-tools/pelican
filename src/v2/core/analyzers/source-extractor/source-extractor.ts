@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { BaseAnalyzer } from "../base";
+import { BaseAnalyzer } from "@v2/core/analyzers/base";
 import { EFunctionCall, ERedux, EReactRouter, EReactComponent, EAnalyzerName } from "@v2/utils/enums";
 import { ISourceExtractionResult } from "@v2/types/analyzers";
 import { SELECTOR_ATTRIBUTES } from "@v2/utils/constants";

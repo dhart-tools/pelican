@@ -1,6 +1,5 @@
-import { RegistryBuilder } from '../registry-builder';
+import { RegistryBuilder } from '@v2/core/registry/registry-builder';
 import * as fs from 'fs/promises';
-import * as path from 'path';
 
 // Mocking the dependencies
 jest.mock('fs/promises');
@@ -50,7 +49,7 @@ describe('RegistryBuilder Robustness', () => {
 
   beforeEach(() => {
     builder = new RegistryBuilder();
-    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
     jest.clearAllMocks();
   });
 

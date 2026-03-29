@@ -1,4 +1,4 @@
-import { ITranslationIndex, IReduxChain, ISourceSelector, IRouteDef, ICypressSelector, IAPIIntercept, IURLAssertion } from "../analyzers";
+import { ITranslationIndex, IReduxChain, ISourceSelector, IRouteDef, ICypressSelector, IAPIIntercept, IURLAssertion } from "@v2/types/analyzers";
 
 export interface IFileEntry {
   name: string;

@@ -1,4 +1,4 @@
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 
 describe('Registry — import graph', () => {
   const entries = [

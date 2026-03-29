@@ -1,6 +1,6 @@
-import { SelectorMatchScorer } from "./selector-match-scorer";
-import { IScorerContext } from "../../../types";
-import { ESelectorAttr } from "../../../utils/enums";
+import { SelectorMatchScorer } from "@v2/core/scoring/scorers/selector-match-scorer";
+import { IScorerContext } from "@v2/types";
+import { ESelectorAttr } from "@v2/utils/enums";
 
 describe("SelectorMatchScorer", () => {
   let scorer: SelectorMatchScorer;

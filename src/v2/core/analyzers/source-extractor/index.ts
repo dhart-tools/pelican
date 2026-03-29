@@ -1,1 +1,1 @@
-export * from "./source-extractor";
+export * from "@v2/core/analyzers/source-extractor/source-extractor";

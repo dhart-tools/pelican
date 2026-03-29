@@ -2,10 +2,10 @@ import { glob } from "glob";
 import * as path from "path";
 import * as fs from "fs/promises";
 import { IRegistry, IFileEntry } from "@v2/types/registry";
-import { createRegistry } from "./registry";
-import { normalizePath } from "./path-utils";
-import { SourceExtractorAnalyzer } from "../analyzers/source-extractor";
-import { CypressExtractorAnalyzer } from "../analyzers/cypress-extractor";
+import { createRegistry } from "@v2/core/registry/registry";
+import { normalizePath } from "@v2/core/registry/path-utils";
+import { SourceExtractorAnalyzer } from "@v2/core/analyzers/source-extractor";
+import { CypressExtractorAnalyzer } from "@v2/core/analyzers/cypress-extractor";
 
 export interface RegistryBuilderConfig {
   /**

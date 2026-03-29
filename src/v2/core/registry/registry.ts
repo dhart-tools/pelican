@@ -4,7 +4,7 @@ import {
   IImportGraph,
 } from '@v2/types/registry';
 import { ITranslationIndex, IReduxChain } from '@v2/types/analyzers';
-import { normalizePath } from './path-utils';
+import { normalizePath } from '@v2/core/registry/path-utils';
 
 export class Registry implements IRegistry {
   public files: Map<string, IFileEntry> = new Map();

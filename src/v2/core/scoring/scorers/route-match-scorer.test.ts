@@ -1,5 +1,5 @@
-import { RouteMatchScorer } from "./route-match-scorer";
-import { IScorerContext, IRegistry, IFileEntry } from "../../../types";
+import { RouteMatchScorer } from "@v2/core/scoring/scorers/route-match-scorer";
+import { IScorerContext, IRegistry } from "@v2/types";
 
 describe("RouteMatchScorer", () => {
   let scorer: RouteMatchScorer;
@@ -58,7 +58,7 @@ describe("RouteMatchScorer", () => {
   test("evaluate(): should detect transitive matches via imports", () => {
     const changedFile = "src/components/LoginForm.tsx";
     const pageFile = "src/pages/LoginPage.tsx";
-    
+
     (mockRegistry.getRouteMap as jest.Mock).mockReturnValue(new Map([["/login", pageFile]]));
     (mockRegistry.getDependencies as jest.Mock).mockImplementation((path: string) => {
       if (path === pageFile) return new Set([changedFile]);

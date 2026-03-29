@@ -1,5 +1,5 @@
-import { BaseScorer } from "./base";
-import { IScorerContext, ISignal } from "../../../types";
+import { BaseScorer } from "@v2/core/scoring/scorers/base";
+import { IScorerContext, ISignal } from "@v2/types";
 import { ESelectorAttr } from "@v2/utils/enums";
 
 export class SelectorMatchScorer extends BaseScorer {

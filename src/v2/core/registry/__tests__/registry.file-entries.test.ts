@@ -1,4 +1,4 @@
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 
 describe('Registry — file entry management', () => {
   it('returns undefined for a file not in the registry', () => {

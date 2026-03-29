@@ -5,7 +5,7 @@ import {
   IScorerContext,
   IRegistry,
   ISuggestorConfig
-} from "../../types";
+} from "@v2/types";
 
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();

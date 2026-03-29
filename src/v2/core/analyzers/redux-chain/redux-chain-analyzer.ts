@@ -1,5 +1,5 @@
 import * as ts from "typescript";
-import { BaseAnalyzer } from "../base";
+import { BaseAnalyzer } from "@v2/core/analyzers/base";
 import {
   IReduxChain,
   IReduxExtractionResult,

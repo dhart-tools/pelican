@@ -1,5 +1,4 @@
-import { BaseScorer } from "./base";
-import { IScorerContext } from "../../../types";
+import { BaseScorer } from "@v2/core/scoring/scorers/base";
 
 class TestScorer extends BaseScorer {
   constructor() {
@@ -13,7 +12,7 @@ class TestScorer extends BaseScorer {
   }
 
   evaluate() { return []; }
-  
+
   public testCreateSignal(matched: boolean, reason?: string) {
     return this.createSignal(matched, reason);
   }
@@ -33,7 +32,7 @@ describe("BaseScorer", () => {
    */
   test("createSignal(): should populate basic signal fields", () => {
     const signal = scorer.testCreateSignal(true, "match found");
-    
+
     expect(signal.source).toBe("test-scorer");
     expect(signal.type).toBe("test-type");
     expect(signal.weight).toBe(0.5);

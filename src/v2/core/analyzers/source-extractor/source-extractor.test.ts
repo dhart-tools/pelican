@@ -1,4 +1,4 @@
-import { SourceExtractorAnalyzer } from "./source-extractor";
+import { SourceExtractorAnalyzer } from "@v2/core/analyzers/source-extractor/source-extractor";
 
 describe("SourceExtractorAnalyzer", () => {
   const extractor = new SourceExtractorAnalyzer();

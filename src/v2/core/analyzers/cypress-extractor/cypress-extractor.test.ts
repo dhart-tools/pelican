@@ -1,5 +1,5 @@
 import { EHttpMethod, ESelectorAttr } from "@v2/utils/enums";
-import { CypressExtractorAnalyzer } from "./cypress-extractor";
+import { CypressExtractorAnalyzer } from "@v2/core/analyzers/cypress-extractor/cypress-extractor";
 import { ICypressSelector, IAPIIntercept, IURLAssertion } from "@v2/types/analyzers";
 
 describe("CypressExtractorAnalyzer", () => {

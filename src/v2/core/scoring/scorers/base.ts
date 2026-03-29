@@ -1,4 +1,4 @@
-import { IScorer, IScorerContext, ISignal } from "../../../types";
+import { IScorer, IScorerContext, ISignal } from "@v2/types";
 
 /**
  * BaseScorer provides a reusable implementation of IScorer.

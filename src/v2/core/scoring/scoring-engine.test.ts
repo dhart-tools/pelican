@@ -1,6 +1,6 @@
-import { ScoringEngine } from "./scoring-engine";
-import { DirectImportScorer } from "./scorers/direct-import-scorer";
-import { ISuggestorConfig, IRegistry, IFileEntry } from "../../types";
+import { ScoringEngine } from "@v2/core/scoring/scoring-engine";
+import { DirectImportScorer } from "@v2/core/scoring/scorers/direct-import-scorer";
+import { ISuggestorConfig, IRegistry, IFileEntry } from "@v2/types";
 
 describe("ScoringEngine", () => {
   let engine: ScoringEngine;

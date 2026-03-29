@@ -1,6 +1,6 @@
-import { ISignal } from "../analyzers";
-import { IRegistry, IFileEntry } from "../registry";
-import { ISuggestorConfig } from "../config";
+import { ISignal } from "@v2/types/analyzers";
+import { IRegistry, IFileEntry } from "@v2/types/registry";
+import { ISuggestorConfig } from "@v2/types/config";
 
 /**
  * Defines the contract for a scorer module.

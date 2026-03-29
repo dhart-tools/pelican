@@ -1,5 +1,5 @@
-import { BaseScorer } from "./base";
-import { IScorerContext, ISignal, IRegistry } from "../../../types";
+import { BaseScorer } from "@v2/core/scoring/scorers/base";
+import { IScorerContext, ISignal, IRegistry } from "@v2/types";
 
 export class RouteMatchScorer extends BaseScorer {
   constructor() {

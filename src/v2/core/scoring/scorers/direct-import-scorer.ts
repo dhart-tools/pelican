@@ -1,5 +1,5 @@
-import { BaseScorer } from "./base";
-import { IScorerContext, ISignal } from "../../../types";
+import { BaseScorer } from "@v2/core/scoring/scorers/base";
+import { IScorerContext, ISignal } from "@v2/types";
 
 export class DirectImportScorer extends BaseScorer {
   constructor() {

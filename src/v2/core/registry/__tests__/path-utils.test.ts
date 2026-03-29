@@ -1,6 +1,6 @@
-import { normalizePath } from '../path-utils';
+import { normalizePath } from '@v2/core/registry/path-utils';
 import * as path from 'path';
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 
 const PROJECT_ROOT = '/project';
 

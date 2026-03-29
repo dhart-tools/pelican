@@ -1,4 +1,4 @@
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 
 describe('Registry — stale edge removal on addOrUpdateFile()', () => {
   it('removes old dependency edges when imports change', () => {

@@ -1,6 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
-import { BaseAnalyzer } from "../base";
+import { BaseAnalyzer } from "@v2/core/analyzers/base";
 import {
   II18nExtractionResult,
   ITranslationIndex,

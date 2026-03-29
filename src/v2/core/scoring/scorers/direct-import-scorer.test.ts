@@ -1,5 +1,5 @@
-import { DirectImportScorer } from "./direct-import-scorer";
-import { IScorerContext, IFileEntry } from "../../../types";
+import { DirectImportScorer } from "@v2/core/scoring/scorers/direct-import-scorer";
+import { IScorerContext } from "@v2/types";
 
 describe("DirectImportScorer", () => {
   let scorer: DirectImportScorer;
