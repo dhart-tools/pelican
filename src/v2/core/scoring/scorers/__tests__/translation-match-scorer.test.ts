@@ -35,16 +35,20 @@ describe('TranslationMatchScorer', () => {
 
   /**
    * @description Verifies that a test containing text that maps to a translation key used in a source file is correctly identified.
-   * 
+   *
    * @example
    * testContainsText: ["Sign In"]
    * mapping: "Sign In" -> ["login.submitButton"]
    * sourceKeys: ["login.submitButton"]
-   * 
+   *
    * @expected Matched signal should be returned with a clear explanation.
    */
   test('evaluate(): should detect exact static mapping', () => {
-    const signals = scorer.evaluate('src/Login.tsx', 'src/Login.test.ts', mockContext as IScorerContext);
+    const signals = scorer.evaluate(
+      'src/Login.tsx',
+      'src/Login.test.ts',
+      mockContext as IScorerContext,
+    );
     expect(signals[0].matched).toBe(true);
     expect(signals[0].reason).toContain('maps to key "login.submitButton"');
     expect(signals[0].weight).toBe(0.85);
@@ -52,38 +56,46 @@ describe('TranslationMatchScorer', () => {
 
   /**
    * @description Validates detection of dynamic (interpolated) translation keys.
-   * 
+   *
    * @example
    * testContainsText: ["Welcome"]
    * mapping: "Welcome" -> ["home.welcomeMessage"]
    * sourceKeys: ["home.welcomeMessage"]
    * isDynamic: true
-   * 
+   *
    * @expected Matched signal should indicate a partial match on a dynamic key.
    */
   test('evaluate(): should detect dynamic mapping', () => {
     mockContext.testFile!.cypress!.containsText = ['Welcome'];
     mockContext.changedFile!.translationKeys = ['home.welcomeMessage'];
 
-    const signals = scorer.evaluate('src/Home.tsx', 'src/Home.test.ts', mockContext as IScorerContext);
+    const signals = scorer.evaluate(
+      'src/Home.tsx',
+      'src/Home.test.ts',
+      mockContext as IScorerContext,
+    );
     expect(signals[0].matched).toBe(true);
     expect(signals[0].reason).toContain('partially matches dynamic key "home.welcomeMessage"');
   });
 
   /**
    * @description Ensures the scorer handles negative cases where no relationship exists.
-   * 
+   *
    * @example
    * testContainsText: ["Random Text"]
    * sourceKeys: ["other.key"]
-   * 
+   *
    * @expected Unmatched signal should be returned.
    */
   test('evaluate(): should handle no matches correctly', () => {
     mockContext.testFile!.cypress!.containsText = ['Random Text'];
     mockContext.changedFile!.translationKeys = ['other.key'];
 
-    const signals = scorer.evaluate('src/File.tsx', 'src/File.test.ts', mockContext as IScorerContext);
+    const signals = scorer.evaluate(
+      'src/File.tsx',
+      'src/File.test.ts',
+      mockContext as IScorerContext,
+    );
     expect(signals[0].matched).toBe(false);
     expect(signals[0].reason).toContain('No translation matches found');
   });
@@ -93,7 +105,11 @@ describe('TranslationMatchScorer', () => {
    */
   test('evaluate(): should handle missing breadcrumbs', () => {
     mockContext.testFile!.cypress!.containsText = [];
-    const signals = scorer.evaluate('src/File.tsx', 'src/File.test.ts', mockContext as IScorerContext);
+    const signals = scorer.evaluate(
+      'src/File.tsx',
+      'src/File.test.ts',
+      mockContext as IScorerContext,
+    );
     expect(signals[0].matched).toBe(false);
     expect(signals[0].reason).toContain('does not contain any detected text assertions');
   });
