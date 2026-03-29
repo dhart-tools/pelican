@@ -83,4 +83,5 @@ export enum EScorerType {
   DIRECT_IMPORT = 'direct-import',
   ROUTE_MATCH = 'route-match',
   SELECTOR_MATCH = 'selector-match',
+  TRANSLATION_MATCH = 'translation-match',
 }
