@@ -310,7 +310,12 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
     }
 
     if (path && component) {
-      result.routesDefined.push({ path, component });
+      result.routesDefined.push({
+        path,
+        component,
+        isLazy: false,
+        isDynamic: path.includes(':') || path.includes('*'),
+      });
     }
   }
 }

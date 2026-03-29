@@ -71,6 +71,7 @@ export enum EAnalyzerName {
   CYPRESS_EXTRACTOR = 'cypress-extractor',
   REDUX_CHAIN_ANALYZER = 'redux-chain-analyzer',
   I18N_ANALYZER = 'i18n-analyzer',
+  ROUTE_ANALYZER = 'route-analyzer',
 }
 
 export enum EConfidenceLevel {
