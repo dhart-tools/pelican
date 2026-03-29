@@ -1,16 +1,17 @@
-import { RegistryBuilder } from '../registry-builder';
 import * as fs from 'fs/promises';
-import * as path from 'path';
+
+import { glob } from 'glob';
+
+import { RegistryBuilder } from '@v2/core/registry/registry-builder';
 
 // Mocking the dependencies
 jest.mock('fs/promises');
 jest.mock('glob', () => ({
-  glob: jest.fn()
+  glob: jest.fn(),
 }));
-import { glob } from 'glob';
 
 // Mock the analyzers
-jest.mock('../../analyzers/source-extractor', () => ({
+jest.mock('@v2/core/analyzers/source-extractor/source-extractor', () => ({
   SourceExtractorAnalyzer: jest.fn(() => ({
     extract: jest.fn().mockResolvedValue({
       filePath: 'src/file.ts',
@@ -24,11 +25,11 @@ jest.mock('../../analyzers/source-extractor', () => ({
       jsxTextContent: [],
       translationKeys: [],
       routesDefined: [],
-      reduxUsage: { selectorsUsed: [], actionsDispatched: [], slicesDefined: [] }
-    })
-  }))
+      reduxUsage: { selectorsUsed: [], actionsDispatched: [], slicesDefined: [] },
+    }),
+  })),
 }));
-jest.mock('../../analyzers/cypress-extractor', () => ({
+jest.mock('@v2/core/analyzers/cypress-extractor/cypress-extractor', () => ({
   CypressExtractorAnalyzer: jest.fn(() => ({
     extract: jest.fn().mockResolvedValue({
       filePath: 'test/file.cy.ts',
@@ -39,9 +40,9 @@ jest.mock('../../analyzers/cypress-extractor', () => ({
       containsText: [],
       interceptedAPIs: [],
       urlAssertions: [],
-      customCommandsUsed: []
-    })
-  }))
+      customCommandsUsed: [],
+    }),
+  })),
 }));
 
 describe('RegistryBuilder Robustness', () => {
@@ -64,7 +65,7 @@ describe('RegistryBuilder Robustness', () => {
 
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
-      testPatterns: ['test/**/*.cy.ts']
+      testPatterns: ['test/**/*.cy.ts'],
     });
 
     // Registry should still build, but file should be missing
@@ -76,7 +77,7 @@ describe('RegistryBuilder Robustness', () => {
 
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
-      testPatterns: ['test/**/*.cy.ts']
+      testPatterns: ['test/**/*.cy.ts'],
     });
 
     expect(registry.files.size).toBe(0);
@@ -89,7 +90,7 @@ describe('RegistryBuilder Robustness', () => {
 
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
-      testPatterns: []
+      testPatterns: [],
     });
 
     // Should be normalized to src/file.ts
@@ -105,14 +106,14 @@ describe('RegistryBuilder Robustness', () => {
     await builder.buildFromDirectories({
       sourceDirs: ['src'],
       testPatterns: [],
-      ignoreDirs: ['ignored']
+      ignoreDirs: ['ignored'],
     });
 
     expect(globMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        ignore: expect.arrayContaining(['**/ignored/**'])
-      })
+        ignore: expect.arrayContaining(['**/ignored/**']),
+      }),
     );
   });
 });

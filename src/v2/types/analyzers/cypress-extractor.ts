@@ -6,6 +6,7 @@ import { ESelectorAttr } from "@v2/utils/enums";
  */
 export interface ICypressExtractionResult {
   filePath: string;
+  imports?: string[];
 
   // Test structure
   describeBlocks: string[];

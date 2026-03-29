@@ -1,1 +1,1 @@
-export * from "./cypress-extractor";
+export * from './cypress-extractor';

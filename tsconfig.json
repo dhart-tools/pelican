@@ -19,6 +19,6 @@
       "@root/*": ["src/*"]
     }
   },
-  "include": ["src/**/*"],
+  "include": ["src/v2/**/*"],
   "exclude": ["node_modules", "dist", "context"]
 }

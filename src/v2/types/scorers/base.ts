@@ -1,4 +1,4 @@
-import { ISignal } from "@v2/types/analyzers";
+import { ISignal } from '@v2/types/analyzers';
 
 /**
  * Defines the contract for a scorer module.

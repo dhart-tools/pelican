@@ -22,20 +22,20 @@ export interface ITranslationIndex {
  * Configuration for the i18n library structure.
  */
 export interface II18nLibraryConfig {
-  type: "react-i18next" | "react-intl" | "custom";
+  type: 'react-i18next' | 'react-intl' | 'custom';
   defaultLocale: string;
   localesPath: string; // e.g., 'public/locales/{locale}/{namespace}.json'
-  structure: "single" | "namespaced";
+  structure: 'single' | 'namespaced';
 }
 
 /**
  * Structured warning codes for i18n-related issues.
  */
 export type I18nWarningCode =
-  | "FILE_NOT_FOUND" // file path does not exist on disk
-  | "INVALID_JSON" // file exists but JSON.parse failed
-  | "EMPTY_TRANSLATION_FILE" // file parsed successfully but has zero keys
-  | "LOCALE_DIR_MISSING"; // namespaced mode: the locale directory itself is missing
+  | 'FILE_NOT_FOUND' // file path does not exist on disk
+  | 'INVALID_JSON' // file exists but JSON.parse failed
+  | 'EMPTY_TRANSLATION_FILE' // file parsed successfully but has zero keys
+  | 'LOCALE_DIR_MISSING'; // namespaced mode: the locale directory itself is missing
 
 /**
  * Represents a structured warning from the i18n analyzer.

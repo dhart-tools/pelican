@@ -1,4 +1,4 @@
-import { EReduxRole } from "../../utils/enums";
+import { EReduxRole } from '@v2/utils/enums';
 
 /**
  * The structure of a Redux Chain, linking a slice to its related files and consumers.

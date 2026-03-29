@@ -1,35 +1,34 @@
-import { normalizePath } from '../path-utils';
 import * as path from 'path';
-import { createRegistry } from '../registry';
+
+import { normalizePath } from '@v2/core/registry/path-utils';
+import { createRegistry } from '@v2/core/registry/registry';
 
 const PROJECT_ROOT = '/project';
 
 describe('normalizePath', () => {
   it('strips leading ./ from relative paths', () => {
-    expect(normalizePath('./src/pages/Login.tsx', PROJECT_ROOT))
-      .toBe('src/pages/Login.tsx');
+    expect(normalizePath('./src/pages/Login.tsx', PROJECT_ROOT)).toBe('src/pages/Login.tsx');
   });
 
   it('converts absolute paths to relative from project root', () => {
-    expect(normalizePath('/project/src/pages/Login.tsx', PROJECT_ROOT))
-      .toBe('src/pages/Login.tsx');
+    expect(normalizePath('/project/src/pages/Login.tsx', PROJECT_ROOT)).toBe('src/pages/Login.tsx');
   });
 
   it('leaves already-clean relative paths unchanged', () => {
-    expect(normalizePath('src/pages/Login.tsx', PROJECT_ROOT))
-      .toBe('src/pages/Login.tsx');
+    expect(normalizePath('src/pages/Login.tsx', PROJECT_ROOT)).toBe('src/pages/Login.tsx');
   });
 
   it('resolves .. segments', () => {
-    expect(normalizePath('src/pages/../components/Button.tsx', PROJECT_ROOT))
-      .toBe('src/components/Button.tsx');
+    expect(normalizePath('src/pages/../components/Button.tsx', PROJECT_ROOT)).toBe(
+      'src/components/Button.tsx',
+    );
   });
 
   it('normalizes all three representations of the same file to the same string', () => {
     const representations = [
       'src/pages/Login.tsx',
       './src/pages/Login.tsx',
-      '/project/src/pages/Login.tsx'
+      '/project/src/pages/Login.tsx',
     ];
     const normalized = representations.map((p) => normalizePath(p, PROJECT_ROOT));
     expect(new Set(normalized).size).toBe(1); // all the same
@@ -52,8 +51,12 @@ describe('Registry — path normalization on file storage and lookup', () => {
         type: 'source',
         name: 'LoginPage.tsx',
         imports: [],
-        exports: [], classes: [], functions: [], interfaces: [], keywords: []
-      }
+        exports: [],
+        classes: [],
+        functions: [],
+        interfaces: [],
+        keywords: [],
+      },
     ]);
 
     // All three representations should find the same entry
