@@ -1,4 +1,4 @@
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 import { IRegistry } from '@v2/types/registry';
 
 describe('Registry — interface compliance', () => {

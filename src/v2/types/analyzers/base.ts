@@ -16,7 +16,7 @@ export interface ISignal {
   type: string; // Signal type
   weight: number; // Confidence weight (0-1)
   matched: boolean;
-  metadata?: any;
+  metadata?: object; // Additional metadata
 }
 
 /**

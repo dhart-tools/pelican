@@ -1,4 +1,4 @@
-import { createRegistry } from '../registry';
+import { createRegistry } from '@v2/core/registry/registry';
 
 describe('Registry — serialization round-trip', () => {
   const buildPopulatedRegistry = () => {
@@ -9,17 +9,28 @@ describe('Registry — serialization round-trip', () => {
         type: 'source',
         name: 'LoginPage.tsx',
         imports: ['src/components/LoginForm.tsx'],
-        selectors: [{ attr: 'data-testid', value: 'submit-btn' }, { attr: 'data-testid', value: 'email-input' }],
+        selectors: [
+          { attr: 'data-testid', value: 'submit-btn' },
+          { attr: 'data-testid', value: 'email-input' },
+        ],
         jsxTextContent: ['Sign In', 'Forgot password?'],
-        exports: [], classes: [], functions: [], interfaces: [], keywords: []
+        exports: [],
+        classes: [],
+        functions: [],
+        interfaces: [],
+        keywords: [],
       },
       {
         path: 'src/components/LoginForm.tsx',
         type: 'source',
         name: 'LoginForm.tsx',
         imports: [],
-        exports: [], classes: [], functions: [], interfaces: [], keywords: []
-      }
+        exports: [],
+        classes: [],
+        functions: [],
+        interfaces: [],
+        keywords: [],
+      },
     ]);
     return registry;
   };

@@ -1,4 +1,4 @@
-import { IAnalyzer } from "@v2/types/analyzers";
+import { IAnalyzer } from '@v2/types/analyzers';
 
 /**
  * Base class for all analyzer modules.

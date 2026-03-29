@@ -1,8 +1,15 @@
-import * as ts from "typescript";
-import { BaseAnalyzer } from "../base";
-import { EFunctionCall, ERedux, EReactRouter, EReactComponent, EAnalyzerName } from "@v2/utils/enums";
-import { ISourceExtractionResult } from "@v2/types/analyzers";
-import { SELECTOR_ATTRIBUTES } from "@v2/utils/constants";
+import * as ts from 'typescript';
+
+import { BaseAnalyzer } from '@v2/core/analyzers/base';
+import { ISourceExtractionResult } from '@v2/types/analyzers';
+import { SELECTOR_ATTRIBUTES } from '@v2/utils/constants';
+import {
+  EFunctionCall,
+  ERedux,
+  EReactRouter,
+  EReactComponent,
+  EAnalyzerName,
+} from '@v2/utils/enums';
 
 /**
  * Analyzer that extracts semantic information from source files using TypeScript's Compiler API.
@@ -20,7 +27,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
   ISourceExtractionResult
 > {
   name = EAnalyzerName.SOURCE_EXTRACTOR;
-  version = "1.0.0";
+  version = '1.0.0';
 
   /**
    * Extracts AST information from the given file content.
@@ -72,7 +79,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    * analyzer.index(extractedData);
    */
   index(output: ISourceExtractionResult): void {
-    console.log("Indexing SourceExtractor output:", output.filePath);
+    console.log('Indexing SourceExtractor output:', output.filePath);
   }
 
   /**
@@ -205,7 +212,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
     if (attr.initializer && ts.isStringLiteral(attr.initializer)) {
       return attr.initializer.text;
     }
-    return "";
+    return '';
   }
 
   /**
