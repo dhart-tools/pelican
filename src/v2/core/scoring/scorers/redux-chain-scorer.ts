@@ -1,7 +1,7 @@
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { IScorerContext, ISignal, IRegistry } from "@v2/types";
-import { EScorerType, ESelectorAttr } from "@v2/utils/enums";
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal, IRegistry } from '@v2/types';
+import { EScorerType, ESelectorAttr } from '@v2/utils/enums';
 
 export class ReduxChainScorer extends BaseScorer {
   constructor() {
@@ -70,7 +70,7 @@ export class ReduxChainScorer extends BaseScorer {
     }
 
     return [
-      this.createSignal(false, "No Redux chain relationship", {
+      this.createSignal(false, 'No Redux chain relationship', {
         changedFile,
         testFile,
       }),

@@ -1,8 +1,9 @@
-import path from "path";
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { IScorerContext, ISignal } from "@v2/types";
-import { EScorerType } from "@v2/utils/enums";
+import path from 'path';
+
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal } from '@v2/types';
+import { EScorerType } from '@v2/utils/enums';
 
 export class FilenameConventionScorer extends BaseScorer {
   constructor() {
@@ -10,12 +11,12 @@ export class FilenameConventionScorer extends BaseScorer {
   }
 
   evaluate(changedFile: string, testFile: string, _context: IScorerContext): ISignal[] {
-    const changedBasename = path.basename(changedFile).replace(/\.(tsx?|jsx?)$/, "");
+    const changedBasename = path.basename(changedFile).replace(/\.(tsx?|jsx?)$/, '');
     // TODO: Handle the case for `.test.ts` / `.spec.ts` files
-    const testBasename = path.basename(testFile).replace(/\.(cy|spec)\.(ts|js)x?$/, "");
+    const testBasename = path.basename(testFile).replace(/\.(cy|spec)\.(ts|js)x?$/, '');
 
     // Normalize: lowercase and strip all non-alphanumeric characters (-, _, spaces)
-    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const normalizedChanged = normalize(changedBasename);
     const normalizedTest = normalize(testBasename);
@@ -27,7 +28,7 @@ export class FilenameConventionScorer extends BaseScorer {
         matches,
         matches
           ? `Filename convention match: ${changedBasename} ↔ ${testBasename}`
-          : "No filename match",
+          : 'No filename match',
         {
           changedFile,
           testFile,

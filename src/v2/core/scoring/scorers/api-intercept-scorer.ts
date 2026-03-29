@@ -1,7 +1,7 @@
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { IScorerContext, ISignal } from "@v2/types";
-import { EScorerType } from "@v2/utils/enums";
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal } from '@v2/types';
+import { EScorerType } from '@v2/utils/enums';
 
 export class APIInterceptScorer extends BaseScorer {
   constructor() {
@@ -15,7 +15,7 @@ export class APIInterceptScorer extends BaseScorer {
 
     if (!this.isAPIFile(changedFile)) {
       return [
-        this.createSignal(false, "Not an API file", {
+        this.createSignal(false, 'Not an API file', {
           changedFile,
           testFile,
         }),
@@ -35,7 +35,7 @@ export class APIInterceptScorer extends BaseScorer {
     }
 
     return [
-      this.createSignal(false, "No API intercept match", {
+      this.createSignal(false, 'No API intercept match', {
         changedFile,
         testFile,
       }),
@@ -44,12 +44,12 @@ export class APIInterceptScorer extends BaseScorer {
 
   private isAPIFile(filePath: string): boolean {
     return (
-      filePath.includes("/api/") || filePath.includes("/routes/") || filePath.includes("/handlers/")
+      filePath.includes('/api/') || filePath.includes('/routes/') || filePath.includes('/handlers/')
     );
   }
 
   private apiMatchesFile(urlPattern: string, filePath: string): boolean {
-    const routeSegment = urlPattern.replace(/^\/api\//, "").replace(/\*/g, "");
-    return filePath.replace(/\.[jt]sx?$/, "").endsWith(routeSegment);
+    const routeSegment = urlPattern.replace(/^\/api\//, '').replace(/\*/g, '');
+    return filePath.replace(/\.[jt]sx?$/, '').endsWith(routeSegment);
   }
 }
