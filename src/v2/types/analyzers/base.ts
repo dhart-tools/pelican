@@ -12,13 +12,13 @@
  * }
  */
 export interface ISignal {
-  source: string;              // Analyzer name
-  type: string;               // Signal type
-  weight: number;             // 0.0 - 1.0
-  originalWeight?: number;    // Weight before any dampening
+  source: string; // Analyzer name
+  type: string; // Signal type
+  weight: number; // 0.0 - 1.0
+  originalWeight?: number; // Weight before any dampening
   matched: boolean;
   metadata?: object;
-  reason?: string;            // Human-readable reason
+  reason?: string; // Human-readable reason
 }
 
 /**

@@ -74,13 +74,13 @@ export enum EAnalyzerName {
 }
 
 export enum EConfidenceLevel {
-  HIGH = "high",
-  MEDIUM = "medium",
-  LOW = "low",
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
 }
 
 export enum EScorerType {
-  DIRECT_IMPORT = "direct-import",
-  ROUTE_MATCH = "route-match",
-  SELECTOR_MATCH = "selector-match",
+  DIRECT_IMPORT = 'direct-import',
+  ROUTE_MATCH = 'route-match',
+  SELECTOR_MATCH = 'selector-match',
 }

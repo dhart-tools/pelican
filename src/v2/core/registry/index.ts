@@ -1,3 +1,3 @@
-export * from "./registry";
-export * from "./registry-builder";
-export * from "./path-utils";
+export * from './registry';
+export * from './registry-builder';
+export * from './path-utils';

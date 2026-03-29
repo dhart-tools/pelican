@@ -1,5 +1,5 @@
-import { ITranslationIndex, IReduxChain } from '@v2/types/analyzers';
 import { normalizePath } from '@v2/core/registry/path-utils';
+import { ITranslationIndex, IReduxChain } from '@v2/types/analyzers';
 import { IRegistry, IFileEntry, IImportGraph } from '@v2/types/registry';
 
 export class Registry implements IRegistry {

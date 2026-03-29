@@ -1,7 +1,7 @@
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { IScorerContext, ISignal } from "@v2/types";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { EScorerType } from "@v2/utils/enums";
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal } from '@v2/types';
+import { EScorerType } from '@v2/utils/enums';
 
 export class DirectImportScorer extends BaseScorer {
   constructor() {
@@ -19,8 +19,8 @@ export class DirectImportScorer extends BaseScorer {
         this.createSignal(true, `Test directly imports ${changedFile}`, {
           changedFile,
           testFile,
-          importType: 'direct'
-        })
+          importType: 'direct',
+        }),
       ];
     }
 
@@ -28,8 +28,8 @@ export class DirectImportScorer extends BaseScorer {
       this.createSignal(false, 'Test does not directly import this file', {
         changedFile,
         testFile,
-        importType: 'direct'
-      })
+        importType: 'direct',
+      }),
     ];
   }
 }

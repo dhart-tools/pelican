@@ -1,6 +1,6 @@
-import { EHttpMethod, ESelectorAttr } from "@v2/utils/enums";
-import { CypressExtractorAnalyzer } from "@v2/core/analyzers/cypress-extractor/cypress-extractor";
-import { ICypressSelector, IAPIIntercept, IURLAssertion } from "@v2/types/analyzers";
+import { CypressExtractorAnalyzer } from '@v2/core/analyzers/cypress-extractor/cypress-extractor';
+import { ICypressSelector, IAPIIntercept, IURLAssertion } from '@v2/types/analyzers';
+import { EHttpMethod, ESelectorAttr } from '@v2/utils/enums';
 
 describe('CypressExtractorAnalyzer', () => {
   const extractor = new CypressExtractorAnalyzer();

@@ -4,9 +4,9 @@ import {
   IScorer,
   IScorerContext,
   IRegistry,
-  ISuggestorConfig
-} from "@v2/types";
-import { EConfidenceLevel } from "@v2/utils/enums";
+  ISuggestorConfig,
+} from '@v2/types';
+import { EConfidenceLevel } from '@v2/utils/enums';
 
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
@@ -46,7 +46,7 @@ export class ScoringEngine {
         registry: this.registry,
         config: this.config,
         changedFile: changedFileEntry,
-        testFile: testFileEntry
+        testFile: testFileEntry,
       };
 
       // Collect signals from all enabled scorers
@@ -58,7 +58,7 @@ export class ScoringEngine {
         // Apply config weight override
         const weightOverride = this.config.scoring.scorerWeights?.[scorer.name];
         if (weightOverride !== undefined) {
-          (scorer as any).__effectiveWeight = weightOverride;
+          (scorer as unknown as { __effectiveWeight?: number }).__effectiveWeight = weightOverride;
         }
 
         const scorerSignals = scorer.evaluate(changedFile, testFilePath, context);
@@ -88,7 +88,7 @@ export class ScoringEngine {
         score,
         signals: dampenedSignals,
         confidence,
-        explanation
+        explanation,
       });
     }
 
@@ -108,10 +108,7 @@ export class ScoringEngine {
     const signalScores = signals.map((s) => s.weight * (s.matched ? 1 : 0));
 
     const maxScore = Math.max(...signalScores);
-    const sumOthers = signalScores.reduce(
-      (sum, score) => sum + (score < maxScore ? score : 0),
-      0
-    );
+    const sumOthers = signalScores.reduce((sum, score) => sum + (score < maxScore ? score : 0), 0);
     const tiebreaker = Math.min(sumOthers * 0.1, 0.05);
 
     return Math.min(maxScore + tiebreaker, 1.0);
@@ -204,7 +201,7 @@ export class ScoringEngine {
         ...signal,
         originalWeight: signal.weight,
         weight: signal.weight * 0.3,
-        reason: `${signal.reason || 'Unknown'} (ubiquitous component, ubiquity=${(ubiquity * 100).toFixed(0)}%)`
+        reason: `${signal.reason || 'Unknown'} (ubiquitous component, ubiquity=${(ubiquity * 100).toFixed(0)}%)`,
       };
     });
   }

@@ -129,8 +129,9 @@ export class I18nAnalyzer extends BaseAnalyzer<
       warnings.push({
         code: 'FILE_NOT_FOUND',
         filePath,
-        message: `Could not read translation file: ${filePath} — ${error instanceof Error ? error.message : String(error)
-          }`,
+        message: `Could not read translation file: ${filePath} — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       });
       return {};
     }
@@ -142,8 +143,9 @@ export class I18nAnalyzer extends BaseAnalyzer<
       warnings.push({
         code: 'INVALID_JSON',
         filePath,
-        message: `Translation file contains invalid JSON: ${filePath} — ${error instanceof Error ? error.message : String(error)
-          }`,
+        message: `Translation file contains invalid JSON: ${filePath} — ${
+          error instanceof Error ? error.message : String(error)
+        }`,
       });
       return {};
     }

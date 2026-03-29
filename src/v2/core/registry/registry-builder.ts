@@ -1,12 +1,14 @@
-import { glob } from "glob";
-import * as path from "path";
-import * as fs from "fs/promises";
-import { IRegistry, IFileEntry } from "@v2/types/registry";
-import { createRegistry } from "@v2/core/registry/registry";
-import { normalizePath } from "@v2/core/registry/path-utils";
-import { SourceExtractorAnalyzer } from "@v2/core/analyzers/source-extractor";
-import { CypressExtractorAnalyzer } from "@v2/core/analyzers/cypress-extractor";
-import { ICypressExtractionResult, ISourceExtractionResult } from "@v2/types";
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+import { glob } from 'glob';
+
+import { CypressExtractorAnalyzer } from '@v2/core/analyzers/cypress-extractor';
+import { SourceExtractorAnalyzer } from '@v2/core/analyzers/source-extractor';
+import { normalizePath } from '@v2/core/registry/path-utils';
+import { createRegistry } from '@v2/core/registry/registry';
+import { ICypressExtractionResult, ISourceExtractionResult } from '@v2/types';
+import { IRegistry, IFileEntry } from '@v2/types/registry';
 
 export interface RegistryBuilderConfig {
   /**

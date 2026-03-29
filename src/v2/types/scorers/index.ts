@@ -1,7 +1,7 @@
-import { ISignal } from "@v2/types/analyzers";
-import { IRegistry, IFileEntry } from "@v2/types/registry";
-import { ISuggestorConfig } from "@v2/types/config";
-import { EConfidenceLevel } from "@v2/utils/enums";
+import { ISignal } from '@v2/types/analyzers';
+import { ISuggestorConfig } from '@v2/types/config';
+import { IRegistry, IFileEntry } from '@v2/types/registry';
+import { EConfidenceLevel } from '@v2/utils/enums';
 
 /**
  * Defines the contract for a scorer module.

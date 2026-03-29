@@ -1,4 +1,4 @@
-import { IScorer, IScorerContext, ISignal, IScorerConfig } from "@v2/types";
+import { IScorer, IScorerContext, ISignal, IScorerConfig } from '@v2/types';
 
 /**
  * BaseScorer provides a reusable implementation of IScorer.
@@ -28,19 +28,16 @@ export abstract class BaseScorer implements IScorer {
    * @param reason   - Human-readable reason string shown in CLI output
    * @param metadata - Optional structured metadata for debugging
    */
-  protected createSignal(
-    matched: boolean,
-    reason?: string,
-    metadata?: any
-  ): ISignal {
-    const effectiveWeight = (this as any).__effectiveWeight ?? this.weight;
+  protected createSignal(matched: boolean, reason?: string, metadata?: object): ISignal {
+    const effectiveWeight =
+      (this as unknown as { __effectiveWeight?: number }).__effectiveWeight ?? this.weight;
     return {
       source: this.name,
       type: this.type,
       weight: effectiveWeight,
       matched,
       metadata,
-      reason
+      reason,
     };
   }
 }

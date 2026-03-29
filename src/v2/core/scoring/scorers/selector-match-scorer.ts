@@ -1,8 +1,8 @@
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { IScorerContext, ISignal } from "@v2/types";
-import { ESelectorAttr } from "@v2/utils/enums";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { EScorerType } from "@v2/utils/enums";
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal } from '@v2/types';
+import { ESelectorAttr } from '@v2/utils/enums';
+import { EScorerType } from '@v2/utils/enums';
 
 export class SelectorMatchScorer extends BaseScorer {
   constructor() {
@@ -26,7 +26,10 @@ export class SelectorMatchScorer extends BaseScorer {
 
     const matches: string[] = [];
     for (const testSelector of testSelectors) {
-      if (testSelector.type === ESelectorAttr.TEST_ID || testSelector.type === ESelectorAttr.DATA_CY) {
+      if (
+        testSelector.type === ESelectorAttr.TEST_ID ||
+        testSelector.type === ESelectorAttr.DATA_CY
+      ) {
         if (sourceSelectorValues.has(testSelector.value)) {
           matches.push(testSelector.value);
         }
@@ -38,8 +41,8 @@ export class SelectorMatchScorer extends BaseScorer {
         this.createSignal(true, `Test selectors match: ${matches.join(', ')}`, {
           changedFile,
           testFile,
-          matchedSelectors: matches
-        })
+          matchedSelectors: matches,
+        }),
       ];
     }
 
@@ -48,8 +51,8 @@ export class SelectorMatchScorer extends BaseScorer {
         changedFile,
         testFile,
         testSelectors,
-        sourceSelectors: [...sourceSelectorValues]
-      })
+        sourceSelectors: [...sourceSelectorValues],
+      }),
     ];
   }
 }

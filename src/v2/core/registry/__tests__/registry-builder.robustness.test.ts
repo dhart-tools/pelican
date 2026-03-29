@@ -51,7 +51,7 @@ describe('RegistryBuilder Robustness', () => {
 
   beforeEach(() => {
     builder = new RegistryBuilder();
-    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => { });
+    consoleWarnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     jest.clearAllMocks();
   });
 

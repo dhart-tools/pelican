@@ -1,7 +1,7 @@
-import { BaseScorer } from "@v2/core/scoring/scorers/base";
-import { IScorerContext, ISignal, IRegistry } from "@v2/types";
-import { getScorerConfig } from "@v2/core/scoring/scoring-config";
-import { EScorerType } from "@v2/utils/enums";
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
+import { getScorerConfig } from '@v2/core/scoring/scoring-config';
+import { IScorerContext, ISignal, IRegistry } from '@v2/types';
+import { EScorerType } from '@v2/utils/enums';
 
 export class RouteMatchScorer extends BaseScorer {
   constructor() {
@@ -23,11 +23,12 @@ export class RouteMatchScorer extends BaseScorer {
 
       if (componentPath === changedFile) {
         return [
-          this.createSignal(
-            true,
-            `Test visits ${route} which renders ${changedFile}`,
-            { changedFile, testFile, route, componentPath }
-          )
+          this.createSignal(true, `Test visits ${route} which renders ${changedFile}`, {
+            changedFile,
+            testFile,
+            route,
+            componentPath,
+          }),
         ];
       }
 
@@ -38,8 +39,8 @@ export class RouteMatchScorer extends BaseScorer {
             this.createSignal(
               true,
               `Test visits ${route}, component ${componentPath} imports ${changedFile} (depth ${depth})`,
-              { changedFile, testFile, route, componentPath, depth }
-            )
+              { changedFile, testFile, route, componentPath, depth },
+            ),
           ];
         }
       }
@@ -49,8 +50,8 @@ export class RouteMatchScorer extends BaseScorer {
       this.createSignal(false, `Test routes do not relate to ${changedFile}`, {
         changedFile,
         testFile,
-        visitedRoutes
-      })
+        visitedRoutes,
+      }),
     ];
   }
 
@@ -59,7 +60,7 @@ export class RouteMatchScorer extends BaseScorer {
     targetPath: string,
     registry: IRegistry,
     depth: number = 1,
-    maxDepth: number = 3
+    maxDepth: number = 3,
   ): number | null {
     if (depth > maxDepth) return null;
 
@@ -67,7 +68,13 @@ export class RouteMatchScorer extends BaseScorer {
     if (deps.has(targetPath)) return depth;
 
     for (const dep of deps) {
-      const result = this.findTransitiveDependencies(dep, targetPath, registry, depth + 1, maxDepth);
+      const result = this.findTransitiveDependencies(
+        dep,
+        targetPath,
+        registry,
+        depth + 1,
+        maxDepth,
+      );
       if (result !== null) return result;
     }
 
