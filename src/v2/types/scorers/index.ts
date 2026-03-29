@@ -1,6 +1,7 @@
 import { ISignal } from "@v2/types/analyzers";
 import { IRegistry, IFileEntry } from "@v2/types/registry";
 import { ISuggestorConfig } from "@v2/types/config";
+import { EConfidenceLevel } from "@v2/utils/enums";
 
 /**
  * Defines the contract for a scorer module.
@@ -25,6 +26,6 @@ export interface IScoreResult {
   testFile: string;
   score: number;
   signals: ISignal[];
-  confidence: 'high' | 'medium' | 'low';
+  confidence: EConfidenceLevel;
   explanation: string;
 }

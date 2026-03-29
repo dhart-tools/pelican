@@ -4,7 +4,7 @@ export interface IFileEntry {
   name: string;
   type: "source" | "test";
   path: string;
-  
+
   // From Source Extraction
   exports: string[];
   imports: string[];

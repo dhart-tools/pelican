@@ -73,3 +73,9 @@ export enum EAnalyzerName {
   I18N_ANALYZER = "i18n-analyzer",
 }
 
+export enum EConfidenceLevel {
+  HIGH = "high",
+  MEDIUM = "medium",
+  LOW = "low",
+}
+

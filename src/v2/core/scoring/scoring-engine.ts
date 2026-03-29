@@ -6,6 +6,7 @@ import {
   IRegistry,
   ISuggestorConfig
 } from "@v2/types";
+import { EConfidenceLevel } from "@v2/utils/enums";
 
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
@@ -119,13 +120,13 @@ export class ScoringEngine {
   /**
    * Maps a numeric score to a human-readable confidence band.
    */
-  private calculateConfidence(score: number): 'high' | 'medium' | 'low' {
+  private calculateConfidence(score: number): EConfidenceLevel {
     const highConfidence = this.config.scoring.highConfidence ?? 0.8;
     const minConfidence = this.config.scoring.minConfidence ?? 0.4;
 
-    if (score >= highConfidence) return 'high';
-    if (score >= minConfidence) return 'medium';
-    return 'low';
+    if (score >= highConfidence) return EConfidenceLevel.HIGH;
+    if (score >= minConfidence) return EConfidenceLevel.MEDIUM;
+    return EConfidenceLevel.LOW;
   }
 
   /**

@@ -1,6 +1,7 @@
 import { ScoringEngine } from "@v2/core/scoring/scoring-engine";
 import { DirectImportScorer } from "@v2/core/scoring/scorers/direct-import-scorer";
 import { ISuggestorConfig, IRegistry, IFileEntry } from "@v2/types";
+import { EConfidenceLevel } from "@v2/utils/enums";
 
 describe("ScoringEngine", () => {
   let engine: ScoringEngine;
@@ -34,7 +35,7 @@ describe("ScoringEngine", () => {
    * changedFile: "src/Button.tsx"
    * testFile: "src/__tests__/Button.test.tsx" (imports Button.tsx)
    * 
-   * @expected Score >= 0.95, Confidence: 'high'
+   * @expected Score >= 0.95, Confidence: EConfidenceLevel.HIGH
    */
   test("evaluateTests(): should score a direct import match highly", () => {
     const changedFile = "src/Button.tsx";
@@ -53,7 +54,7 @@ describe("ScoringEngine", () => {
 
     expect(results.length).toBe(1);
     expect(results[0].score).toBeGreaterThanOrEqual(0.95);
-    expect(results[0].confidence).toBe("high");
+    expect(results[0].confidence).toBe(EConfidenceLevel.HIGH);
     expect(results[0].signals[0].matched).toBe(true);
   });
 
@@ -64,7 +65,7 @@ describe("ScoringEngine", () => {
    * changedFile: "src/utils.ts" (imported by 90% of files)
    * threshold: 0.7
    * 
-   * @expected Original weight 0.95 dampened to 0.285 (0.95 * 0.3), Confidence: 'low'
+   * @expected Original weight 0.95 dampened to 0.285 (0.95 * 0.3), Confidence: EConfidenceLevel.LOW
    */
   test("evaluateTests(): should dampen scores for ubiquitous files", () => {
     const changedFile = "src/utils.ts";
@@ -83,7 +84,7 @@ describe("ScoringEngine", () => {
     const results = engine.evaluateTests(changedFile, [testFile]);
 
     expect(results[0].score).toBeLessThan(0.4); 
-    expect(results[0].confidence).toBe("low");
+    expect(results[0].confidence).toBe(EConfidenceLevel.LOW);
     expect(results[0].signals[0].reason).toContain("ubiquitous component");
   });
 
