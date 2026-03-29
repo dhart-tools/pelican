@@ -23,6 +23,13 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'selector-match',
     weight: 0.8,
   },
+  [EScorerType.TRANSLATION_MATCH]: {
+    name: EScorerType.TRANSLATION_MATCH,
+    version: '1.0.0',
+    description: 'Scores based on translation markers and text matches between test and source',
+    type: 'translation-match',
+    weight: 0.85,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {
