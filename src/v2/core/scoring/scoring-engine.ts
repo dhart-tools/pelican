@@ -139,19 +139,19 @@ export class ScoringEngine {
     if (matched.length === 0) {
       const unmatchedDesc = unmatched
         .slice(0, 3)
-        .map((s) => `${s.source} — ${s.reason || s.type}`)
+        .map((s) => this.formatSignal(s))
         .join('; ');
       return `No strong signals detected. Checked: ${unmatchedDesc || 'none'}`;
     }
 
     const topMatched = matched
       .slice(0, 3)
-      .map((s) => `${s.reason || s.type} (${(s.weight * 100).toFixed(0)}%)`)
+      .map((s) => this.formatSignal(s, true))
       .join(', ');
 
     const topUnmatched = unmatched
       .slice(0, 3)
-      .map((s) => `${s.source} — ${s.reason || s.type}`)
+      .map((s) => this.formatSignal(s))
       .join('; ');
 
     let explanation = `Matched by: ${topMatched}. Score: ${score.toFixed(2)}`;
@@ -159,6 +159,21 @@ export class ScoringEngine {
       explanation += `. Not matched: ${topUnmatched}`;
     }
     return explanation;
+  }
+
+  /**
+   * Standardizes the way signals are formatted for human readability.
+   */
+  private formatSignal(signal: ISignal, includeWeight: boolean = false): string {
+    const description = signal.reason || signal.type;
+    const sourcePath = signal.source ? `${signal.source} — ` : '';
+    const weightSuffix = includeWeight ? ` (${(signal.weight * 100).toFixed(0)}%)` : '';
+
+    if (!includeWeight) {
+      return `${sourcePath}${description}`;
+    }
+
+    return `${description}${weightSuffix}`;
   }
 
   /**
