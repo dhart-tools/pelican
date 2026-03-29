@@ -1,8 +1,16 @@
-import { ITranslationIndex, IReduxChain, ISourceSelector, IRouteDef, ICypressSelector, IAPIIntercept, IURLAssertion } from "@v2/types/analyzers";
+import {
+  ITranslationIndex,
+  IReduxChain,
+  ISourceSelector,
+  IRouteDef,
+  ICypressSelector,
+  IAPIIntercept,
+  IURLAssertion,
+} from '@v2/types/analyzers';
 
 export interface IFileEntry {
   name: string;
-  type: "source" | "test";
+  type: 'source' | 'test';
   path: string;
 
   // From Source Extraction
@@ -36,8 +44,8 @@ export interface IFileEntry {
 }
 
 export interface IImportGraph {
-  dependencies: Map<string, Set<string>>;    // file → files it imports
-  dependents: Map<string, Set<string>>;      // file → files that import it
+  dependencies: Map<string, Set<string>>; // file → files it imports
+  dependents: Map<string, Set<string>>; // file → files that import it
 }
 
 export interface IRegistry {

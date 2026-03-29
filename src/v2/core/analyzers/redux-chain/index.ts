@@ -1,1 +1,1 @@
-export * from "./redux-chain-analyzer";
+export * from './redux-chain-analyzer';

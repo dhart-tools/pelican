@@ -1,16 +1,12 @@
-import {
-  IRegistry,
-  IFileEntry,
-  IImportGraph,
-} from '@v2/types/registry';
 import { ITranslationIndex, IReduxChain } from '@v2/types/analyzers';
 import { normalizePath } from '@v2/core/registry/path-utils';
+import { IRegistry, IFileEntry, IImportGraph } from '@v2/types/registry';
 
 export class Registry implements IRegistry {
   public files: Map<string, IFileEntry> = new Map();
   public importGraph: IImportGraph = {
     dependencies: new Map(),
-    dependents: new Map()
+    dependents: new Map(),
   };
 
   // Indexes (internal)
@@ -21,7 +17,7 @@ export class Registry implements IRegistry {
     textToKeys: new Map(),
     keyToFiles: new Map(),
     dynamicKeys: new Set(),
-    keyToStaticText: new Map()
+    keyToStaticText: new Map(),
   };
   private reduxChains: Map<string, IReduxChain> = new Map();
   private textIndex: Map<string, Set<string>> = new Map();
@@ -101,7 +97,7 @@ export class Registry implements IRegistry {
       const normalizedEntry = {
         ...entry,
         path: normalizePath(entry.path),
-        imports: entry.imports.map(p => normalizePath(p))
+        imports: entry.imports.map((p) => normalizePath(p)),
       };
       this.files.set(normalizedEntry.path, normalizedEntry);
     }
@@ -173,7 +169,7 @@ export class Registry implements IRegistry {
     const normalizedEntry = {
       ...entry,
       path: normalizePath(entry.path),
-      imports: entry.imports.map(p => normalizePath(p))
+      imports: entry.imports.map((p) => normalizePath(p)),
     };
 
     // IMPORTANT: Remove stale import graph edges before re-adding.
@@ -258,30 +254,29 @@ export class Registry implements IRegistry {
     const data = {
       files: Array.from(this.files.entries()),
       importGraph: {
-        dependencies: Array.from(this.importGraph.dependencies.entries()).map(
-          ([k, v]) => [k, Array.from(v)]
-        ),
-        dependents: Array.from(this.importGraph.dependents.entries()).map(
-          ([k, v]) => [k, Array.from(v)]
-        )
+        dependencies: Array.from(this.importGraph.dependencies.entries()).map(([k, v]) => [
+          k,
+          Array.from(v),
+        ]),
+        dependents: Array.from(this.importGraph.dependents.entries()).map(([k, v]) => [
+          k,
+          Array.from(v),
+        ]),
       },
-      selectorIndex: Array.from(this.selectorIndex.entries()).map(
-        ([k, v]) => [k, Array.from(v)]
-      ),
+      selectorIndex: Array.from(this.selectorIndex.entries()).map(([k, v]) => [k, Array.from(v)]),
       routeMap: Array.from(this.routeMap.entries()),
       translationIndex: {
         keyToText: Array.from(this.translationIndex.keyToText.entries()),
         textToKeys: Array.from(this.translationIndex.textToKeys.entries()),
-        keyToFiles: Array.from(this.translationIndex.keyToFiles.entries()).map(
-          ([k, v]) => [k, Array.from(v)]
-        ),
+        keyToFiles: Array.from(this.translationIndex.keyToFiles.entries()).map(([k, v]) => [
+          k,
+          Array.from(v),
+        ]),
         dynamicKeys: Array.from(this.translationIndex.dynamicKeys),
-        keyToStaticText: Array.from(this.translationIndex.keyToStaticText.entries())
+        keyToStaticText: Array.from(this.translationIndex.keyToStaticText.entries()),
       },
       reduxChains: Array.from(this.reduxChains.entries()),
-      textIndex: Array.from(this.textIndex.entries()).map(
-        ([k, v]) => [k, Array.from(v)]
-      )
+      textIndex: Array.from(this.textIndex.entries()).map(([k, v]) => [k, Array.from(v)]),
     };
 
     return JSON.stringify(data, null, 2);
@@ -293,14 +288,14 @@ export class Registry implements IRegistry {
     this.files = new Map(parsed.files);
 
     this.importGraph.dependencies = new Map(
-      parsed.importGraph.dependencies.map(([k, v]: [string, string[]]) => [k, new Set(v)])
+      parsed.importGraph.dependencies.map(([k, v]: [string, string[]]) => [k, new Set(v)]),
     );
     this.importGraph.dependents = new Map(
-      parsed.importGraph.dependents.map(([k, v]: [string, string[]]) => [k, new Set(v)])
+      parsed.importGraph.dependents.map(([k, v]: [string, string[]]) => [k, new Set(v)]),
     );
 
     this.selectorIndex = new Map(
-      parsed.selectorIndex.map(([k, v]: [string, string[]]) => [k, new Set(v)])
+      parsed.selectorIndex.map(([k, v]: [string, string[]]) => [k, new Set(v)]),
     );
 
     this.routeMap = new Map(parsed.routeMap);
@@ -309,17 +304,15 @@ export class Registry implements IRegistry {
       keyToText: new Map(parsed.translationIndex.keyToText),
       textToKeys: new Map(parsed.translationIndex.textToKeys),
       keyToFiles: new Map(
-        parsed.translationIndex.keyToFiles.map(([k, v]: [string, string[]]) => [k, new Set(v)])
+        parsed.translationIndex.keyToFiles.map(([k, v]: [string, string[]]) => [k, new Set(v)]),
       ),
       dynamicKeys: new Set(parsed.translationIndex.dynamicKeys || []),
-      keyToStaticText: new Map(parsed.translationIndex.keyToStaticText || [])
+      keyToStaticText: new Map(parsed.translationIndex.keyToStaticText || []),
     };
 
     this.reduxChains = new Map(parsed.reduxChains);
 
-    this.textIndex = new Map(
-      parsed.textIndex.map(([k, v]: [string, string[]]) => [k, new Set(v)])
-    );
+    this.textIndex = new Map(parsed.textIndex.map(([k, v]: [string, string[]]) => [k, new Set(v)]));
   }
 }
 

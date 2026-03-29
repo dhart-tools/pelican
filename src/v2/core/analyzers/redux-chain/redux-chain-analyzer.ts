@@ -1,16 +1,12 @@
-import * as ts from "typescript";
-import { BaseAnalyzer } from "@v2/core/analyzers/base";
-import {
-  IReduxChain,
-  IReduxExtractionResult,
-  SelectorMetadata,
-  SagaMetadata,
-} from "@v2/types/analyzers";
-import { ERedux, EFunctionCall, EReduxRole, EAnalyzerName } from "@v2/utils/enums";
+import * as ts from 'typescript';
+
+import { BaseAnalyzer } from '@v2/core/analyzers/base';
+import { IReduxChain, IReduxExtractionResult, SagaMetadata } from '@v2/types/analyzers';
+import { ERedux, EFunctionCall, EReduxRole, EAnalyzerName } from '@v2/utils/enums';
 
 /**
  * ReduxChainAnalyzer: Detects and builds Redux chains (actions -> reducer -> selectors -> sagas).
- * 
+ *
  * This analyzer is unique because it works in two phases:
  * 1. Extraction: Scans single files for Redux patterns (roles, actions, selectors).
  * 2. Reconciliation: Link these files together into "Chains" based on slice names and imports.
@@ -20,7 +16,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
   IReduxExtractionResult
 > {
   name = EAnalyzerName.REDUX_CHAIN_ANALYZER;
-  version = "1.0.0";
+  version = '1.0.0';
   dependencies = [EAnalyzerName.SOURCE_EXTRACTOR]; // Needs imports from source-extractor for consumer logic
 
   /**
@@ -50,7 +46,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
    * This would typically store the single file result in a registry.
    */
   index(output: IReduxExtractionResult): void {
-    console.log("Indexing Redux Extraction:", output.filePath, "as", output.role);
+    console.log('Indexing Redux Extraction:', output.filePath, 'as', output.role);
   }
 
   /**
@@ -202,7 +198,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
           }
 
           // Extract actions defined in the slice
-          if (propName === "reducers") {
+          if (propName === 'reducers') {
             this.extractActionCreators(prop.initializer, result);
           }
         }
@@ -233,7 +229,7 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
   private detectGeneratorSaga(node: ts.FunctionDeclaration, result: IReduxExtractionResult): void {
     result.role = EReduxRole.SAGAS;
     const sagaMetadata: SagaMetadata = {
-      name: node.name?.getText() || "anonymous",
+      name: node.name?.getText() || 'anonymous',
       actionsTaken: [],
       actionsPut: [],
     };
@@ -248,10 +244,10 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
       const firstParam = node.parameters[0];
 
       // Simple selector check: (state: RootState) => ...
-      if (firstParam.type?.getText().includes("RootState")) {
+      if (firstParam.type?.getText().includes('RootState')) {
         result.role = EReduxRole.SELECTORS;
         result.selectors.push({
-          name: node.name?.getText() || "anonymous",
+          name: node.name?.getText() || 'anonymous',
           usesRootState: true,
           selectorDependencies: [],
         });
@@ -284,11 +280,11 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
       }
       current = current.parent;
     }
-    return "anonymous-selector";
+    return 'anonymous-selector';
   }
 
   private extractSliceNameFromPath(filePath: string): string | undefined {
-    const match = filePath.match(/(?:store|state|features|redux)\/([^\/]+)\//);
+    const match = filePath.match(/(?:store|state|features|redux)\/([^/]+)\//);
     return match ? match[1] : undefined;
   }
 }

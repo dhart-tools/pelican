@@ -1,14 +1,15 @@
-import * as fs from "fs";
-import * as path from "path";
-import { BaseAnalyzer } from "@v2/core/analyzers/base";
+import * as fs from 'fs';
+import * as path from 'path';
+
+import { BaseAnalyzer } from '@v2/core/analyzers/base';
 import {
   II18nExtractionResult,
   ITranslationIndex,
   II18nLibraryConfig,
   II18nWarning,
   ISourceExtractionResult,
-} from "@v2/types/analyzers";
-import { EAnalyzerName } from "@v2/utils/enums";
+} from '@v2/types/analyzers';
+import { EAnalyzerName } from '@v2/utils/enums';
 
 /**
  * i18nAnalyzer: Resolves translation keys to their translated text and builds a mapping.
@@ -22,7 +23,7 @@ export class I18nAnalyzer extends BaseAnalyzer<
   II18nExtractionResult
 > {
   name = EAnalyzerName.I18N_ANALYZER;
-  version = "1.0.0";
+  version = '1.0.0';
   dependencies = [EAnalyzerName.SOURCE_EXTRACTOR];
 
   // ─── Interpolation patterns ───────────────────────────────────────────────
@@ -64,7 +65,7 @@ export class I18nAnalyzer extends BaseAnalyzer<
    * Required by BaseAnalyzer, but indexing for i18n is typically handled globally.
    */
   index(output: II18nExtractionResult): void {
-    console.log("Indexing i18n Analysis for locale:", output.locale);
+    console.log('Indexing i18n Analysis for locale:', output.locale);
   }
 
   // ─── Translation File Loading ─────────────────────────────────────────────
@@ -83,16 +84,16 @@ export class I18nAnalyzer extends BaseAnalyzer<
 
     const locale = config.defaultLocale;
 
-    if (config.structure === "single") {
-      const filePath = config.localesPath.replace("{locale}", locale);
+    if (config.structure === 'single') {
+      const filePath = config.localesPath.replace('{locale}', locale);
       const translations = await this.loadJSONFile(filePath, warnings);
-      this.addToIndex(index, translations, "");
+      this.addToIndex(index, translations, '');
     } else {
-      const dir = path.dirname(config.localesPath).replace("{locale}", locale);
+      const dir = path.dirname(config.localesPath).replace('{locale}', locale);
 
       if (!fs.existsSync(dir)) {
         warnings.push({
-          code: "LOCALE_DIR_MISSING",
+          code: 'LOCALE_DIR_MISSING',
           filePath: dir,
           message: `Locale directory not found: ${dir}. Check that 'localesPath' and 'defaultLocale' are correct in your config.`,
         });
@@ -101,10 +102,10 @@ export class I18nAnalyzer extends BaseAnalyzer<
 
       const files = fs.readdirSync(dir);
       for (const file of files) {
-        if (file.endsWith(".json")) {
+        if (file.endsWith('.json')) {
           const filePath = path.join(dir, file);
           const translations = await this.loadJSONFile(filePath, warnings);
-          const namespace = file.replace(".json", "");
+          const namespace = file.replace('.json', '');
           this.addToIndex(index, translations, namespace);
         }
       }
@@ -123,12 +124,13 @@ export class I18nAnalyzer extends BaseAnalyzer<
     let content: string;
 
     try {
-      content = await fs.promises.readFile(filePath, "utf-8");
-    } catch (error: any) {
+      content = await fs.promises.readFile(filePath, 'utf-8');
+    } catch (error: unknown) {
       warnings.push({
-        code: "FILE_NOT_FOUND",
+        code: 'FILE_NOT_FOUND',
         filePath,
-        message: `Could not read translation file: ${filePath} — ${error.message}`,
+        message: `Could not read translation file: ${filePath} — ${error instanceof Error ? error.message : String(error)
+          }`,
       });
       return {};
     }
@@ -136,18 +138,19 @@ export class I18nAnalyzer extends BaseAnalyzer<
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(content);
-    } catch (error: any) {
+    } catch (error: unknown) {
       warnings.push({
-        code: "INVALID_JSON",
+        code: 'INVALID_JSON',
         filePath,
-        message: `Translation file contains invalid JSON: ${filePath} — ${error.message}`,
+        message: `Translation file contains invalid JSON: ${filePath} — ${error instanceof Error ? error.message : String(error)
+          }`,
       });
       return {};
     }
 
     if (Object.keys(parsed).length === 0) {
       warnings.push({
-        code: "EMPTY_TRANSLATION_FILE",
+        code: 'EMPTY_TRANSLATION_FILE',
         filePath,
         message: `Translation file loaded but contains no keys: ${filePath}. This may indicate a wrong path.`,
       });
@@ -178,7 +181,7 @@ export class I18nAnalyzer extends BaseAnalyzer<
       const value = obj[key];
       const fullKey = prefix ? `${prefix}.${key}` : key;
 
-      if (typeof value === "string") {
+      if (typeof value === 'string') {
         index.keyToText.set(fullKey, value);
 
         const existingKeys = index.textToKeys.get(value) || [];
@@ -200,7 +203,7 @@ export class I18nAnalyzer extends BaseAnalyzer<
             }
           }
         }
-      } else if (typeof value === "object" && value !== null) {
+      } else if (typeof value === 'object' && value !== null) {
         this.traverseTranslations(index, value as Record<string, unknown>, fullKey);
       }
     }
@@ -219,9 +222,9 @@ export class I18nAnalyzer extends BaseAnalyzer<
     let stripped = value;
     for (const pattern of this.INTERPOLATION_PATTERNS) {
       pattern.lastIndex = 0;
-      stripped = stripped.replace(pattern, "");
+      stripped = stripped.replace(pattern, '');
     }
-    return stripped.replace(/\s+/g, " ").trim();
+    return stripped.replace(/\s+/g, ' ').trim();
   }
 
   // ─── Key → File Mapping ───────────────────────────────────────────────────

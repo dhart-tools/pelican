@@ -6,6 +6,7 @@ import { createRegistry } from "@v2/core/registry/registry";
 import { normalizePath } from "@v2/core/registry/path-utils";
 import { SourceExtractorAnalyzer } from "@v2/core/analyzers/source-extractor";
 import { CypressExtractorAnalyzer } from "@v2/core/analyzers/cypress-extractor";
+import { ICypressExtractionResult, ISourceExtractionResult } from "@v2/types";
 
 export interface RegistryBuilderConfig {
   /**
@@ -51,8 +52,8 @@ export class RegistryBuilder {
   async buildFromDirectories(config: RegistryBuilderConfig): Promise<IRegistry> {
     this.projectRoot = config.projectRoot ?? process.cwd();
 
-    const extensions = config.sourceExtensions ?? [".ts", ".tsx", ".js", ".jsx"];
-    const ignoreDirs = config.ignoreDirs ?? ["node_modules", "dist", "build", ".next", "coverage"];
+    const extensions = config.sourceExtensions ?? ['.ts', '.tsx', '.js', '.jsx'];
+    const ignoreDirs = config.ignoreDirs ?? ['node_modules', 'dist', 'build', '.next', 'coverage'];
 
     const fileEntries: IFileEntry[] = [];
     const sourceExtractor = new SourceExtractorAnalyzer();
@@ -64,7 +65,7 @@ export class RegistryBuilder {
 
     for (const filePath of sourceFiles) {
       try {
-        const sourceCode = await fs.readFile(filePath, "utf-8");
+        const sourceCode = await fs.readFile(filePath, 'utf-8');
         const result = await sourceExtractor.extract({ filePath, sourceCode });
         fileEntries.push(this.convertSourceExtractionToFileEntry(result, filePath));
       } catch (error) {
@@ -78,7 +79,7 @@ export class RegistryBuilder {
 
     for (const filePath of testFiles) {
       try {
-        const sourceCode = await fs.readFile(filePath, "utf-8");
+        const sourceCode = await fs.readFile(filePath, 'utf-8');
         const result = await cypressExtractor.extract({ filePath, sourceCode });
         fileEntries.push(this.convertCypressExtractionToFileEntry(result, filePath));
       } catch (error) {
@@ -105,7 +106,7 @@ export class RegistryBuilder {
     extensions: string[],
     ignoreDirs: string[],
   ): Promise<string[]> {
-    const extPattern = extensions.length === 1 ? extensions[0] : `{${extensions.join(",")}}`;
+    const extPattern = extensions.length === 1 ? extensions[0] : `{${extensions.join(',')}}`;
 
     const patterns = sourceDirs.map((dir) => `${dir}/**/*${extPattern}`);
     const ignorePatterns = ignoreDirs.map((d) => `**/${d}/**`);
@@ -142,10 +143,13 @@ export class RegistryBuilder {
     return files.map((f) => normalizePath(f, this.projectRoot));
   }
 
-  private convertSourceExtractionToFileEntry(result: any, filePath: string): IFileEntry {
+  private convertSourceExtractionToFileEntry(
+    result: ISourceExtractionResult,
+    filePath: string,
+  ): IFileEntry {
     return {
       name: path.basename(filePath),
-      type: "source",
+      type: 'source',
       path: normalizePath(filePath, this.projectRoot),
       exports: result.exports ?? [],
       imports: (result.imports ?? []).map((p: string) => normalizePath(p, this.projectRoot)),
@@ -161,10 +165,13 @@ export class RegistryBuilder {
     };
   }
 
-  private convertCypressExtractionToFileEntry(result: any, filePath: string): IFileEntry {
+  private convertCypressExtractionToFileEntry(
+    result: ICypressExtractionResult,
+    filePath: string,
+  ): IFileEntry {
     return {
       name: path.basename(filePath),
-      type: "test",
+      type: 'test',
       path: normalizePath(filePath, this.projectRoot),
       exports: [],
       // Cypress spec files import page objects, helpers, fixtures, and custom command modules.

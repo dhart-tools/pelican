@@ -1,1 +1,1 @@
-export * from "./source-extractor";
+export * from './source-extractor';

@@ -1,12 +1,13 @@
-import * as ts from "typescript";
-import { BaseAnalyzer } from "@v2/core/analyzers/base";
-import { ICypressExtractionResult, ICypressSelector } from "@v2/types/analyzers";
+import * as ts from 'typescript';
+
+import { BaseAnalyzer } from '@v2/core/analyzers/base';
+import { ICypressExtractionResult, ICypressSelector } from '@v2/types/analyzers';
 import {
   BUILTIN_CYPRESS_COMMANDS,
   REGEX_TEST_ID,
   REGEX_DATA_CY,
   REGEX_SELECTOR_SPLIT,
-} from "@v2/utils/constants";
+} from '@v2/utils/constants';
 import {
   ECypressCommand,
   EHttpMethod,
@@ -14,7 +15,7 @@ import {
   EAssertionType,
   ESelectorAttr,
   EAnalyzerName,
-} from "@v2/utils/enums";
+} from '@v2/utils/enums';
 /**
  * Analyzer that extracts semantic information from Cypress test files.
  *
@@ -31,14 +32,14 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
   ICypressExtractionResult
 > {
   name = EAnalyzerName.CYPRESS_EXTRACTOR;
-  version = "1.0.0";
+  version = '1.0.0';
   dependencies = [];
 
   /**
    * Placeholder implementation for indexing.
    * @param output The result of the extraction
    */
-  index(output: ICypressExtractionResult): void {
+  index(_output: ICypressExtractionResult): void {
     // Placeholder implementation for indexing
   }
 
@@ -232,7 +233,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       };
     }
 
-    if (cssSelector.startsWith("#")) {
+    if (cssSelector.startsWith('#')) {
       return {
         type: ESelectorAttr.ID,
         value: cssSelector.substring(1).split(REGEX_SELECTOR_SPLIT)[0],
@@ -240,7 +241,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       };
     }
 
-    if (cssSelector.startsWith(".")) {
+    if (cssSelector.startsWith('.')) {
       return {
         type: ESelectorAttr.CLASS,
         value: cssSelector.substring(1).split(REGEX_SELECTOR_SPLIT)[0],
@@ -282,8 +283,8 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
    * @param result The result object to populate.
    */
   private extractIntercept(node: ts.CallExpression, result: ICypressExtractionResult): void {
-    let method = "";
-    let urlPattern = "";
+    let method = '';
+    let urlPattern = '';
 
     if (node.arguments.length === 1) {
       const arg = node.arguments[0];
@@ -341,7 +342,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
           if (ts.isStringLiteral(firstArg)) {
             const operator = firstArg.text;
 
-            let expectedValue = "";
+            let expectedValue = '';
             if (shouldArgs.length > 1 && ts.isStringLiteral(shouldArgs[1])) {
               expectedValue = shouldArgs[1].text;
             }
@@ -366,7 +367,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
 
     if (ts.isPropertyAccessExpression(expr)) {
       const obj = expr.expression;
-      if (ts.isIdentifier(obj) && obj.text === "cy") {
+      if (ts.isIdentifier(obj) && obj.text === 'cy') {
         return true;
       }
     }
@@ -391,6 +392,6 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       return expr.text;
     }
 
-    return "";
+    return '';
   }
 }

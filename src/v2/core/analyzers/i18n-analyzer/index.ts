@@ -1,1 +1,1 @@
-export * from "./i18n-analyzer";
+export * from './i18n-analyzer';

@@ -17,7 +17,7 @@ export interface ISignal {
   weight: number;             // 0.0 - 1.0
   originalWeight?: number;    // Weight before any dampening
   matched: boolean;
-  metadata?: any;
+  metadata?: object;
   reason?: string;            // Human-readable reason
 }
 

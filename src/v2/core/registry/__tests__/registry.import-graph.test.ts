@@ -7,22 +7,34 @@ describe('Registry — import graph', () => {
       type: 'source' as const,
       name: 'LoginPage.tsx',
       imports: ['src/components/LoginForm.tsx', 'src/services/AuthService.ts'],
-      exports: [], classes: [], functions: [], interfaces: [], keywords: []
+      exports: [],
+      classes: [],
+      functions: [],
+      interfaces: [],
+      keywords: [],
     },
     {
       path: 'src/components/LoginForm.tsx',
       type: 'source' as const,
       name: 'LoginForm.tsx',
       imports: ['src/services/AuthService.ts'],
-      exports: [], classes: [], functions: [], interfaces: [], keywords: []
+      exports: [],
+      classes: [],
+      functions: [],
+      interfaces: [],
+      keywords: [],
     },
     {
       path: 'src/services/AuthService.ts',
       type: 'source' as const,
       name: 'AuthService.ts',
       imports: [],
-      exports: [], classes: [], functions: [], interfaces: [], keywords: []
-    }
+      exports: [],
+      classes: [],
+      functions: [],
+      interfaces: [],
+      keywords: [],
+    },
   ];
 
   it('builds forward dependency edges', () => {
