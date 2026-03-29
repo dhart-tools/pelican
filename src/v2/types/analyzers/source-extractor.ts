@@ -1,3 +1,5 @@
+import { IRouteDef } from '@v2/types/analyzers/route-analyzer';
+
 /**
  * The output structure for the SourceExtractor analyzer.
  * Represents the semantic information extracted from a source file.
@@ -29,10 +31,4 @@ export interface ISourceExtractionResult {
 export interface ISourceSelector {
   attr: string;
   value: string;
-}
-
-/** Represents a route definition */
-export interface IRouteDef {
-  path: string;
-  component: string;
 }
