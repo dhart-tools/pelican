@@ -85,4 +85,10 @@ export enum EScorerType {
   ROUTE_MATCH = 'route-match',
   SELECTOR_MATCH = 'selector-match',
   TRANSLATION_MATCH = 'translation-match',
+  REDUX_CHAIN = 'redux-chain',
+  TRANSITIVE_IMPORT = 'transitive-import',
+  REDUX_CONSUMER = 'redux-consumer',
+  SELECTOR_ID_MATCH = 'selector-id-match',
+  FILENAME_MATCH = 'filename-match',
+  API_INTERCEPT = 'api-intercept',
 }

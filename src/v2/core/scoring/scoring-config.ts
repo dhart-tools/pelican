@@ -30,6 +30,48 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'translation-match',
     weight: 0.85,
   },
+  [EScorerType.REDUX_CHAIN]: {
+    name: EScorerType.REDUX_CHAIN,
+    version: '1.0.0',
+    description: 'Scores based on Redux chain relationships',
+    type: 'redux-chain',
+    weight: 0.75,
+  },
+  [EScorerType.TRANSITIVE_IMPORT]: {
+    name: EScorerType.TRANSITIVE_IMPORT,
+    version: '1.0.0',
+    description: 'Scores based on transitive imports (depth 1)',
+    type: 'transitive-import',
+    weight: 0.7,
+  },
+  [EScorerType.REDUX_CONSUMER]: {
+    name: EScorerType.REDUX_CONSUMER,
+    version: '1.0.0',
+    description: 'Scores based on Redux selector/action usage',
+    type: 'redux-consumer',
+    weight: 0.65,
+  },
+  [EScorerType.SELECTOR_ID_MATCH]: {
+    name: EScorerType.SELECTOR_ID_MATCH,
+    version: '1.0.0',
+    description: 'Scores based on ID selector matches',
+    type: 'selector-id-match',
+    weight: 0.65,
+  },
+  [EScorerType.FILENAME_MATCH]: {
+    name: EScorerType.FILENAME_MATCH,
+    version: '1.0.0',
+    description: 'Scores based on filename naming conventions',
+    type: 'filename-match',
+    weight: 0.6,
+  },
+  [EScorerType.API_INTERCEPT]: {
+    name: EScorerType.API_INTERCEPT,
+    version: '1.0.0',
+    description: 'Scores based on API intercept matches',
+    type: 'api-intercept',
+    weight: 0.55,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {
