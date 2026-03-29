@@ -5,7 +5,7 @@ import { EScorerType } from '@v2/utils/enums';
 
 /**
  * Scorer that matches Cypress text content to source translation keys.
- * 
+ *
  * It distinguishes between exact matches (static keys) and partial matches (dynamic keys).
  * Fits the Cypress `contains()` behavior by checking for substrings.
  */
@@ -41,7 +41,7 @@ export class TranslationMatchScorer extends BaseScorer {
       for (const key of keys) {
         // Use includes() to mirror Cypress contains() substring behaviour.
         // cy.contains('Sign In') matches a button labelled 'Sign In Now' too.
-        const sourceUsesKey = translationKeys.some(k => k.includes(key) || key.includes(k));
+        const sourceUsesKey = translationKeys.some((k) => k.includes(key) || key.includes(k));
 
         if (sourceUsesKey) {
           const isDynamic = translationIndex.dynamicKeys.has(key);
@@ -52,13 +52,15 @@ export class TranslationMatchScorer extends BaseScorer {
               isDynamic
                 ? `Test contains "${text}" which partially matches dynamic key "${key}" (interpolated value) used in source file`
                 : `Test contains "${text}" which maps to key "${key}" used in source file`,
-              { changedFile, testFile, text, key, isDynamic }
-            )
+              { changedFile, testFile, text, key, isDynamic },
+            ),
           ];
         }
       }
     }
 
-    return [this.createSignal(false, 'No translation matches found between test text and source keys')];
+    return [
+      this.createSignal(false, 'No translation matches found between test text and source keys'),
+    ];
   }
 }

@@ -1,6 +1,7 @@
-import { RouteAnalyzer, AliasResolver } from '@v2/core/analyzers/route-analyzer/route-analyzer';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+
+import { RouteAnalyzer, AliasResolver } from '@v2/core/analyzers/route-analyzer/route-analyzer';
 
 describe('RouteAnalyzer', () => {
   let analyzer: RouteAnalyzer;
@@ -34,7 +35,7 @@ describe('RouteAnalyzer', () => {
     const result = await analyzer.extract({ filePath, sourceCode });
 
     expect(result.routes).toHaveLength(2);
-    
+
     expect(result.routes[0].path).toBe('/');
     expect(result.routes[0].component).toBe('HomePage');
     expect(result.routes[0].componentPath).toBe(path.resolve('/project/src/pages/Home.ts'));
@@ -63,8 +64,8 @@ describe('RouteAnalyzer', () => {
 
     const result = await analyzer.extract({ filePath, sourceCode });
 
-    const indexRoute = result.routes.find(r => r.metadata?.index);
-    const dynamicRoute = result.routes.find(r => r.isDynamic);
+    const indexRoute = result.routes.find((r) => r.metadata?.index);
+    const dynamicRoute = result.routes.find((r) => r.isDynamic);
 
     expect(indexRoute?.path).toBe('');
     expect(dynamicRoute?.path).toBe('user/:id');
@@ -115,7 +116,7 @@ describe('RouteAnalyzer', () => {
 
     // Expect 3 total: admin, admin/users, admin/settings
     expect(result.routes).toHaveLength(3);
-    
+
     expect(result.routes[0].path).toBe('/admin');
     expect(result.routes[1].path).toBe('/admin/users');
     expect(result.routes[2].path).toBe('/admin/settings');
@@ -149,9 +150,15 @@ describe('RouteAnalyzer', () => {
       {
         filePath: 'App.tsx',
         routes: [
-          { path: '/', component: 'Home', componentPath: 'src/Home.ts', isLazy: false, isDynamic: false }
-        ]
-      }
+          {
+            path: '/',
+            component: 'Home',
+            componentPath: 'src/Home.ts',
+            isLazy: false,
+            isDynamic: false,
+          },
+        ],
+      },
     ];
 
     const routeMap = analyzer.buildRouteMap(extractions);
@@ -169,19 +176,19 @@ describe('AliasResolver', () => {
       aliases: {
         '@': '/project/src',
         '@pages': '/project/src/pages',
-        '~': '/project/src'
-      }
+        '~': '/project/src',
+      },
     });
 
     // Alias matches
     expect(resolver.resolve('@/pages/Home')).toBe(path.join('/project/src/pages/Home'));
     expect(resolver.resolve('@pages/Login')).toBe(path.join('/project/src/pages/Login'));
     expect(resolver.resolve('~/utils/format')).toBe(path.join('/project/src/utils/format'));
-    
+
     // Relative/Absolute imports unchanged
     expect(resolver.resolve('./Home')).toBe('./Home');
     expect(resolver.resolve('/abs/path')).toBe('/abs/path');
-    
+
     // Non-matching third-party
     expect(resolver.resolve('react')).toBe('react');
   });
@@ -194,11 +201,13 @@ describe('AliasResolver', () => {
       configFiles: [],
       aliases: {
         '@': '/project/src',
-        '@components': '/project/src/components'
-      }
+        '@components': '/project/src/components',
+      },
     });
 
-    expect(resolver.resolve('@components/Button')).toBe(path.join('/project/src/components/Button'));
+    expect(resolver.resolve('@components/Button')).toBe(
+      path.join('/project/src/components/Button'),
+    );
     expect(resolver.resolve('@/utils')).toBe(path.join('/project/src/utils'));
   });
 
@@ -219,12 +228,15 @@ describe('AliasResolver', () => {
 
     test('loadFromTsConfig(): should read paths from tsconfig.json', () => {
       const tsconfigPath = path.join(tmpDir, 'tsconfig.json');
-      fs.writeFileSync(tsconfigPath, JSON.stringify({
-        compilerOptions: {
-          baseUrl: '.',
-          paths: { '@/*': ['src/*'] }
-        }
-      }));
+      fs.writeFileSync(
+        tsconfigPath,
+        JSON.stringify({
+          compilerOptions: {
+            baseUrl: '.',
+            paths: { '@/*': ['src/*'] },
+          },
+        }),
+      );
 
       const resolver = new AliasResolver({ projectRoot: tmpDir, configFiles: ['tsconfig'] });
       expect(resolver.resolve('@/pages/Home')).toBe(path.join(tmpDir, 'src/pages/Home'));
@@ -232,13 +244,16 @@ describe('AliasResolver', () => {
 
     test('loadFromViteConfig(): should read aliases from vite.config.ts via regex', () => {
       const vitePath = path.join(tmpDir, 'vite.config.ts');
-      fs.writeFileSync(vitePath, `
+      fs.writeFileSync(
+        vitePath,
+        `
         export default defineConfig({
           resolve: {
             alias: { '@': path.resolve(__dirname, 'src') }
           }
         });
-      `);
+      `,
+      );
 
       const resolver = new AliasResolver({ projectRoot: tmpDir, configFiles: ['vite'] });
       expect(resolver.resolve('@/pages/Home')).toBe(path.join(tmpDir, 'src/pages/Home'));
@@ -246,13 +261,16 @@ describe('AliasResolver', () => {
 
     test('loadFromWebpackConfig(): should read aliases from webpack.config.js via regex', () => {
       const webpackPath = path.join(tmpDir, 'webpack.config.js');
-      fs.writeFileSync(webpackPath, `
+      fs.writeFileSync(
+        webpackPath,
+        `
         module.exports = {
           resolve: {
             alias: { '@': path.resolve(__dirname, 'src/') }
           }
         };
-      `);
+      `,
+      );
 
       const resolver = new AliasResolver({ projectRoot: tmpDir, configFiles: ['webpack'] });
       expect(resolver.resolve('@/pages/Home')).toBe(path.join(tmpDir, 'src/pages/Home'));
@@ -285,8 +303,8 @@ describe('RouteAnalyzer Alias Integration', () => {
       aliasConfig: {
         projectRoot: '/project',
         configFiles: [],
-        aliases: { '@': 'src' }
-      }
+        aliases: { '@': 'src' },
+      },
     });
 
     expect(result.routes).toHaveLength(1);
@@ -316,12 +334,12 @@ describe('RouteAnalyzer Alias Integration', () => {
       aliasConfig: {
         projectRoot: '/project',
         configFiles: [],
-        aliases: { '@': 'src' }
-      }
+        aliases: { '@': 'src' },
+      },
     });
 
-    const home = result.routes.find(r => r.path === '/');
-    const login = result.routes.find(r => r.path === '/login');
+    const home = result.routes.find((r) => r.path === '/');
+    const login = result.routes.find((r) => r.path === '/login');
 
     expect(home?.componentPath).toBe(path.resolve('/project/src/pages/HomePage.ts'));
     expect(login?.componentPath).toBe(path.resolve('/project/src/pages/LoginPage.ts'));

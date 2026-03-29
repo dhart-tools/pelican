@@ -1,6 +1,7 @@
-import * as ts from 'typescript';
-import * as path from 'path';
 import * as fs from 'fs';
+import * as path from 'path';
+
+import * as ts from 'typescript';
 
 import { BaseAnalyzer } from '@v2/core/analyzers/base';
 import {
@@ -98,9 +99,7 @@ export class AliasResolver {
     // Try each registered alias prefix, longest first to avoid ambiguity.
     // e.g. '@components' must be tested before '@' or it would match the '@'
     // prefix and produce a wrong path.
-    const sortedPrefixes = Object.keys(this.aliasMap).sort(
-      (a, b) => b.length - a.length
-    );
+    const sortedPrefixes = Object.keys(this.aliasMap).sort((a, b) => b.length - a.length);
 
     for (const prefix of sortedPrefixes) {
       const target = this.aliasMap[prefix];
@@ -201,7 +200,10 @@ export class AliasResolver {
 
     for (const name of candidates) {
       const p = path.join(projectRoot, name);
-      if (fs.existsSync(p)) { raw = fs.readFileSync(p, 'utf-8'); break; }
+      if (fs.existsSync(p)) {
+        raw = fs.readFileSync(p, 'utf-8');
+        break;
+      }
     }
     if (!raw) return {};
 
@@ -211,7 +213,8 @@ export class AliasResolver {
       // Pattern: '@'  : path.resolve(__dirname, 'src')
       //          "@/" : path.resolve(__dirname, './src')
       // Capture: group 1 = alias key, group 2 = path argument
-      const objPattern = /['"]([^'"]+)['"]\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
+      const objPattern =
+        /['"]([^'"]+)['"]\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
       let m: RegExpExecArray | null;
       while ((m = objPattern.exec(raw)) !== null) {
         const prefix = m[1].replace(/\/\*$/, '');
@@ -220,7 +223,8 @@ export class AliasResolver {
       }
 
       // Pattern (array format): find: '@', replacement: path.resolve(__dirname, 'src')
-      const arrPattern = /find\s*:\s*['"]([^'"]+)['"]\s*,\s*replacement\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
+      const arrPattern =
+        /find\s*:\s*['"]([^'"]+)['"]\s*,\s*replacement\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
       while ((m = arrPattern.exec(raw)) !== null) {
         const prefix = m[1].replace(/\/\*$/, '');
         const rel = m[2].replace(/\/\*$/, '');
@@ -264,7 +268,10 @@ export class AliasResolver {
 
     for (const name of candidates) {
       const p = path.join(projectRoot, name);
-      if (fs.existsSync(p)) { raw = fs.readFileSync(p, 'utf-8'); break; }
+      if (fs.existsSync(p)) {
+        raw = fs.readFileSync(p, 'utf-8');
+        break;
+      }
     }
     if (!raw) return {};
 
@@ -272,7 +279,8 @@ export class AliasResolver {
 
     try {
       // Pattern: '@': path.resolve(__dirname, 'src/')
-      const pattern = /['"]([^'"]+)['"]\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
+      const pattern =
+        /['"]([^'"]+)['"]\s*:\s*path\.(?:resolve|join)\s*\([^,)]+,\s*['"]([^'"]+)['"]\)/g;
       let m: RegExpExecArray | null;
       while ((m = pattern.exec(raw)) !== null) {
         const prefix = m[1].replace(/\/?$/, ''); // strip trailing slash
@@ -335,12 +343,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     const { filePath, sourceCode, aliasConfig } = input;
     this.processedNodes.clear();
 
-    const sourceFile = ts.createSourceFile(
-      filePath,
-      sourceCode,
-      ts.ScriptTarget.Latest,
-      true
-    );
+    const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
     const result: IRouteExtractionResult = {
       filePath,
@@ -393,7 +396,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
           if (routeMap.has(route.path)) {
             console.warn(
               `[RouteAnalyzer] Duplicate route path "${route.path}" found in ` +
-              `"${extraction.filePath}". Overwriting previous entry.`
+                `"${extraction.filePath}". Overwriting previous entry.`,
             );
           }
           routeMap.set(route.path, route.componentPath);
@@ -439,7 +442,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
   private buildImportMap(
     sourceFile: ts.SourceFile,
     resolver: AliasResolver,
-    baseDir: string
+    baseDir: string,
   ): IImportMap {
     const importMap: IImportMap = {};
 
@@ -494,7 +497,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     node: ts.Node,
     result: IRouteExtractionResult,
     baseDir: string,
-    importMap: IImportMap
+    importMap: IImportMap,
   ): void {
     if (this.processedNodes.has(node)) {
       return;
@@ -529,9 +532,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
       console.warn(`[RouteAnalyzer] Failed to process node at pos ${node.pos}: ${err}`);
     }
 
-    ts.forEachChild(node, (child) =>
-      this.visitNode(child, result, baseDir, importMap)
-    );
+    ts.forEachChild(node, (child) => this.visitNode(child, result, baseDir, importMap));
   }
 
   // ─── JSX-Specific Extraction ──────────────────────────────────────────────
@@ -544,7 +545,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     node: ts.JsxSelfClosingElement | ts.JsxElement,
     result: IRouteExtractionResult,
     baseDir: string,
-    importMap: IImportMap
+    importMap: IImportMap,
   ): void {
     const openingElement = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
     const tagName = openingElement.tagName.getFullText().trim();
@@ -552,8 +553,8 @@ export class RouteAnalyzer extends BaseAnalyzer<
     if (tagName !== 'Route') return;
 
     let routePath: string | null = null;
-    let componentName: string | null = null;
-    let isLazy = false;
+    let componentName: string | null;
+    let isLazy: boolean;
     let isIndex = false;
 
     const attrs: Record<string, ts.JsxAttribute> = {};
@@ -580,7 +581,13 @@ export class RouteAnalyzer extends BaseAnalyzer<
     if ('element' in attrs) {
       const expr = this.unwrapJsxExpression(attrs['element'].initializer as ts.JsxExpression);
       componentName = this.extractComponentName(expr);
-      const resolvedPath = this.resolveComponentPath(componentName, expr, baseDir, importMap, isLazy);
+      const resolvedPath = this.resolveComponentPath(
+        componentName,
+        expr,
+        baseDir,
+        importMap,
+        isLazy,
+      );
 
       if (resolvedPath || (routePath !== null && componentName)) {
         result.routes.push({
@@ -621,7 +628,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     node: ts.CallExpression,
     result: IRouteExtractionResult,
     baseDir: string,
-    importMap: IImportMap
+    importMap: IImportMap,
   ): void {
     const callee = node.expression;
     if (!ts.isIdentifier(callee)) return;
@@ -642,7 +649,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     result: IRouteExtractionResult,
     baseDir: string,
     importMap: IImportMap,
-    parentPath: string
+    parentPath: string,
   ): void {
     this.processedNodes.add(node);
     for (const element of node.elements) {
@@ -652,7 +659,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
           result.routes.push(route);
 
           const childrenProp = element.properties.find(
-            (p) => ts.isPropertyAssignment(p) && p.name.getText() === 'children'
+            (p) => ts.isPropertyAssignment(p) && p.name.getText() === 'children',
           ) as ts.PropertyAssignment | undefined;
 
           if (childrenProp && ts.isArrayLiteralExpression(childrenProp.initializer)) {
@@ -661,7 +668,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
               result,
               baseDir,
               importMap,
-              route.path
+              route.path,
             );
           }
         }
@@ -677,11 +684,11 @@ export class RouteAnalyzer extends BaseAnalyzer<
     obj: ts.ObjectLiteralExpression,
     baseDir: string,
     importMap: IImportMap,
-    parentPath: string
+    parentPath: string,
   ): IRouteDef | null {
     let routePath: string | null = null;
     let componentName: string | null = null;
-    let isLazy = false;
+    let isLazy: boolean;
     let componentPath: string | undefined;
     let isIndex = false;
 
@@ -696,9 +703,10 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
     if ('path' in props && ts.isStringLiteral(props['path'].initializer)) {
       const rawPath = props['path'].initializer.text;
-      routePath = (rawPath.startsWith('/') || !parentPath)
-        ? rawPath
-        : `${parentPath}/${rawPath}`.replace(/\/\//g, '/');
+      routePath =
+        rawPath.startsWith('/') || !parentPath
+          ? rawPath
+          : `${parentPath}/${rawPath}`.replace(/\/\//g, '/');
     }
 
     if ('index' in props) {
@@ -708,7 +716,13 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
     if ('element' in props) {
       componentName = this.extractComponentName(props['element'].initializer);
-      componentPath = this.resolveComponentPath(componentName, props['element'].initializer, baseDir, importMap, isLazy);
+      componentPath = this.resolveComponentPath(
+        componentName,
+        props['element'].initializer,
+        baseDir,
+        importMap,
+        isLazy,
+      );
     }
 
     if ('lazy' in props) {
@@ -757,7 +771,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     expr: ts.Expression | undefined,
     baseDir: string,
     importMap: IImportMap,
-    isLazy: boolean
+    _isLazy: boolean,
   ): string | undefined {
     // Strategy 1: Import map (absolute path, alias already expanded)
     if (componentName && importMap[componentName]) {
@@ -775,7 +789,10 @@ export class RouteAnalyzer extends BaseAnalyzer<
     return undefined;
   }
 
-  private extractLazyComponentPath(expr: ts.Expression | undefined, baseDir: string): string | undefined {
+  private extractLazyComponentPath(
+    expr: ts.Expression | undefined,
+    baseDir: string,
+  ): string | undefined {
     if (!expr) return undefined;
 
     if (ts.isArrowFunction(expr)) {
@@ -793,7 +810,9 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
   private isImportCall(node: ts.CallExpression): boolean {
     const expr = node.expression;
-    return expr.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(expr) && expr.text === 'import');
+    return (
+      expr.kind === ts.SyntaxKind.ImportKeyword || (ts.isIdentifier(expr) && expr.text === 'import')
+    );
   }
 
   private extractComponentName(expr: ts.Expression | undefined): string | null {
@@ -804,7 +823,9 @@ export class RouteAnalyzer extends BaseAnalyzer<
     return null;
   }
 
-  private unwrapJsxExpression(node: ts.JsxExpression | ts.StringLiteral | undefined): ts.Expression | undefined {
+  private unwrapJsxExpression(
+    node: ts.JsxExpression | ts.StringLiteral | undefined,
+  ): ts.Expression | undefined {
     if (!node) return undefined;
     return ts.isJsxExpression(node) ? node.expression : undefined;
   }
