@@ -1,16 +1,12 @@
 import { BaseScorer } from "@v2/core/scoring/scorers/base";
 import { IScorerContext, ISignal } from "@v2/types";
 import { ESelectorAttr } from "@v2/utils/enums";
+import { getScorerConfig } from "@v2/core/scoring/scoring-config";
+import { EScorerType } from "@v2/utils/enums";
 
 export class SelectorMatchScorer extends BaseScorer {
   constructor() {
-    super({
-      name: 'selector-match',
-      version: '1.0.0',
-      description: 'Scores based on selector (testid, data-cy) matches between test and source',
-      type: 'selector-match',
-      weight: 0.80
-    });
+    super(getScorerConfig(EScorerType.SELECTOR_MATCH));
   }
 
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {

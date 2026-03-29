@@ -1,15 +1,11 @@
 import { BaseScorer } from "@v2/core/scoring/scorers/base";
 import { IScorerContext, ISignal } from "@v2/types";
+import { getScorerConfig } from "@v2/core/scoring/scoring-config";
+import { EScorerType } from "@v2/utils/enums";
 
 export class DirectImportScorer extends BaseScorer {
   constructor() {
-    super({
-      name: 'direct-import',
-      version: '1.0.0',
-      description: 'Scores based on direct imports between test and source',
-      type: 'direct-import',
-      weight: 0.95
-    });
+    super(getScorerConfig(EScorerType.DIRECT_IMPORT));
   }
 
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {

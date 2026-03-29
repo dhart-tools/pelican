@@ -1,4 +1,4 @@
-import { IScorer, IScorerContext, ISignal } from "@v2/types";
+import { IScorer, IScorerContext, ISignal, IScorerConfig } from "@v2/types";
 
 /**
  * BaseScorer provides a reusable implementation of IScorer.
@@ -11,13 +11,7 @@ export abstract class BaseScorer implements IScorer {
   readonly type: string;
   readonly weight: number;
 
-  constructor(config: {
-    name: string;
-    version: string;
-    description: string;
-    type: string;
-    weight: number;
-  }) {
+  constructor(config: IScorerConfig) {
     this.name = config.name;
     this.version = config.version;
     this.description = config.description;

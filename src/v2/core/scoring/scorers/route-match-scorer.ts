@@ -1,15 +1,11 @@
 import { BaseScorer } from "@v2/core/scoring/scorers/base";
 import { IScorerContext, ISignal, IRegistry } from "@v2/types";
+import { getScorerConfig } from "@v2/core/scoring/scoring-config";
+import { EScorerType } from "@v2/utils/enums";
 
 export class RouteMatchScorer extends BaseScorer {
   constructor() {
-    super({
-      name: 'route-match',
-      version: '1.0.0',
-      description: 'Scores based on visited routes matching component paths',
-      type: 'route-match',
-      weight: 0.85
-    });
+    super(getScorerConfig(EScorerType.ROUTE_MATCH));
   }
 
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {

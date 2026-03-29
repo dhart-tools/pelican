@@ -29,3 +29,11 @@ export interface IScoreResult {
   confidence: EConfidenceLevel;
   explanation: string;
 }
+
+export interface IScorerConfig {
+  name: string;
+  version: string;
+  description: string;
+  type: string;
+  weight: number;
+}
