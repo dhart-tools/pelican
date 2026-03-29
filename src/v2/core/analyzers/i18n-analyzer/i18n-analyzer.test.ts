@@ -1,8 +1,7 @@
 import * as fs from 'fs';
 
+import { I18nAnalyzer } from '@v2/core/analyzers/i18n-analyzer/i18n-analyzer';
 import { II18nLibraryConfig } from '@v2/types/analyzers';
-
-import { I18nAnalyzer } from './i18n-analyzer';
 
 jest.mock('fs', () => ({
   existsSync: jest.fn(),

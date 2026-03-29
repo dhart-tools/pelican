@@ -173,31 +173,32 @@ To add a new scoring mechanism:
 
 ```
 src/
-  core/
-    registry.ts                  # Central registry store
-    analyzer-registry.ts         # Analyzer discovery & registration
-    scoring-engine.ts            # Signal aggregation
-    git.ts                       # Git diff parsing
-    types.ts                     # Shared types & interfaces
-  analyzers/                     # Plug & Play Analyzers
-    base.ts                      # Base analyzer class
-    source-extractor.ts          # Source file AST mining
-    cypress-extractor.ts         # Cypress test parsing
-    redux-chain-analyzer.ts      # Redux chain detection
-    i18n-analyzer.ts             # Translation key resolution
-    route-analyzer.ts            # Route definition extraction
-    import-graph-analyzer.ts     # Import graph builder
-  scorers/                       # Plug & Play Scorers
-    base.ts                      # Base scorer class
-    direct-import-scorer.ts
-    route-match-scorer.ts
-    selector-match-scorer.ts
-    redux-chain-scorer.ts
-    translation-match-scorer.ts
-  commands/
-    setup.ts                     # Setup wizard
-    analyze.ts                   # Main CLI entry point
-  config.ts                      # Configuration management
+  v2/
+    core/
+      registry.ts                  # Central registry store
+      analyzer-registry.ts         # Analyzer discovery & registration
+      scoring/                     # Consolidated Scoring System
+        scoring-engine.ts          # Signal aggregation
+        scoring-engine.test.ts     # Co-located unit tests
+        scorers/                   # Plug & Play Scorers
+          base.ts                  # Base scorer class
+          base.test.ts
+          direct-import-scorer.ts
+          route-match-scorer.ts
+          selector-match-scorer.ts
+      git.ts                       # Git diff parsing
+      types/                       # Shared types & interfaces
+    analyzers/                     # Plug & Play Analyzers
+      base.ts                      # Base analyzer class
+      source-extractor/            # Modular analyzer directories
+      cypress-extractor/
+      redux-chain/
+      i18n-analyzer/
+      route-analyzer/
+    commands/
+      setup.ts                     # Setup wizard
+      analyze.ts                   # Main CLI entry point
+    config.ts                      # Configuration management
 ```
 
 ## Implementation Phases

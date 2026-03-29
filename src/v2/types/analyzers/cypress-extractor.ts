@@ -1,4 +1,4 @@
-import { ESelectorAttr } from "@v2/utils/enums";
+import { ESelectorAttr } from '@v2/utils/enums';
 
 /**
  * Represents the result of a Cypress extraction.

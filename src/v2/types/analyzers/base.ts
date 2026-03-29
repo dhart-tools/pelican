@@ -14,9 +14,11 @@
 export interface ISignal {
   source: string; // Analyzer name
   type: string; // Signal type
-  weight: number; // Confidence weight (0-1)
+  weight: number; // 0.0 - 1.0
+  originalWeight?: number; // Weight before any dampening
   matched: boolean;
-  metadata?: object; // Additional metadata
+  metadata?: object;
+  reason?: string; // Human-readable reason
 }
 
 /**

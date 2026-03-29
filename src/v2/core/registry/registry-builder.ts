@@ -5,11 +5,10 @@ import { glob } from 'glob';
 
 import { CypressExtractorAnalyzer } from '@v2/core/analyzers/cypress-extractor';
 import { SourceExtractorAnalyzer } from '@v2/core/analyzers/source-extractor';
+import { normalizePath } from '@v2/core/registry/path-utils';
+import { createRegistry } from '@v2/core/registry/registry';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@v2/types';
 import { IRegistry, IFileEntry } from '@v2/types/registry';
-
-import { normalizePath } from './path-utils';
-import { createRegistry } from './registry';
 
 export interface RegistryBuilderConfig {
   /**

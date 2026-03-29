@@ -13,7 +13,7 @@ Create a comprehensive set of scorer modules that implement various scoring sign
 Evaluates if the test file directly imports the changed file.
 
 ```typescript
-import { BaseScorer } from './base';
+import { BaseScorer } from '@v2/core/scoring/scorers/base';
 
 export class DirectImportScorer extends BaseScorer {
   constructor() {
@@ -638,8 +638,8 @@ export class ContainsTextScorer extends BaseScorer {
 ## Scorer Registration
 
 ```typescript
-import { ScoringEngine } from './core/scoring-engine';
-import * as scorers from './scorers';
+import { ScoringEngine } from '@v2/core/scoring/scoring-engine';
+import * as scorers from '@v2/core/scoring/scorers';
 
 export function registerAllScorers(engine: ScoringEngine): void {
   engine.register(new scorers.DirectImportScorer());

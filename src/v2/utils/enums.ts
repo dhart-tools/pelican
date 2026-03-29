@@ -72,3 +72,15 @@ export enum EAnalyzerName {
   REDUX_CHAIN_ANALYZER = 'redux-chain-analyzer',
   I18N_ANALYZER = 'i18n-analyzer',
 }
+
+export enum EConfidenceLevel {
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low',
+}
+
+export enum EScorerType {
+  DIRECT_IMPORT = 'direct-import',
+  ROUTE_MATCH = 'route-match',
+  SELECTOR_MATCH = 'selector-match',
+}

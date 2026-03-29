@@ -1,7 +1,6 @@
+import { ReduxChainAnalyzer } from '@v2/core/analyzers/redux-chain/redux-chain-analyzer';
 import { IReduxExtractionResult } from '@v2/types/analyzers';
 import { EReduxRole } from '@v2/utils/enums';
-
-import { ReduxChainAnalyzer } from './redux-chain-analyzer';
 
 describe('ReduxChainAnalyzer', () => {
   const analyzer = new ReduxChainAnalyzer();
@@ -146,7 +145,7 @@ describe('ReduxChainAnalyzer', () => {
    *
    * @example
    * // Component.tsx
-   * import { selectUser } from './store/user/selectors';
+   * import { selectUser } from '@v2/core/analyzers/redux-chain/store/user/selectors';
    *
    * @expected The 'user' chain should list 'Component.tsx' in its consumers array.
    */
