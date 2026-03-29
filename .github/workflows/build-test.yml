@@ -2,6 +2,10 @@ name: CI
 on:
   pull_request:
     branches: [ main ]
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
@@ -26,3 +30,9 @@ jobs:
         if: always()
         with:
           report_paths: '**/reports/results.xml'
+          check_name: 'JUnit Test Report'
+          require_tests: false
+          fail_on_failure: true
+          include_passed: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
