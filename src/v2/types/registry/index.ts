@@ -6,6 +6,7 @@ import {
   ICypressSelector,
   IAPIIntercept,
   IURLAssertion,
+  IImportGraph,
 } from '@v2/types/analyzers';
 
 export interface IFileEntry {
@@ -43,10 +44,6 @@ export interface IFileEntry {
   };
 }
 
-export interface IImportGraph {
-  dependencies: Map<string, Set<string>>; // file → files it imports
-  dependents: Map<string, Set<string>>; // file → files that import it
-}
 
 export interface IRegistry {
   readonly files: Map<string, IFileEntry>;

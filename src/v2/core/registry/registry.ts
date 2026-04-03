@@ -1,6 +1,6 @@
 import { normalizePath } from '@v2/core/registry/path-utils';
-import { ITranslationIndex, IReduxChain } from '@v2/types/analyzers';
-import { IRegistry, IFileEntry, IImportGraph } from '@v2/types/registry';
+import { ITranslationIndex, IReduxChain, IImportGraph } from '@v2/types/analyzers';
+import { IRegistry, IFileEntry } from '@v2/types/registry';
 
 export class Registry implements IRegistry {
   public files: Map<string, IFileEntry> = new Map();
@@ -254,11 +254,11 @@ export class Registry implements IRegistry {
     const data = {
       files: Array.from(this.files.entries()),
       importGraph: {
-        dependencies: Array.from(this.importGraph.dependencies.entries()).map(([k, v]) => [
+        dependencies: Array.from(this.importGraph.dependencies, ([k, v]) => [
           k,
           Array.from(v),
         ]),
-        dependents: Array.from(this.importGraph.dependents.entries()).map(([k, v]) => [
+        dependents: Array.from(this.importGraph.dependents, ([k, v]) => [
           k,
           Array.from(v),
         ]),
