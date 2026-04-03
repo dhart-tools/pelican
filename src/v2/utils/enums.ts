@@ -72,6 +72,7 @@ export enum EAnalyzerName {
   REDUX_CHAIN_ANALYZER = 'redux-chain-analyzer',
   I18N_ANALYZER = 'i18n-analyzer',
   ROUTE_ANALYZER = 'route-analyzer',
+  IMPORT_GRAPH_ANALYZER = 'import-graph-analyzer',
 }
 
 export enum EConfidenceLevel {
