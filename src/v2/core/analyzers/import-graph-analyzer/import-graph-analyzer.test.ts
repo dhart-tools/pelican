@@ -1,8 +1,8 @@
 import * as path from 'path';
 
 import { IImportGraphExtractionResult, ISpecRegistry } from '@v2/types/analyzers';
-
-import { ImportGraphAnalyzer } from './import-graph-analyzer';
+import { EImportExportType } from '@v2/utils/enums';
+import { ImportGraphAnalyzer } from '@v2/core/analyzers/import-graph-analyzer/import-graph-analyzer';
 
 describe('ImportGraphAnalyzer', () => {
   let analyzer: ImportGraphAnalyzer;
@@ -30,7 +30,7 @@ describe('ImportGraphAnalyzer', () => {
     expect(result.imports).toContainEqual(
       expect.objectContaining({
         source: 'react',
-        type: 'default',
+        type: EImportExportType.DEFAULT,
         specifier: 'React',
       }),
     );
@@ -38,7 +38,7 @@ describe('ImportGraphAnalyzer', () => {
     expect(result.imports).toContainEqual(
       expect.objectContaining({
         source: './Icon',
-        type: 'named',
+        type: EImportExportType.NAMED,
         specifier: 'Icon',
       }),
     );
@@ -46,21 +46,21 @@ describe('ImportGraphAnalyzer', () => {
     expect(result.imports).toContainEqual(
       expect.objectContaining({
         source: './styles.css',
-        type: 'named',
+        type: EImportExportType.NAMED,
       }),
     );
 
     expect(result.exports).toContainEqual(
       expect.objectContaining({
         name: 'Button',
-        type: 'named',
+        type: EImportExportType.NAMED,
       }),
     );
 
     expect(result.exports).toContainEqual(
       expect.objectContaining({
         name: 'default',
-        type: 'default',
+        type: EImportExportType.DEFAULT,
       }),
     );
   });
@@ -97,7 +97,7 @@ describe('ImportGraphAnalyzer', () => {
     expect(result.exports).toContainEqual(
       expect.objectContaining({
         name: 'Theme',
-        type: 'type',
+        type: EImportExportType.TYPE,
       }),
     );
   });
@@ -145,7 +145,7 @@ describe('ImportGraphAnalyzer', () => {
     expect(result.imports).toContainEqual(
       expect.objectContaining({
         source: './config.json',
-        type: 'default',
+        type: EImportExportType.DEFAULT,
       }),
     );
   });
@@ -161,7 +161,7 @@ describe('ImportGraphAnalyzer', () => {
           {
             source: './components',
             resolvedPath: path.resolve('/project/src/components/index.ts'),
-            type: 'named',
+            type: EImportExportType.NAMED,
             specifier: 'Button',
           },
         ],
@@ -175,14 +175,14 @@ describe('ImportGraphAnalyzer', () => {
             name: 'Button',
             source: './Button',
             resolvedSource: path.resolve('/project/src/components/Button.tsx'),
-            type: 'named',
+            type: EImportExportType.NAMED,
           },
         ],
       },
       {
         filePath: path.resolve('/project/src/components/Button.tsx'),
         imports: [],
-        exports: [{ name: 'Button', type: 'named' }],
+        exports: [{ name: 'Button', type: EImportExportType.NAMED }],
       },
     ];
 
@@ -210,13 +210,13 @@ describe('ImportGraphAnalyzer', () => {
           {
             source: './runtime',
             resolvedPath: path.resolve('/project/src/runtime.ts'),
-            type: 'default',
+            type: EImportExportType.DEFAULT,
             isTypeOnly: false,
           },
           {
             source: './types',
             resolvedPath: path.resolve('/project/src/types.ts'),
-            type: 'type',
+            type: EImportExportType.TYPE,
             isTypeOnly: true,
           },
         ],

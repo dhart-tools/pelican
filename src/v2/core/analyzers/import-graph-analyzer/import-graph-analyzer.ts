@@ -14,7 +14,7 @@ import {
   IAliasMap,
   IAliasResolverConfig,
 } from '@v2/types/analyzers';
-import { EAnalyzerName } from '@v2/utils/enums';
+import { EAnalyzerName, EImportExportType } from '@v2/utils/enums';
 
 // =============================================================================
 // AliasResolver
@@ -300,7 +300,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
 
     // 3. Export Default (Assignment)
     if (ts.isExportAssignment(node)) {
-      result.exports.push({ name: 'default', type: 'default' });
+      result.exports.push({ name: 'default', type: EImportExportType.DEFAULT });
     }
 
     // 4. Exported Variable, Function, or Class Declarations
@@ -338,7 +338,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
       result.imports.push({
         source,
         resolvedPath,
-        type: 'default',
+        type: EImportExportType.DEFAULT,
         specifier: node.importClause.name.text,
         isTypeOnly,
       });
@@ -351,7 +351,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
         result.imports.push({
           source,
           resolvedPath,
-          type: 'namespace',
+          type: EImportExportType.NAMESPACE,
           specifier: namedBindings.name.text,
           isTypeOnly,
         });
@@ -362,7 +362,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
           result.imports.push({
             source,
             resolvedPath,
-            type: 'named',
+            type: EImportExportType.NAMED,
             specifier: element.name.text,
             isTypeOnly: isTypeOnly || element.isTypeOnly,
           });
@@ -375,7 +375,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
       result.imports.push({
         source,
         resolvedPath,
-        type: 'named', // Categorized as named for dependency tracking
+        type: EImportExportType.NAMED, // Categorized as named for dependency tracking
         isTypeOnly: false,
       });
     }
@@ -401,7 +401,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
           name: element.name.text,
           source: specifier && ts.isStringLiteral(specifier) ? specifier.text : undefined,
           resolvedSource,
-          type: node.isTypeOnly || element.isTypeOnly ? 'type' : 'named',
+          type: node.isTypeOnly || element.isTypeOnly ? EImportExportType.TYPE : EImportExportType.NAMED,
         });
       }
     } else if (!exportClause && resolvedSource) {
@@ -410,7 +410,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
         name: '*',
         source: specifier && ts.isStringLiteral(specifier) ? specifier.text : undefined,
         resolvedSource,
-        type: 'namespace',
+        type: EImportExportType.NAMESPACE,
       });
     }
   }
@@ -429,7 +429,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
         result.imports.push({
           source,
           resolvedPath: this.resolvePath(source, baseDir, resolver),
-          type: 'namespace',
+          type: EImportExportType.NAMESPACE,
           isDynamic: true,
           isTypeOnly: false,
         });
@@ -448,7 +448,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
           result.imports.push({
             source,
             resolvedPath,
-            type: 'default',
+            type: EImportExportType.DEFAULT,
             isTypeOnly: false,
           });
         }
@@ -469,19 +469,19 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
         if (ts.isIdentifier(declaration.name)) {
           result.exports.push({
             name: declaration.name.text,
-            type: 'named',
+            type: EImportExportType.NAMED,
           });
         }
       }
     } else if (ts.isFunctionDeclaration(node) && node.name) {
       result.exports.push({
         name: node.name.text,
-        type: 'named',
+        type: EImportExportType.NAMED,
       });
     } else if (ts.isClassDeclaration(node) && node.name) {
       result.exports.push({
         name: node.name.text,
-        type: 'named',
+        type: EImportExportType.NAMED,
       });
     }
   }

@@ -1,4 +1,5 @@
-import { IAliasResolverConfig } from './route-analyzer';
+import { EImportExportType } from '@v2/utils/enums';
+import { IAliasResolverConfig } from '@v2/types/analyzers/route-analyzer';
 
 /**
  * Import Metadata - represents a single import in a source file.
@@ -9,7 +10,7 @@ export interface IImportMetadata {
   /** The fully resolved absolute path to the imported file */
   resolvedPath: string;
   /** The type of import */
-  type: 'default' | 'named' | 'namespace' | 'type';
+  type: EImportExportType;
   /** The imported name/alias (if applicable) */
   specifier?: string;
   /** Whether this is a dynamic import, e.g. import('./file') */
@@ -29,8 +30,9 @@ export interface IExportMetadata {
   /** The fully resolved path for the re-export source */
   resolvedSource?: string;
   /** The type of export */
-  type: 'named' | 'default' | 'namespace' | 'type';
+  type: EImportExportType;
 }
+
 
 /**
  * Extraction result for a single file's import and export metadata.

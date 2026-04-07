@@ -93,3 +93,10 @@ export enum EScorerType {
   FILENAME_MATCH = 'filename-match',
   API_INTERCEPT = 'api-intercept',
 }
+
+export enum EImportExportType {
+  DEFAULT = 'default',
+  NAMED = 'named',
+  NAMESPACE = 'namespace',
+  TYPE = 'type',
+}
