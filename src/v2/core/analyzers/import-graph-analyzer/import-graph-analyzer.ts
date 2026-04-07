@@ -15,7 +15,7 @@ import {
   IAliasResolverConfig,
 } from '@v2/types/analyzers';
 import { EAnalyzerName, EImportExportType } from '@v2/utils/enums';
-
+import { PROJECT_EXTENSIONS } from '@v2/utils/constants'
 // =============================================================================
 // AliasResolver
 // =============================================================================
@@ -635,13 +635,12 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
     const absPath = path.isAbsolute(resolved) ? resolved : path.resolve(baseDir, resolved);
 
     // Extension probe
-    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
-    for (const ext of extensions) {
+    for (const ext of PROJECT_EXTENSIONS) {
       if (fs.existsSync(absPath + ext)) return absPath + ext;
     }
 
     // Index probe
-    for (const ext of extensions) {
+    for (const ext of PROJECT_EXTENSIONS) {
       const indexPath = path.join(absPath, `index${ext}`);
       if (fs.existsSync(indexPath)) return indexPath;
     }
