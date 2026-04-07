@@ -9,6 +9,7 @@ jest.mock('fs/promises');
 jest.mock('glob', () => ({
   glob: jest.fn(),
 }));
+jest.mock('p-limit', () => () => async (fn: () => any) => fn());
 
 // Mock the analyzers
 jest.mock('@v2/core/analyzers/source-extractor/source-extractor', () => ({
@@ -63,9 +64,19 @@ describe('RegistryBuilder Robustness', () => {
     (glob as unknown as jest.Mock).mockResolvedValue(['src/file.ts']);
     (fs.readFile as jest.Mock).mockRejectedValue(new Error('Permission Denied'));
 
-    const registry = await builder.buildFromDirectories({
+    const registry = await builder.buildFromConfig({
       sourceDirs: ['src'],
       testPatterns: ['test/**/*.cy.ts'],
+      analyzers: {
+        enabled: ['source-extractor', 'cypress-extractor'],
+        sourceExtractor: { enabled: true, selectorStrategy: [] },
+        cypressExtractor: { enabled: true },
+        reduxChain: { enabled: false, storeDirs: [] },
+        i18n: { enabled: false, library: '', localesPath: '' },
+        routeAnalyzer: { enabled: false, routerFile: '' },
+        importGraph: { enabled: false },
+      },
+      scoring: { enabledScorers: [], ubiquityThreshold: 0.7, minConfidence: 0.4, highConfidence: 0.8 }
     });
 
     // Registry should still build, but file should be missing
@@ -75,9 +86,19 @@ describe('RegistryBuilder Robustness', () => {
   it('should handle empty directory scanning', async () => {
     (glob as unknown as jest.Mock).mockResolvedValue([]);
 
-    const registry = await builder.buildFromDirectories({
+    const registry = await builder.buildFromConfig({
       sourceDirs: ['src'],
       testPatterns: ['test/**/*.cy.ts'],
+      analyzers: {
+        enabled: ['source-extractor', 'cypress-extractor'],
+        sourceExtractor: { enabled: true, selectorStrategy: [] },
+        cypressExtractor: { enabled: true },
+        reduxChain: { enabled: false, storeDirs: [] },
+        i18n: { enabled: false, library: '', localesPath: '' },
+        routeAnalyzer: { enabled: false, routerFile: '' },
+        importGraph: { enabled: false },
+      },
+      scoring: { enabledScorers: [], ubiquityThreshold: 0.7, minConfidence: 0.4, highConfidence: 0.8 }
     });
 
     expect(registry.files.size).toBe(0);
@@ -88,9 +109,19 @@ describe('RegistryBuilder Robustness', () => {
     (glob as unknown as jest.Mock).mockResolvedValue(['src/file.ts/']);
     (fs.readFile as jest.Mock).mockResolvedValue('// content');
 
-    const registry = await builder.buildFromDirectories({
+    const registry = await builder.buildFromConfig({
       sourceDirs: ['src'],
       testPatterns: [],
+      analyzers: {
+        enabled: ['source-extractor'],
+        sourceExtractor: { enabled: true, selectorStrategy: [] },
+        cypressExtractor: { enabled: false },
+        reduxChain: { enabled: false, storeDirs: [] },
+        i18n: { enabled: false, library: '', localesPath: '' },
+        routeAnalyzer: { enabled: false, routerFile: '' },
+        importGraph: { enabled: false },
+      },
+      scoring: { enabledScorers: [], ubiquityThreshold: 0.7, minConfidence: 0.4, highConfidence: 0.8 }
     });
 
     // Should be normalized to src/file.ts
@@ -103,10 +134,20 @@ describe('RegistryBuilder Robustness', () => {
     const globMock = glob as unknown as jest.Mock;
     globMock.mockResolvedValue(['src/file.ts']);
 
-    await builder.buildFromDirectories({
+    await builder.buildFromConfig({
       sourceDirs: ['src'],
       testPatterns: [],
-      ignoreDirs: ['ignored'],
+      ignorePatterns: ['ignored'],
+      analyzers: {
+        enabled: ['source-extractor'],
+        sourceExtractor: { enabled: true, selectorStrategy: [] },
+        cypressExtractor: { enabled: false },
+        reduxChain: { enabled: false, storeDirs: [] },
+        i18n: { enabled: false, library: '', localesPath: '' },
+        routeAnalyzer: { enabled: false, routerFile: '' },
+        importGraph: { enabled: false },
+      },
+      scoring: { enabledScorers: [], ubiquityThreshold: 0.7, minConfidence: 0.4, highConfidence: 0.8 }
     });
 
     expect(globMock).toHaveBeenCalledWith(
