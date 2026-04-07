@@ -2,91 +2,115 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 import { glob } from 'glob';
+import pLimit from 'p-limit';
 
 import { CypressExtractorAnalyzer } from '@v2/core/analyzers/cypress-extractor';
 import { SourceExtractorAnalyzer } from '@v2/core/analyzers/source-extractor';
 import { normalizePath } from '@v2/core/registry/path-utils';
 import { createRegistry } from '@v2/core/registry/registry';
-import { ICypressExtractionResult, ISourceExtractionResult } from '@v2/types';
+import { ICypressExtractionResult, ISourceExtractionResult, ISuggestorConfig } from '@v2/types';
 import { IRegistry, IFileEntry } from '@v2/types/registry';
 
-export interface RegistryBuilderConfig {
-  /**
-   * Directories to scan for source files (React/TS components, pages, hooks, etc.)
-   * Example: ['src', 'lib']
-   */
-  sourceDirs: string[];
+import {
+  convertCypressExtractionToFileEntry,
+  convertSourceExtractionToFileEntry,
+} from './result-converters';
 
-  /**
-   * Glob patterns to find Cypress spec files.
-   * Example: ['**\\/*.cy.ts', '**\\/*.cy.tsx', 'cypress/e2e/**\\/*.spec.ts']
-   */
-  testPatterns: string[];
-
-  /**
-   * File extensions to include when scanning sourceDirs.
-   * Default: ['.ts', '.tsx', '.js', '.jsx']
-   */
-  sourceExtensions?: string[];
-
-  /**
-   * Directories to ignore when scanning (relative to project root).
-   * Default: ['node_modules', 'dist', 'build', '.next', 'coverage']
-   */
-  ignoreDirs?: string[];
-
-  /**
-   * Absolute path to the project root.
-   * Default: process.cwd()
-   */
-  projectRoot?: string;
+export interface BuildProgress {
+  message: string;
+  current: number;
+  total: number;
+  type: 'source' | 'test';
 }
 
 export class RegistryBuilder {
   private registry: IRegistry;
   private projectRoot: string;
+  private onProgress?: (progress: BuildProgress) => void;
 
-  constructor() {
+  constructor(projectRoot: string = process.cwd(), onProgress?: (p: BuildProgress) => void) {
     this.registry = createRegistry();
-    this.projectRoot = process.cwd();
+    this.projectRoot = projectRoot;
+    this.onProgress = onProgress;
   }
 
-  async buildFromDirectories(config: RegistryBuilderConfig): Promise<IRegistry> {
-    this.projectRoot = config.projectRoot ?? process.cwd();
+  /**
+   * Helper to build a registry from configuration.
+   */
+  static async build(
+    config: ISuggestorConfig,
+    projectRoot: string = process.cwd(),
+    onProgress?: (p: BuildProgress) => void,
+  ): Promise<IRegistry> {
+    const builder = new RegistryBuilder(projectRoot, onProgress);
+    return builder.buildFromConfig(config);
+  }
 
-    const extensions = config.sourceExtensions ?? ['.ts', '.tsx', '.js', '.jsx'];
-    const ignoreDirs = config.ignoreDirs ?? ['node_modules', 'dist', 'build', '.next', 'coverage'];
+  async buildFromConfig(config: ISuggestorConfig): Promise<IRegistry> {
+    const sourceDirs = config.sourceDirs ?? ['src'];
+    const testPatterns = config.testPatterns ?? ['**/*.cy.ts', '**/*.cy.tsx'];
+    const ignorePatterns = config.ignorePatterns ?? ['node_modules', 'dist', '.git'];
+    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
 
     const fileEntries: IFileEntry[] = [];
     const sourceExtractor = new SourceExtractorAnalyzer();
     const cypressExtractor = new CypressExtractorAnalyzer();
 
-    // --- Process source files ---
-    const sourceFiles = await this.findSourceFiles(config.sourceDirs, extensions, ignoreDirs);
-    console.log(`[RegistryBuilder] Found ${sourceFiles.length} source files.`);
+    const limit = pLimit(10); // Concurrent processing limit
 
-    for (const filePath of sourceFiles) {
-      try {
-        const sourceCode = await fs.readFile(filePath, 'utf-8');
-        const result = await sourceExtractor.extract({ filePath, sourceCode });
-        fileEntries.push(this.convertSourceExtractionToFileEntry(result, filePath));
-      } catch (error) {
-        console.warn(`[RegistryBuilder] Failed to process source file ${filePath}:`, error);
-      }
+    // --- 1. Find all files ---
+    const sourceFiles = await this.findFiles(
+      sourceDirs.map((d) => `${d}/**/*{${extensions.join(',')}}`),
+      ignorePatterns,
+    );
+    const testFiles = await this.findFiles(testPatterns, ignorePatterns);
+
+    // --- 2. Process source files in parallel ---
+    if (sourceFiles.length > 0) {
+      this.notify('Starting source file extraction...', 0, sourceFiles.length, 'source');
+
+      const sourceTasks = sourceFiles.map((filePath, index) =>
+        limit(async () => {
+          try {
+            const sourceCode = await fs.readFile(filePath, 'utf-8');
+            const result = await sourceExtractor.extract({ filePath, sourceCode });
+            fileEntries.push(convertSourceExtractionToFileEntry(result, filePath, this.projectRoot));
+            this.notify(
+              `Extracted: ${path.relative(this.projectRoot, filePath)}`,
+              index + 1,
+              sourceFiles.length,
+              'source',
+            );
+          } catch (error) {
+            console.warn(`[RegistryBuilder] Failed to process source file ${filePath}:`, error);
+          }
+        }),
+      );
+      await Promise.all(sourceTasks);
     }
 
-    // --- Process test files ---
-    const testFiles = await this.findTestFiles(config.testPatterns, ignoreDirs);
-    console.log(`[RegistryBuilder] Found ${testFiles.length} test files.`);
+    // --- 3. Process test files in parallel ---
+    if (testFiles.length > 0) {
+      this.notify('Starting test file extraction...', 0, testFiles.length, 'test');
 
-    for (const filePath of testFiles) {
-      try {
-        const sourceCode = await fs.readFile(filePath, 'utf-8');
-        const result = await cypressExtractor.extract({ filePath, sourceCode });
-        fileEntries.push(this.convertCypressExtractionToFileEntry(result, filePath));
-      } catch (error) {
-        console.warn(`[RegistryBuilder] Failed to process test file ${filePath}:`, error);
-      }
+      const testTasks = testFiles.map((filePath, index) =>
+        limit(async () => {
+          try {
+            const sourceCode = await fs.readFile(filePath, 'utf-8');
+            const result = await cypressExtractor.extract({ filePath, sourceCode });
+            fileEntries.push(convertCypressExtractionToFileEntry(result, filePath, this.projectRoot));
+            this.notify(
+              `Extracted: ${path.relative(this.projectRoot, filePath)}`,
+              index + 1,
+              testFiles.length,
+              'test',
+            );
+          } catch (error) {
+            console.warn(`[RegistryBuilder] Failed to process test file ${filePath}:`, error);
+          }
+        }),
+      );
+      await Promise.all(testTasks);
     }
 
     this.registry.buildFromFileEntries(fileEntries);
@@ -94,105 +118,24 @@ export class RegistryBuilder {
   }
 
   /**
-   * Finds all source files in the given directories matching the given extensions.
-   *
-   * Example:
-   *   sourceDirs = ['src']
-   *   extensions = ['.ts', '.tsx']
-   *   ignoreDirs = ['node_modules']
-   *
-   *   Returns: ['src/components/Button.tsx', 'src/pages/LoginPage.tsx', ...]
+   * Finds all files matching the given patterns, respecting ignore patterns.
    */
-  private async findSourceFiles(
-    sourceDirs: string[],
-    extensions: string[],
-    ignoreDirs: string[],
-  ): Promise<string[]> {
-    const extPattern = extensions.length === 1 ? extensions[0] : `{${extensions.join(',')}}`;
-
-    const patterns = sourceDirs.map((dir) => `${dir}/**/*${extPattern}`);
-    const ignorePatterns = ignoreDirs.map((d) => `**/${d}/**`);
+  private async findFiles(patterns: string[], ignore: string[]): Promise<string[]> {
+    const ignorePatterns = ignore.map((d) => (d.includes('**') ? d : `**/${d}/**`));
 
     const files = await glob(patterns, {
       cwd: this.projectRoot,
       ignore: ignorePatterns,
-      absolute: false, // return relative paths (we normalize them ourselves)
-      nodir: true, // onlyFiles equivalent in glob
-    });
-
-    return files.map((f) => normalizePath(f, this.projectRoot));
-  }
-
-  /**
-   * Finds all test files matching the given glob patterns.
-   *
-   * Example:
-   *   testPatterns = ['**\\/*.cy.ts', 'cypress/e2e/**\\/*.spec.ts']
-   *   ignoreDirs   = ['node_modules']
-   *
-   *   Returns: ['cypress/e2e/login.cy.ts', 'cypress/e2e/checkout.cy.ts', ...]
-   */
-  private async findTestFiles(testPatterns: string[], ignoreDirs: string[]): Promise<string[]> {
-    const ignorePatterns = ignoreDirs.map((d) => `**/${d}/**`);
-
-    const files = await glob(testPatterns, {
-      cwd: this.projectRoot,
-      ignore: ignorePatterns,
-      absolute: false,
+      absolute: true, // Use absolute paths for stability
       nodir: true,
     });
 
     return files.map((f) => normalizePath(f, this.projectRoot));
   }
 
-  private convertSourceExtractionToFileEntry(
-    result: ISourceExtractionResult,
-    filePath: string,
-  ): IFileEntry {
-    return {
-      name: path.basename(filePath),
-      type: 'source',
-      path: normalizePath(filePath, this.projectRoot),
-      exports: result.exports ?? [],
-      imports: (result.imports ?? []).map((p: string) => normalizePath(p, this.projectRoot)),
-      classes: result.classes ?? [],
-      functions: result.functions ?? [],
-      interfaces: result.interfaces ?? [],
-      keywords: result.keywords ?? [],
-      selectors: result.selectors,
-      jsxTextContent: result.jsxTextContent,
-      translationKeys: result.translationKeys,
-      routesDefined: result.routesDefined,
-      reduxUsage: result.reduxUsage,
-    };
-  }
-
-  private convertCypressExtractionToFileEntry(
-    result: ICypressExtractionResult,
-    filePath: string,
-  ): IFileEntry {
-    return {
-      name: path.basename(filePath),
-      type: 'test',
-      path: normalizePath(filePath, this.projectRoot),
-      exports: [],
-      // Cypress spec files import page objects, helpers, fixtures, and custom command modules.
-      // These imports are needed so the import graph knows what shared helpers a test depends on.
-      imports: (result.imports ?? []).map((p: string) => normalizePath(p, this.projectRoot)),
-      classes: [],
-      functions: [],
-      interfaces: [],
-      keywords: [],
-      cypress: {
-        visitedRoutes: result.visitedRoutes,
-        selectors: result.selectors,
-        containsText: result.containsText,
-        interceptedAPIs: result.interceptedAPIs,
-        urlAssertions: result.urlAssertions,
-        customCommandsUsed: result.customCommandsUsed,
-        describeBlocks: result.describeBlocks,
-        itBlocks: result.itBlocks,
-      },
-    };
+  private notify(message: string, current: number, total: number, type: 'source' | 'test') {
+    if (this.onProgress) {
+      this.onProgress({ message, current, total, type });
+    }
   }
 }
