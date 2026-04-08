@@ -556,6 +556,7 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
    * Ranked by proximity: Depth 0 (direct) > Depth 1 (importing) > Depth 2+ (transitive).
    */
   suggestSpecFiles(
+    // TODO: Make these parameters configurable
     graph: IImportGraph,
     changedFile: string,
     specRegistry: ISpecRegistry,
