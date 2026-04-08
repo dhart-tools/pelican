@@ -72,6 +72,7 @@ export enum EAnalyzerName {
   REDUX_CHAIN_ANALYZER = 'redux-chain-analyzer',
   I18N_ANALYZER = 'i18n-analyzer',
   ROUTE_ANALYZER = 'route-analyzer',
+  IMPORT_GRAPH_ANALYZER = 'import-graph-analyzer',
 }
 
 export enum EConfidenceLevel {
@@ -91,4 +92,11 @@ export enum EScorerType {
   SELECTOR_ID_MATCH = 'selector-id-match',
   FILENAME_MATCH = 'filename-match',
   API_INTERCEPT = 'api-intercept',
+}
+
+export enum EImportExportType {
+  DEFAULT = 'default',
+  NAMED = 'named',
+  NAMESPACE = 'namespace',
+  TYPE = 'type',
 }

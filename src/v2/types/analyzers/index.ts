@@ -4,3 +4,4 @@ export * from './source-extractor';
 export * from './redux-chain';
 export * from './i18n';
 export * from './route-analyzer';
+export * from './import-graph';
