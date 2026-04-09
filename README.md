@@ -1,292 +1,499 @@
 <div align="center">
 
-```
-███████╗██╗   ██╗ ██████╗  ██████╗ ███████╗███████╗████████╗ ██████╗ ██████╗
-██╔════╝██║   ██║██╔════╝ ██╔════╝ ██╔════╝██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗
-███████╗██║   ██║██║  ███╗██║  ███╗█████╗  ███████╗   ██║   ██║   ██║██████╔╝
-╚════██║██║   ██║██║   ██║██║   ██║██╔══╝  ╚════██║   ██║   ██║   ██║██╔══██╗
-███████║╚██████╔╝╚██████╔╝╚██████╔╝███████╗███████║   ██║   ╚██████╔╝██║  ██║
-╚══════╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚══════╝╚══════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
-```
+<br/>
 
-**Know exactly which Cypress tests to run. Every single time.**
+```
+                              ____
+                          _,-'    '-._
+                        ,'             '.
+                      ,'    SUGGESTOR    '.
+                     /    ___________      \
+                    |   ,'           '.     |
+                    |  /  TEST        \    |
+                    | |  INTELLIGENCE  |   |
+                    |  \     ENGINE   /    |
+                    |   '._________.'     |
+                     \       | |         /
+                      '.     | |       ,'
+                        '-._ | | _.-'
+                            '| |'
+                        _____| |_____
+                       /      |      \
+                      /   ____+____   \
+                     |   |  SCORE  |   |
+                     |   | 0.97    |   |
+                     |   |  HIGH   |   |
+                      \  |_________|  /
+                       \_____________/
+
+```
 
 <br/>
 
-[![Build](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/ci.yml?branch=main&style=flat-square&label=build)](https://github.com/henit-chobisa/suggestor/actions)
-[![Tests](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/test.yml?branch=main&style=flat-square&label=tests&color=4caf50)](https://github.com/henit-chobisa/suggestor/actions)
-[![Contributors](https://img.shields.io/github/contributors/henit-chobisa/suggestor?style=flat-square&color=orange)](https://github.com/henit-chobisa/suggestor/graphs/contributors)
-[![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](./LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Version](https://img.shields.io/badge/version-1.0.0-brightgreen?style=flat-square)](./package.json)
+# `suggestor`
+
+### You changed one file. We'll tell you exactly which tests to run.
+
+<br/>
+
+[![Build](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/ci.yml?branch=main&style=for-the-badge&label=BUILD&logo=github)](https://github.com/henit-chobisa/suggestor/actions)
+&nbsp;&nbsp;
+[![Tests](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/test.yml?branch=main&style=for-the-badge&label=TESTS&color=4caf50&logo=vitest)](https://github.com/henit-chobisa/suggestor/actions)
+&nbsp;&nbsp;
+[![Contributors](https://img.shields.io/github/contributors/henit-chobisa/suggestor?style=for-the-badge&color=orange&logo=github)](https://github.com/henit-chobisa/suggestor/graphs/contributors)
+
+[![TypeScript](https://img.shields.io/badge/TYPESCRIPT-5.x-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+&nbsp;&nbsp;
+[![Cypress](https://img.shields.io/badge/CYPRESS-NATIVE-69D3A7?style=for-the-badge&logo=cypress&logoColor=white)](https://www.cypress.io/)
+&nbsp;&nbsp;
+[![License](https://img.shields.io/badge/LICENSE-MIT-blue?style=for-the-badge)](./LICENSE)
+
+<br/>
+
+**Semantic code analysis** &middot; **10 scoring dimensions** &middot; **Zero runtime overhead** &middot; **One command**
+
+<br/>
+
+---
+
+<br/>
 
 </div>
 
----
+## It's 4:47 PM on a Thursday.
 
-## The Problem Nobody Talks About
+You changed one line in `UserProfile.tsx`. A CSS class. Maybe a copy change. Maybe you refactored how props are passed down.
 
-You just changed one function in `UserProfile.tsx`.
+Your CI pipeline wakes up. It runs **1,247 Cypress tests**. All of them. Every single one. It takes 43 minutes.
 
-Your CI pipeline now runs **1,247 Cypress tests**. It takes 43 minutes. The tests are green. You don't know which ones were actually *relevant* to your change. You don't know which ones caught real bugs and which ones just... ran. Your PR waits. Your teammates wait. Your deploy waits.
+You alt-tab. You check Slack. You refill your coffee. You come back. Green. Ship it.
 
-On Thursday, a regression slips through. The right test existed. It just didn't run in the critical window because it was buried in a different suite nobody knew was connected.
+But here's the thing — of those 1,247 tests, **only 11 were actually relevant** to your change. Eleven. The other 1,236 tests tested features your change couldn't possibly affect. They ran because nobody knew which ones mattered.
 
-Sound familiar?
+And here's the worse thing — sometimes **the 12th test**, the one that *would* have caught the regression? It was in a completely different test suite. Nobody knew it was connected. It didn't run until the nightly. The bug hit staging at 2 AM.
 
-**This is the problem Suggestor was built to solve.**
+Your Slack lights up.
 
----
+**You've been here before. We all have.**
 
-## What is Suggestor?
+<br/>
 
-Suggestor is an intelligent test recommendation engine that understands your codebase semantically — not just by file names, but by *relationships*. It analyzes how your source code is wired together: imports, routes, Redux slices, CSS selectors, translation keys, API endpoints — and uses all of that context to surface exactly which Cypress tests are relevant when a file changes.
-
-It's not pattern matching. It's not file-name similarity. It's code intelligence.
+<div align="center">
 
 ```
-You change:  src/features/auth/LoginForm.tsx
+    ┌─────────────────────────────────────────────────────────────┐
+    │                                                             │
+    │   You change:  src/features/auth/LoginForm.tsx              │
+    │                                                             │
+    │   ┌───────────────────────────────────────────────────────┐ │
+    │   │                                                       │ │
+    │   │   suggestor --changed src/features/auth/LoginForm.tsx │ │
+    │   │                                                       │ │
+    │   └───────────────────────────────────────────────────────┘ │
+    │                                                             │
+    │   Suggestor thinks for ~2 seconds, then:                    │
+    │                                                             │
+    │   ● login.cy.ts              HIGH   0.97                    │
+    │     ├─ direct-import         ██████████████████░░  0.95     │
+    │     └─ selector-match        ████████████████░░░░  0.80     │
+    │                                                             │
+    │   ● auth-flow.cy.ts          HIGH   0.91                    │
+    │     └─ route-match           █████████████████░░░  0.85     │
+    │                                                             │
+    │   ● forgot-password.cy.ts    HIGH   0.87                    │
+    │     └─ translation-match     █████████████████░░░  0.85     │
+    │                                                             │
+    │   ● navigation.cy.ts         MED    0.62                    │
+    │     └─ transitive-import     ██████████████░░░░░░  0.70     │
+    │                                                             │
+    │   4 tests to run.  ~3 minutes.  Done.                       │
+    │                                                             │
+    └─────────────────────────────────────────────────────────────┘
+```
 
-Suggestor:   ● login.cy.ts              [HIGH   0.97]  direct import + selector match
-             ● auth-flow.cy.ts          [HIGH   0.91]  route match → LoginPage → LoginForm
-             ● forgot-password.cy.ts    [MEDIUM 0.61]  transitive import (AuthLayout)
-             ● i18n-smoke.cy.ts         [LOW    0.42]  translation key match (login.submitButton)
+</div>
+
+<br/>
+
+---
+
+## Before & After
+
+<table>
+<tr>
+<td width="50%">
+
+### Without Suggestor
+
+```
+$ git push origin feature/update-profile
+
+CI: Running all tests...
+
+  ✓ login.cy.ts             (31s)
+  ✓ signup.cy.ts            (28s)
+  ✓ forgot-password.cy.ts   (19s)
+  ✓ dashboard.cy.ts         (45s)
+  ✓ settings.cy.ts          (33s)
+  ✓ admin-users.cy.ts       (41s)
+  ✓ admin-roles.cy.ts       (38s)
+  ✓ billing.cy.ts           (52s)
+  ✓ onboarding.cy.ts        (27s)
+  ✓ search.cy.ts            (35s)
+  ✓ notifications.cy.ts     (22s)
+    ... 1,236 more tests ...
+  ✓ export-csv.cy.ts        (44s)
+
+  1247 passed  (43m 12s)
+```
+
+43 minutes. All green. No idea which ones
+mattered. All of them ran "just in case."
+
+</td>
+<td width="50%">
+
+### With Suggestor
+
+```
+$ suggestor --changed $(git diff --name-only)
+  | cypress run --spec
+
+Analyzing: src/features/auth/LoginForm.tsx
+
+  ● login.cy.ts            HIGH  0.97
+    "direct-import + selector-match"
+  ● auth-flow.cy.ts        HIGH  0.91
+    "route /login renders LoginPage → LoginForm"
+  ● forgot-password.cy.ts  HIGH  0.87
+    "translation key login.submitButton"
+  ● navigation.cy.ts       MED   0.62
+    "transitive: AuthLayout → LoginForm"
+
+Running 4 targeted tests...
+
+  ✓ login.cy.ts             (31s)
+  ✓ auth-flow.cy.ts         (24s)
+  ✓ forgot-password.cy.ts   (19s)
+  ✓ navigation.cy.ts        (28s)
+
+  4 passed  (1m 42s)
+```
+
+1 minute 42 seconds. The 4 tests that
+actually cover your change. Nothing else.
+
+</td>
+</tr>
+</table>
+
+> **That's a 96% reduction in test execution time, with zero loss in coverage for the change.**
+
+---
+
+## Why Not Just...
+
+Before we go deeper, let's address the elephant in the room. You're probably thinking one of these:
+
+<table>
+<tr>
+<td width="40%"><strong>"We just run tests in the same directory"</strong></td>
+<td width="60%">Your <code>LoginForm</code> is in <code>src/features/auth/</code>. But the test that catches the regression is in <code>cypress/e2e/smoke/navigation.cy.ts</code> — a smoke test that visits <code>/login</code> and checks the form works. Directory matching misses it entirely.</td>
+</tr>
+<tr>
+<td><strong>"We use <code>grep</code> on changed file names"</strong></td>
+<td>You renamed <code>useAuth</code> hook. Grep finds <code>auth.cy.ts</code>. It misses <code>dashboard.cy.ts</code>, which imports <code>DashboardPage</code>, which imports <code>HeaderNav</code>, which calls <code>useAuth</code>. Grep can't follow transitive imports.</td>
+</tr>
+<tr>
+<td><strong>"We tag tests with metadata"</strong></td>
+<td>Metadata rots. Someone adds a new feature and forgets to tag the test. Someone refactors a component and the tag now points to a file that doesn't exist. Suggestor reads the actual code — it can't go stale.</td>
+</tr>
+<tr>
+<td><strong>"We just run everything, CI is cheap"</strong></td>
+<td>CI minutes are cheap. <strong>Your engineers' context switches are not.</strong> Every 43-minute pipeline is a coffee break that breaks flow. Multiply that by 15 PRs/day, 5 days/week. That's 53 hours/week of idle pipeline time — and 53 hours of broken focus.</td>
+</tr>
+<tr>
+<td><strong>"We use code coverage data"</strong></td>
+<td>Coverage data requires running the tests first. It's a feedback loop — you need the answer <em>before</em> you run. Suggestor uses static analysis. It gives you the answer before anything executes.</td>
+</tr>
+</table>
+
+---
+
+## How It Works — The Big Picture
+
+Suggestor has three layers. Each one builds on the last.
+
+```
+                    YOUR CODEBASE
+                         │
+       ┌─────────────────┼─────────────────┐
+       │                 │                 │
+       ▼                 ▼                 ▼
+  Source Files      Test Files      Config Files
+  (.ts, .tsx)      (.cy.ts)       (i18n, routes)
+       │                 │                 │
+       └────────┬────────┘                 │
+                │                          │
+                ▼                          │
+┌──────────────────────────────────────────┤
+│                                          │
+│            L A Y E R   1                 │
+│                                          │
+│              ANALYZERS                   │
+│                                          │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ │
+│  │  Source   │ │ Cypress  │ │  Import  │ │
+│  │Extractor │ │Extractor │ │  Graph   │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│       │             │            │       │
+│  ┌────┴─────┐ ┌─────┴────┐ ┌────┴─────┐ │
+│  │  Route   │ │  Redux   │ │   i18n   │ │
+│  │ Analyzer │ │  Chain   │ │ Analyzer │ │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│       │             │            │       │
+└───────┼─────────────┼────────────┼───────┘
+        │             │            │
+        └──────┬──────┘            │
+               │                   │
+               ▼                   │
+┌──────────────────────────────────┤
+│                                  │
+│          L A Y E R   2           │
+│                                  │
+│            REGISTRY              │
+│                                  │
+│  ┌────────────────────────────┐  │
+│  │ files: Map<path, entry>   │  │
+│  │ importGraph: deps ↔ deps  │◄─┘
+│  │ selectorIndex: val → files│
+│  │ routeMap: url → component │
+│  │ reduxChains: slice → chain│
+│  │ translationIndex: key ↔ t │
+│  └────────────────────────────┘
+│                                  │
+└─────────────────┬────────────────┘
+                  │
+                  ▼
+┌──────────────────────────────────┐
+│                                  │
+│          L A Y E R   3           │
+│                                  │
+│         SCORING ENGINE           │
+│                                  │
+│  For each (changed, test) pair:  │
+│                                  │
+│  ┌────────────────────────────┐  │
+│  │ 10 scorers evaluate        │  │
+│  │ signals collected          │  │
+│  │ ubiquity dampener applied  │  │
+│  │ final score computed       │  │
+│  │ confidence level assigned  │  │
+│  └────────────────────────────┘  │
+│                                  │
+│  Output:                         │
+│    test.cy.ts → 0.97 [HIGH]     │
+│    "direct import + selectors"   │
+│                                  │
+└──────────────────────────────────┘
 ```
 
 ---
 
 ## Table of Contents
 
-- [How It Works](#how-it-works)
-- [Usage](#usage)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-- [Analyzers](#analyzers)
-  - [SourceExtractorAnalyzer](#sourceextractoranalyzer)
-  - [CypressExtractorAnalyzer](#cypressextractoranalyzer)
-  - [ImportGraphAnalyzer](#importgraphanalyzer)
-  - [RouteAnalyzer](#routeanalyzer)
-  - [ReduxChainAnalyzer](#reduxchainanalyzer)
-  - [I18nAnalyzer](#i18nanalyzer)
-- [Scoring Engine](#scoring-engine)
-  - [How Scores Are Calculated](#how-scores-are-calculated)
-  - [All Scorers](#all-scorers)
-  - [Confidence Levels](#confidence-levels)
-- [Development](#development)
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**Using Suggestor**
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Configuration](#configuration)
+- [CI Integration](#ci-integration)
+
+**Understanding the Analyzers**
+- [SourceExtractorAnalyzer](#-sourceextractoranalyzer)
+- [CypressExtractorAnalyzer](#-cypressextractoranalyzer)
+- [ImportGraphAnalyzer](#-importgraphanalyzer)
+- [RouteAnalyzer](#-routeanalyzer)
+- [ReduxChainAnalyzer](#-reduxchainanalyzer)
+- [I18nAnalyzer](#-i18nanalyzer)
+
+</td>
+<td width="50%" valign="top">
+
+**Understanding the Scoring**
+- [How Scores Are Calculated](#how-scores-are-calculated)
+- [The Score Formula](#the-score-formula)
+- [Ubiquity Dampener](#the-ubiquity-dampener)
+- [All 10 Scorers (Detailed)](#all-10-scorers)
+- [Confidence Levels](#confidence-levels)
+
+**Real-World Walkthroughs**
+- [Trace 1: The Selector Bridge](#trace-1--the-selector-bridge)
+- [Trace 2: The Translation Ghost](#trace-2--the-translation-ghost)
+- [Trace 3: The Redux Ripple](#trace-3--the-redux-ripple)
+
+**Development**
+- [Setup](#setup)
+- [Project Structure](#project-structure)
+- [Extending Suggestor](#extending-suggestor)
+
+</td>
+</tr>
+</table>
 
 ---
 
-## How It Works
-
-Suggestor is built on three layers that work in sequence:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         YOUR CODEBASE                               │
-│   src/features/   cypress/e2e/   src/store/   public/locales/      │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                          ANALYZERS                                  │
-│                                                                     │
-│   SourceExtractor    CypressExtractor    ImportGraph                │
-│   RouteAnalyzer      ReduxChainAnalyzer  I18nAnalyzer               │
-│                                                                     │
-│   Each analyzer reads files, parses the TypeScript AST, and        │
-│   extracts structured semantic data: exports, selectors,            │
-│   routes, Redux roles, translation keys, import edges.              │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           REGISTRY                                  │
-│                                                                     │
-│   A central in-memory store that holds everything the analyzers     │
-│   found, organized into fast-lookup indexes:                        │
-│                                                                     │
-│   files          → Map<path, IFileEntry>                            │
-│   importGraph    → bidirectional dependency edges                   │
-│   selectorIndex  → Map<data-testid value, Set<filePath>>            │
-│   routeMap       → Map<"/login", "src/pages/LoginPage.tsx">         │
-│   reduxChains    → Map<sliceName, full chain metadata>              │
-│   translationIndex → key↔text bidirectional lookup                 │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        SCORING ENGINE                               │
-│                                                                     │
-│   For every (changedFile × testFile) pair, runs 10 scorers.        │
-│   Each scorer returns signals with weights. The engine combines     │
-│   them, applies a ubiquity dampener for global files, and          │
-│   produces a final confidence score from 0.0 to 1.0.               │
-└───────────────────────────────┬─────────────────────────────────────┘
-                                │
-                                ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                           OUTPUT                                    │
-│                                                                     │
-│   Ranked list of test files, scored, labeled, and explained.       │
-│   Feed into CI to run only what matters.                            │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Usage
-
-### Installation
+## Installation
 
 ```bash
-# Clone and install dependencies
 git clone https://github.com/henit-chobisa/suggestor.git
 cd suggestor
 pnpm install
-
-# Build the CLI
 pnpm build
-
-# Link globally
 pnpm link
 ```
 
-### Quick Start
+## Quick Start
 
 ```bash
-# Run against a changed file
+# Single file
 suggestor --changed src/features/auth/LoginForm.tsx
 
-# Run against multiple changed files (e.g. from a git diff)
+# From git diff (most common usage)
 suggestor --changed $(git diff --name-only HEAD~1)
 
-# Output as JSON for CI consumption
-suggestor --changed src/features/auth/LoginForm.tsx --format json
+# JSON output for piping into CI
+suggestor --changed $(git diff --name-only HEAD~1) --format json
+
+# Only HIGH confidence results
+suggestor --changed $(git diff --name-only HEAD~1) --min-confidence high
 ```
 
-### Configuration
-
-Create a `suggestor.config.ts` at your project root:
+## Configuration
 
 ```typescript
+// suggestor.config.ts
 import type { ISuggestorConfig } from './src/v2/types/config';
 
-const config: ISuggestorConfig = {
+export default {
   scoring: {
-    // Which scorers to enable (all enabled by default)
     enabledScorers: [
-      'direct-import',
-      'route-match',
-      'selector-match',
-      'translation-match',
-      'redux-chain',
-      'transitive-import',
-      'redux-consumer',
-      'selector-id-match',
-      'filename-convention',
-      'api-intercept',
+      'direct-import',        // weight: 0.95
+      'route-match',          // weight: 0.85
+      'translation-match',    // weight: 0.85
+      'selector-match',       // weight: 0.80
+      'redux-chain',          // weight: 0.75
+      'transitive-import',    // weight: 0.70
+      'redux-consumer',       // weight: 0.65
+      'selector-id-match',    // weight: 0.65
+      'filename-convention',  // weight: 0.60
+      'api-intercept',        // weight: 0.55
     ],
-
-    // A file imported by more than 70% of the codebase
-    // is considered "ubiquitous" and its signals are dampened
-    ubiquityThreshold: 0.7,
-
-    // Minimum score to include in results
-    minConfidence: 0.4,
-
-    // Score threshold for HIGH confidence label
-    highConfidence: 0.8,
-
-    // Override individual scorer weights (optional)
-    scorerWeights: {
-      'direct-import': 0.95,
-      'route-match': 0.85,
-    },
+    ubiquityThreshold: 0.7,   // files imported by >70% of codebase are dampened
+    minConfidence: 0.4,       // minimum score to appear in results
+    highConfidence: 0.8,      // threshold for HIGH label
   },
-};
-
-export default config;
+} satisfies ISuggestorConfig;
 ```
 
-**RegistryBuilder config** (passed programmatically):
+## CI Integration
+
+Pipe the output directly into Cypress:
+
+```yaml
+# .github/workflows/test.yml
+name: Smart Tests
+on: [pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed
+        run: echo "files=$(git diff --name-only origin/main...HEAD | tr '\n' ',')" >> $GITHUB_OUTPUT
+
+      - name: Suggest tests
+        id: suggest
+        run: |
+          SPECS=$(suggestor --changed "${{ steps.changed.outputs.files }}" --format spec-list)
+          echo "specs=$SPECS" >> $GITHUB_OUTPUT
+
+      - name: Run targeted tests
+        if: steps.suggest.outputs.specs != ''
+        run: npx cypress run --spec "${{ steps.suggest.outputs.specs }}"
+```
+
+---
+
+<br/>
+
+<div align="center">
+
+# The Analyzers
+
+*Six specialized parsers that see your codebase the way a senior engineer would.*
+
+</div>
+
+<br/>
+
+Every analyzer implements the same interface — simple, composable, independently testable:
 
 ```typescript
-const builder = new RegistryBuilder({
-  sourceDirs: ['src', 'lib'],
-  testPatterns: ['cypress/e2e/**/*.cy.ts', '**/*.cy.tsx'],
-  sourceExtensions: ['.ts', '.tsx', '.js', '.jsx'],
-  ignoreDirs: ['node_modules', 'dist', '.next', 'build'],
-  projectRoot: process.cwd(),
-});
+interface IAnalyzer<TInput, TOutput> {
+  name: string;
+  version: string;
+  dependencies: string[];          // other analyzers this one requires
+  extract(input: TInput): TOutput; // parse input → structured data
+  index(output: TOutput): void;    // store into the registry
+}
 ```
 
 ---
 
-## Analyzers
+### `01` SourceExtractorAnalyzer
 
-Analyzers are the foundation of Suggestor. Each one reads a category of files, walks the TypeScript AST, and extracts structured information into the Registry. They are composable, versioned, and independently testable.
+> *Reads every source file in your project and extracts its semantic DNA — what it exports, what selectors it renders, what translation keys it uses, what Redux state it touches.*
 
-```
-IAnalyzer<TInput, TOutput>
-├── name: string
-├── version: string
-├── dependencies: string[]          ← declares what other analyzers it needs
-├── extract(input): TOutput         ← parse a file, return structured data
-└── index(output, registry): void   ← store results into the registry
-```
+**Reads:** `.ts` `.tsx` `.js` `.jsx` (non-test files)
 
----
+<table>
+<tr>
+<td width="50%">
 
-### SourceExtractorAnalyzer
-
-> Extracts the semantic DNA of every source file in your project.
-
-**What it reads:** Any `.ts`, `.tsx`, `.js`, `.jsx` file that is not a test.
-
-**What it extracts:**
-
-| Category | Examples |
-|---|---|
-| Imports | `import { useAuth } from './hooks/useAuth'` |
-| Exports | Named, default, re-exports |
-| Functions & Classes | `function LoginForm()`, `class AuthService` |
-| JSX selector attributes | `data-testid="login-btn"`, `data-cy="submit"`, `id="modal"`, `aria-label="close"` |
-| Translation keys | `t('login.submitButton')`, `t('errors.required')` |
-| Redux usage | `useSelector(selectUser)`, `dispatch(loginAction())`, `createSlice(...)` |
-| Route definitions | `<Route path="/login" element={<LoginPage />} />` |
-
-**How it works internally:**
-
-```
-LoginForm.tsx
-     │
-     ▼
-TypeScript Compiler API (ts.createSourceFile)
-     │
-     ▼
-AST Node Walker (recursive visit)
-     │
-     ├─► ImportDeclaration  → push to imports[]
-     ├─► ExportDeclaration  → push to exports[]
-     ├─► FunctionDeclaration → push to functions[]
-     ├─► ClassDeclaration    → push to classes[]
-     ├─► JsxAttribute        → if name ∈ SELECTOR_ATTRIBUTES → push to selectors[]
-     ├─► CallExpression      → if callee === "t" → push to translationKeys[]
-     └─► CallExpression      → if callee ∈ Redux patterns → push to reduxUsage[]
-```
-
-**Scenario — selector extraction:**
-
-You have this component:
+**Your code:**
 
 ```tsx
 // src/features/auth/LoginForm.tsx
+
+import { useAuth } from '@/hooks/useAuth';
+import { selectUser } from '@/store/auth';
+
 export function LoginForm() {
+  const user = useSelector(selectUser);
+  const { login } = useAuth();
+
   return (
-    <form data-testid="login-form">
-      <input data-cy="email-input" id="email" />
-      <button data-testid="login-btn" aria-label="Sign in">
+    <form data-testid="login-form"
+          onSubmit={login}>
+      <input
+        data-cy="email-input"
+        id="email-field"
+        aria-label="Email address"
+      />
+      <input
+        data-cy="password-input"
+        type="password"
+      />
+      <button data-testid="login-btn">
         {t('login.submitButton')}
       </button>
     </form>
@@ -294,546 +501,1009 @@ export function LoginForm() {
 }
 ```
 
-The analyzer extracts:
+</td>
+<td width="50%">
+
+**What Suggestor sees:**
 
 ```typescript
-selectors: [
-  { attr: 'data-testid', value: 'login-form' },
-  { attr: 'data-cy',     value: 'email-input' },
-  { attr: 'id',          value: 'email' },
-  { attr: 'data-testid', value: 'login-btn' },
-  { attr: 'aria-label',  value: 'Sign in' },
-],
-translationKeys: ['login.submitButton']
+{
+  imports: [
+    '@/hooks/useAuth',
+    '@/store/auth'
+  ],
+
+  exports: ['LoginForm'],
+
+  functions: ['LoginForm'],
+
+  selectors: [
+    { attr: 'data-testid', value: 'login-form' },
+    { attr: 'data-cy',     value: 'email-input' },
+    { attr: 'id',          value: 'email-field' },
+    { attr: 'aria-label',  value: 'Email address' },
+    { attr: 'data-cy',     value: 'password-input' },
+    { attr: 'data-testid', value: 'login-btn' },
+  ],
+
+  translationKeys: [
+    'login.submitButton'
+  ],
+
+  reduxUsage: {
+    selectors: ['selectUser'],
+    dispatches: []
+  }
+}
 ```
 
-Now when the `SelectorMatchScorer` runs, it knows exactly which test files reference `login-btn` or `email-input` — without running a single test.
+</td>
+</tr>
+</table>
+
+**Internal AST walk:**
+
+```
+LoginForm.tsx  →  ts.createSourceFile()  →  recursive node visitor
+                                                   │
+   ┌───────────────────────────────────────────────┤
+   │                                               │
+   ▼                                               ▼
+ImportDeclaration                            JsxOpeningElement
+   │                                               │
+   ├─ '@/hooks/useAuth'                            ├─ attribute: data-testid
+   └─ '@/store/auth'                               │   └─ value: "login-form"
+                                                   ├─ attribute: data-cy
+CallExpression                                     │   └─ value: "email-input"
+   │                                               ├─ attribute: id
+   ├─ t('login.submitButton')                      │   └─ value: "email-field"
+   │   └─ → translationKeys[]                      └─ attribute: aria-label
+   │                                                   └─ value: "Email address"
+   └─ useSelector(selectUser)
+       └─ → reduxUsage.selectors[]
+```
+
+> **Edge cases handled:** Only extracts string literals (ignores dynamic `t(variable)` calls and template expressions). Handles nested JSX depth. Detects all Redux Toolkit patterns: `createSlice`, `createAction`, `createSelector`, `createAsyncThunk`.
 
 ---
 
-### CypressExtractorAnalyzer
+### `02` CypressExtractorAnalyzer
 
-> Reads your test files and maps out everything the test *does* — where it goes, what it clicks, what it sees.
+> *Reads every test file and maps out what it does — which pages it visits, which elements it interacts with, which text it asserts on, which APIs it mocks.*
 
-**What it reads:** Any `.cy.ts`, `.cy.tsx`, or spec file matching your test patterns.
+**Reads:** `.cy.ts` `.cy.tsx` `.spec.ts` (test files matching configured patterns)
 
-**What it extracts:**
+This is the **mirror** of the SourceExtractor. While the source side says "I render `data-testid='login-btn'`", the test side says "I click `data-testid='login-btn'`". The scorers connect the two.
 
-| Category | Cypress Command | Extracted Data |
-|---|---|---|
-| Navigation | `cy.visit('/login')` | Visited route: `/login` |
-| Selector queries | `cy.get('[data-testid="login-btn"]')` | Selector: `{ type: TEST_ID, value: 'login-btn' }` |
-| Text assertions | `cy.contains('Sign in')` | Contains text: `'Sign in'` |
-| API mocks | `cy.intercept('POST', '/api/auth/login')` | Intercept: `{ method: POST, pattern: '/api/auth/login' }` |
-| URL assertions | `cy.url().should('include', '/dashboard')` | URL assertion: `/dashboard` |
-| Test structure | `describe(...)`, `it(...)`, `context(...)` | Test block hierarchy |
+<table>
+<tr>
+<td width="50%">
 
-**Real test → extracted data:**
+**Your test:**
 
 ```typescript
 // cypress/e2e/auth/login.cy.ts
+
 describe('Login Flow', () => {
-  it('should log in successfully', () => {
-    cy.intercept('POST', '/api/auth/login').as('loginRequest');
+  beforeEach(() => {
+    cy.intercept('POST', '/api/auth/login')
+      .as('loginReq');
+    cy.intercept('GET', '/api/users/me')
+      .as('userReq');
+  });
+
+  it('logs in with valid credentials', () => {
     cy.visit('/login');
-    cy.get('[data-testid="email-input"]').type('user@example.com');
-    cy.get('[data-cy="password-field"]').type('secret');
-    cy.get('[data-testid="login-btn"]').click();
-    cy.wait('@loginRequest');
-    cy.url().should('include', '/dashboard');
+
+    cy.get('[data-testid="email-input"]')
+      .type('user@company.com');
+
+    cy.get('[data-cy="password-input"]')
+      .type('P@ssw0rd!');
+
+    cy.get('[data-testid="login-btn"]')
+      .click();
+
+    cy.wait('@loginReq');
+
+    cy.url()
+      .should('include', '/dashboard');
+
+    cy.contains('Welcome back');
   });
 });
 ```
 
-Extracted:
+</td>
+<td width="50%">
+
+**What Suggestor sees:**
 
 ```typescript
 {
+  describes: [{
+    name: 'Login Flow',
+    tests: [{
+      name: 'logs in with valid credentials',
+    }],
+  }],
+
   visitedRoutes: ['/login'],
+
   selectors: [
     { type: 'TEST_ID', value: 'email-input' },
-    { type: 'DATA_CY', value: 'password-field' },
+    { type: 'DATA_CY', value: 'password-input' },
     { type: 'TEST_ID', value: 'login-btn' },
   ],
-  apiIntercepts: [{ method: 'POST', urlPattern: '/api/auth/login' }],
+
+  apiIntercepts: [
+    { method: 'POST', url: '/api/auth/login' },
+    { method: 'GET',  url: '/api/users/me' },
+  ],
+
   urlAssertions: ['/dashboard'],
-  containsText: [],
+
+  containsText: ['Welcome back'],
+
+  customCommands: [],
 }
 ```
 
-This is the mirror of what `SourceExtractorAnalyzer` extracted. The scorers connect the two sides.
+</td>
+</tr>
+</table>
+
+**Selector parsing — the regex engine:**
+
+```
+cy.get('[data-testid="login-btn"]')   →  { type: TEST_ID,  value: 'login-btn' }
+cy.get('[data-cy="email"]')           →  { type: DATA_CY,  value: 'email' }
+cy.get('#submit-form')                →  { type: ID,        value: 'submit-form' }
+cy.get('.btn-primary')                →  { type: CLASS,     value: 'btn-primary' }
+cy.get('.modal [data-cy="close"]')    →  { type: DATA_CY,  value: 'close' }
+cy.get('div > span.active:first')     →  { type: COMPLEX,   value: 'div > span.active:first' }
+```
+
+> **Edge cases handled:** Template literal selectors extract the prefix only. Custom Cypress commands are tracked. Both `describe` and `context` block types are recognized. Chained selectors like `cy.get(...).find(...)` are followed.
 
 ---
 
-### ImportGraphAnalyzer
+### `03` ImportGraphAnalyzer
 
-> Builds the complete bidirectional dependency graph of your entire codebase. Answers: "If I change X, what else is affected?"
+> *Builds the complete bidirectional dependency graph of your entire codebase. Answers the fundamental question: "If I change file X, what else could break?"*
 
-**What it detects:**
+This is the **backbone** of Suggestor. Almost every other scorer depends on it.
 
-```
-Static imports:     import X from './Y'
-Dynamic imports:    const X = await import('./Y')
-Re-exports:         export { X } from './Y'
-Wildcard re-exports: export * from './Y'
-Require calls:      const X = require('./Y')
-Type imports:       import type { X } from './Y'  ← filtered out (not runtime)
-```
+**What it tracks:**
 
-**Barrel file resolution:**
+| Import type | Example | Tracked? |
+|---|---|---|
+| Static import | `import { X } from './Y'` | Yes |
+| Dynamic import | `const X = await import('./Y')` | Yes |
+| Re-export | `export { X } from './Y'` | Yes |
+| Wildcard re-export | `export * from './Y'` | Yes |
+| require() | `const X = require('./Y')` | Yes |
+| Type-only import | `import type { X } from './Y'` | **No** (not runtime) |
 
-One of the trickiest problems in import graph analysis is barrel files (`index.ts` files that re-export from many places). Suggestor handles this in two passes:
+**Barrel file resolution (the hard problem):**
 
-```
-Pass 1 — Index barrel files
-─────────────────────────────────────────────────────────
-  src/components/index.ts
-    export { Button } from './Button'
-    export { Modal }  from './Modal'
-    export { Input }  from './Input'
-
-  → barrelMap: { 'src/components/index.ts' → ['Button', 'Modal', 'Input'] }
-
-Pass 2 — Build edges with barrel resolution
-─────────────────────────────────────────────────────────
-  LoginForm.tsx imports { Button } from 'src/components'
-  → resolves barrel → edge: LoginForm → src/components/Button.tsx
-```
-
-**Transitive dependency analysis:**
+Most codebases have barrel files — `index.ts` files that re-export from dozens of places. A naive import graph would say "LoginForm depends on `components/index.ts`." That's useless. We need to know *which specific component* it actually uses.
 
 ```
-┌─────────────────────────────────────────────────────┐
-│  You change: src/components/Button.tsx              │
-│                                                     │
-│  getTransitiveDependents('Button.tsx', depth=3):    │
-│                                                     │
-│  Button.tsx                                         │
-│     └─► LoginForm.tsx          (depth 1)            │
-│              └─► AuthPage.tsx  (depth 2)            │
-│                       └─► App.tsx (depth 3)         │
-│                                                     │
-│  Affected: [LoginForm, AuthPage, App]               │
-│  Tests to run: login.cy.ts, auth-flow.cy.ts         │
-└─────────────────────────────────────────────────────┘
+       The Problem                              Suggestor's Solution
+  ─────────────────────                    ─────────────────────────────
+
+  LoginForm.tsx                            Pass 1: Index barrels
+    │                                      ┌─────────────────────────┐
+    └─ import { Button }                   │ components/index.ts:    │
+         from '@/components'               │   Button  → ./Button    │
+              │                            │   Modal   → ./Modal     │
+              ▼                            │   Input   → ./Input     │
+    components/index.ts  ← barrel          └─────────────────────────┘
+      export { Button } from './Button'
+      export { Modal }  from './Modal'     Pass 2: Resolve edges
+      export { Input }  from './Input'     ┌─────────────────────────┐
+              │                            │ LoginForm.tsx            │
+              ▼                            │   └─► Button.tsx         │
+    We need the edge to go                 │       (not index.ts)     │
+    to Button.tsx, not index.ts            └─────────────────────────┘
 ```
 
-**Alias resolution — multi-source, priority order:**
+**Transitive analysis — ripple effects:**
 
 ```
-Priority:   tsconfig.json  >  vite.config.ts  >  webpack.config.js  >  user config
+  You change: src/utils/formatDate.ts
 
-Resolution: Longest prefix wins (prevents ambiguity)
+  ┌──────────────────────────────────────────────────────────┐
+  │                                                          │
+  │  formatDate.ts        ◄── YOU CHANGED THIS               │
+  │       │                                                  │
+  │       ├─── imported by ──► EventCard.tsx    (depth 1)    │
+  │       │                        │                         │
+  │       │                        └──► EventList.tsx (d.2)  │
+  │       │                                  │               │
+  │       │                                  └──► App.tsx    │
+  │       │                                       (depth 3)  │
+  │       │                                                  │
+  │       ├─── imported by ──► InvoicePDF.tsx   (depth 1)    │
+  │       │                                                  │
+  │       └─── imported by ──► DatePicker.tsx   (depth 1)    │
+  │                                 │                        │
+  │                                 └──► SettingsForm.tsx    │
+  │                                      (depth 2)           │
+  │                                                          │
+  │  Blast radius: 6 files                                   │
+  │  Tests to suggest: events.cy.ts, invoice.cy.ts,          │
+  │                    settings.cy.ts                         │
+  │                                                          │
+  └──────────────────────────────────────────────────────────┘
+```
 
-Example:
-  @/pages/auth/Login  →  src/pages/auth/Login.tsx   (via tsconfig paths)
-  @pages/Login        →  src/pages/Login.tsx         (via vite alias)
-  ~/utils/format      →  src/utils/format.ts         (via webpack alias)
+**Built-in alias resolution:**
+
+Suggestor reads your project configuration and resolves aliases automatically:
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                                                                      │
+│  Priority:   1. tsconfig.json    (highest)                           │
+│              2. vite.config.ts                                       │
+│              3. webpack.config.js                                    │
+│              4. User-supplied overrides (lowest, but never skipped)  │
+│                                                                      │
+│  Strategy:   Longest prefix match wins                               │
+│                                                                      │
+│  ┌──────────────────────┬────────────────────────────────┐          │
+│  │ You write            │ Suggestor resolves to           │          │
+│  ├──────────────────────┼────────────────────────────────┤          │
+│  │ @/pages/Login        │ src/pages/Login.tsx             │          │
+│  │ @components/Button   │ src/components/Button.tsx       │          │
+│  │ ~/utils/format       │ src/utils/format.ts             │          │
+│  │ @store/auth          │ src/store/auth/index.ts         │          │
+│  └──────────────────────┴────────────────────────────────┘          │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### RouteAnalyzer
+### `04` RouteAnalyzer
 
-> Maps every URL in your app to the React component that renders it.
+> *Maps every URL in your application to the React component that renders it. Turns `cy.visit('/login')` into "this test exercises `LoginPage.tsx`."*
 
-**Three route definition styles supported:**
+**Three route definition styles — all supported:**
 
-**Style 1 — JSX routes:**
+<table>
+<tr>
+<td>
+
+**JSX Routes**
 ```tsx
-// src/App.tsx
 <Routes>
-  <Route path="/login"     element={<LoginPage />} />
-  <Route path="/dashboard" element={<DashboardPage />} />
-  <Route path="/users/:id" element={<UserProfile />} />
+  <Route path="/login"
+    element={<LoginPage />} />
+  <Route path="/users/:id"
+    element={<UserProfile />} />
 </Routes>
 ```
 
-**Style 2 — Router config (React Router v6.4+):**
+</td>
+<td>
+
+**Config Routes (v6.4+)**
 ```typescript
-// src/router.ts
-export const router = createBrowserRouter([
-  { path: '/',        element: <App />,       children: [
-    { path: 'login',  element: <LoginPage /> },
-    { path: 'users',  element: <UsersPage />, children: [
-      { path: ':id',  element: <UserProfile /> },
-    ]},
-  ]},
+createBrowserRouter([
+  { path: '/',
+    element: <App />,
+    children: [
+      { path: 'login',
+        element: <LoginPage /> },
+      { path: 'users/:id',
+        element: <UserProfile /> },
+    ]
+  },
 ]);
 ```
 
-**Style 3 — Lazy routes:**
+</td>
+<td>
+
+**Lazy Routes**
 ```typescript
-const LoginPage = lazy(() => import('@/pages/auth/Login'));
-{ path: '/login', element: <LoginPage /> }
+const Login = lazy(() =>
+  import('@/pages/Login')
+);
+
+{ path: '/login',
+  element: <Login /> }
 ```
+
+</td>
+</tr>
+</table>
 
 **Nested path stitching:**
 
 ```
-Parent path:   /users
-  Child path:  :id
+  Route tree:                    Resolved routeMap:
+  ─────────────                  ──────────────────
 
-→ Resolved:    /users/:id   →   src/pages/UserProfile.tsx
+  /                              /           → App.tsx
+  ├── login                      /login      → LoginPage.tsx
+  ├── dashboard                  /dashboard  → DashboardPage.tsx
+  │   ├── overview               /dashboard/overview  → OverviewPanel.tsx
+  │   └── analytics              /dashboard/analytics → AnalyticsPanel.tsx
+  └── users                      /users      → UsersPage.tsx
+      └── :id                    /users/:id  → UserProfile.tsx
+          ├── posts              /users/:id/posts    → UserPosts.tsx
+          └── settings           /users/:id/settings → UserSettings.tsx
 ```
 
-**Result in the registry:**
-
-```typescript
-routeMap: {
-  '/login'      → 'src/pages/auth/LoginPage.tsx',
-  '/dashboard'  → 'src/pages/DashboardPage.tsx',
-  '/users/:id'  → 'src/pages/UserProfile.tsx',
-}
-```
-
-When a Cypress test does `cy.visit('/login')`, the `RouteMatchScorer` can immediately look up which component renders at that route — and trace whether the changed file is inside that component tree.
-
----
-
-### ReduxChainAnalyzer
-
-> Maps your entire Redux architecture — who owns what state, who dispatches what action, who reads what selector.
-
-This is where things get deep. Modern Redux codebases are split across multiple files: a `slice` that defines actions and reducers, a separate `selectors` file, `sagas` for side effects, and dozens of consumer components. If you change one part of a Redux chain, which tests are affected?
-
-**Redux role detection:**
-
-| Role | Detection pattern |
-|---|---|
-| `SLICE` | File calls `createSlice(...)` |
-| `REDUCER` | Function with `(state, action)` parameters |
-| `SELECTORS` | File calls `createSelector(...)` or exports selector functions |
-| `ACTIONS` | File calls `createAction(...)` |
-| `SAGAS` | File contains generator functions (`function*`) |
-| `TYPES` | Pure type definition file |
-
-**Chain building (two-pass process):**
+**Why this matters — the chain reaction:**
 
 ```
-Pass 1 — Extract roles from individual files
-────────────────────────────────────────────────────────────────────
-  src/store/auth/authSlice.ts      → role: SLICE
-  src/store/auth/authSelectors.ts  → role: SELECTORS
-  src/store/auth/authSagas.ts      → role: SAGAS
-  src/store/auth/authTypes.ts      → role: TYPES
+  cy.visit('/users/123/settings')
+       │
+       ▼ routeMap lookup
+  UserSettings.tsx
+       │
+       ▼ importGraph: what does UserSettings import?
+  ┌─ useUserData.ts (hook)
+  ├─ SettingsForm.tsx (child component)
+  │     └─ FormField.tsx ◄── YOU CHANGED THIS
+  └─ userValidators.ts
 
-Pass 2 — Build the named chain
-────────────────────────────────────────────────────────────────────
-  Chain "auth":
-    slice:     authSlice.ts
-    selectors: authSelectors.ts
-    sagas:     authSagas.ts
-    types:     authTypes.ts
-    consumers: [LoginPage.tsx, ProfilePage.tsx, HeaderNav.tsx]
-              (files that import from authSelectors.ts)
-```
-
-**Visual chain:**
-
-```
-                     ┌─────────────────────┐
-                     │    authTypes.ts      │
-                     │  (type definitions)  │
-                     └──────────┬──────────┘
-                                │ imports
-                     ┌──────────▼──────────┐
-                     │    authSlice.ts      │
-                     │  createSlice(...)    │
-                     │  actions: login,     │
-                     │           logout,    │
-                     │           refresh    │
-                     └──────┬───────┬──────┘
-                    depends │       │ depends
-                 ┌──────────▼──┐ ┌──▼──────────────┐
-                 │ authReducer  │ │  authSelectors   │
-                 │ (state mgmt) │ │  selectUser      │
-                 └─────────────┘ │  selectIsLoggedIn │
-                                 └────────┬──────────┘
-                                          │ imported by
-                          ┌───────────────┼──────────────────┐
-                          │               │                   │
-                 ┌────────▼───────┐ ┌─────▼──────┐ ┌────────▼───────┐
-                 │  LoginPage.tsx  │ │ HeaderNav  │ │  ProfilePage   │
-                 │  (consumer)     │ │ (consumer) │ │  (consumer)    │
-                 └────────────────┘ └────────────┘ └────────────────┘
-```
-
-**What this enables:** Change `authSelectors.ts` → Suggestor knows all three consumer components are affected → recommends tests for all their routes.
-
----
-
-### I18nAnalyzer
-
-> Connects your translation files to the tests that assert on translated text.
-
-**The problem it solves:**
-
-Your test does:
-```typescript
-cy.contains('Sign In')
-```
-
-Your source does:
-```typescript
-<button>{t('login.submitButton')}</button>
-```
-
-Your translation file has:
-```json
-{ "login": { "submitButton": "Sign In" } }
-```
-
-Without I18n awareness, no analyzer would know these are connected. Suggestor builds the bridge.
-
-**What it indexes:**
-
-```typescript
-translationIndex: {
-  keyToText:  { 'login.submitButton' → 'Sign In' },
-  textToKeys: { 'sign in'            → ['login.submitButton'] },    // normalized
-  keyToFiles: { 'login.submitButton' → Set(['src/features/auth/LoginForm.tsx']) },
-  dynamicKeys: Set(['greeting.hello']) // keys with {{name}} placeholders
-}
-```
-
-**Supported i18n structures:**
-
-```
-Flat file:
-  public/locales/en/translation.json
-  { "login.submitButton": "Sign In" }
-
-Nested file:
-  public/locales/en/translation.json
-  { "login": { "submitButton": "Sign In" } }   → key: "login.submitButton"
-
-Namespaced files:
-  public/locales/en/auth.json    → namespace "auth"
-  { "submitButton": "Sign In" }  → key: "auth:submitButton"
-```
-
-**Interpolation detection:**
-
-```
-{{name}}     → react-i18next style    → dynamic key
-{count}      → react-intl style       → dynamic key
-%(key)s      → python-style           → dynamic key
-
-"Hello {{name}}" → stored as "Hello" (base text for partial matching)
+  Result: This test covers FormField.tsx
+  Signal: ROUTE_MATCH, score: 0.85
 ```
 
 ---
 
-## Scoring Engine
+### `05` ReduxChainAnalyzer
 
-The scoring engine is where everything comes together. Given a changed file and a test file, it asks all 10 scorers for their opinion — then synthesizes a single confidence score.
+> *Traces the entire lifecycle of Redux state — from action dispatch to selector consumption — and links every file in the chain together.*
+
+This is where Suggestor goes deeper than any grep or import-trace ever could. In a real-world Redux codebase, state flows through **5-7 files** across multiple directories. Changing one file in the chain can break tests that touch completely different parts of the UI.
+
+**How Redux role detection works:**
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                                                                    │
+│  File                              Detected As     How             │
+│  ─────────────────────────────────────────────────────────────     │
+│  src/store/auth/authSlice.ts       SLICE           createSlice()   │
+│  src/store/auth/authActions.ts     ACTIONS          createAction()  │
+│  src/store/auth/authReducer.ts     REDUCER          (state,action)  │
+│  src/store/auth/authSelectors.ts   SELECTORS        createSelector()│
+│  src/store/auth/authSagas.ts       SAGAS            function*       │
+│  src/store/auth/authTypes.ts       TYPES            types only      │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+**The chain that gets built:**
+
+```
+                        ╔═══════════════════════╗
+                        ║    CHAIN: "auth"      ║
+                        ╚═══════════╤═══════════╝
+                                    │
+            ┌───────────────────────┼──────────────────────┐
+            │                       │                      │
+    ┌───────▼────────┐    ┌────────▼────────┐    ┌───────▼────────┐
+    │  authSlice.ts  │    │ authSelectors.ts│    │  authSagas.ts  │
+    │                │    │                 │    │                │
+    │ createSlice({  │    │ selectUser      │    │ function*      │
+    │   name:'auth', │    │ selectToken     │    │ watchLogin()   │
+    │   reducers:{   │    │ selectIsAdmin   │    │                │
+    │     login,     │    │                 │    │ put(login())   │
+    │     logout,    │    └────────┬────────┘    │ take(LOGIN)    │
+    │     setUser    │             │              └────────────────┘
+    │   }            │             │ imported by
+    │ })             │             │
+    └────────────────┘    ┌───────┴──────────────────────────┐
+                          │                                   │
+                ┌─────────▼──────────┐              ┌────────▼────────┐
+                │  LoginPage.tsx     │              │  AdminPanel.tsx  │
+                │                    │              │                  │
+                │  useSelector(      │              │  useSelector(    │
+                │    selectUser      │              │    selectIsAdmin │
+                │  )                 │              │  )               │
+                │  dispatch(login()) │              │                  │
+                │                    │              │                  │
+                │  CONSUMER          │              │  CONSUMER        │
+                └────────────────────┘              └──────────────────┘
+```
+
+**What this means for testing:**
+
+| You change | Chain affected | Consumers affected | Tests recommended |
+|---|---|---|---|
+| `authSlice.ts` | auth | LoginPage, AdminPanel | login.cy.ts, admin.cy.ts |
+| `authSelectors.ts` | auth | LoginPage, AdminPanel | login.cy.ts, admin.cy.ts |
+| `authSagas.ts` | auth | LoginPage, AdminPanel | login.cy.ts, admin.cy.ts |
+| `loginAction` in slice | auth | LoginPage | login.cy.ts |
+
+> **The non-obvious insight:** You changed `authSagas.ts` — a file that no test directly imports, that no route directly renders, that no selector directly references. But Suggestor knows it's part of the auth chain, and every consumer of auth state is potentially affected.
+
+---
+
+### `06` I18nAnalyzer
+
+> *The invisible bridge between your translation JSON and your Cypress `cy.contains()` assertions.*
+
+This analyzer solves one of the most maddening problems in E2E testing: **your test asserts on English text, your source code uses translation keys, and nothing in between connects them.**
+
+**The gap:**
+
+```
+  Your test:                     Your source:                Your JSON:
+  ────────────                   ────────────                ──────────
+  cy.contains('Sign In')        {t('login.submit')}         {"login":{"submit":"Sign In"}}
+
+  ◄──── no connection ────►   ◄──── no connection ────►
+
+  Until now.
+```
+
+**What the I18nAnalyzer builds:**
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                                                                   │
+│  translationIndex                                                 │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ keyToText                                                   │ │
+│  │   'login.submit'         → 'Sign In'                        │ │
+│  │   'login.forgotPassword' → 'Forgot your password?'          │ │
+│  │   'nav.home'             → 'Home'                           │ │
+│  │   'errors.required'      → 'This field is required'         │ │
+│  │   'greeting.hello'       → 'Hello {{name}}'      (dynamic) │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ textToKeys (normalized, lowercased)                         │ │
+│  │   'sign in'              → ['login.submit']                 │ │
+│  │   'forgot your password' → ['login.forgotPassword']         │ │
+│  │   'home'                 → ['nav.home', 'footer.home']      │ │
+│  │   'hello'                → ['greeting.hello']  (base text)  │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ keyToFiles (which source files use each key)                │ │
+│  │   'login.submit'         → { LoginForm.tsx }                │ │
+│  │   'login.forgotPassword' → { LoginForm.tsx, ResetPage.tsx } │ │
+│  │   'nav.home'             → { NavBar.tsx, Sidebar.tsx }      │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────────┐ │
+│  │ dynamicKeys (keys with interpolation variables)             │ │
+│  │   'greeting.hello'  → template: 'Hello {{name}}'           │ │
+│  │   'items.count'     → template: '{count} items remaining'   │ │
+│  └─────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+└───────────────────────────────────────────────────────────────────┘
+```
+
+**Supported i18n formats:**
+
+```
+  Flat keys:         { "login.submit": "Sign In" }
+  Nested objects:    { "login": { "submit": "Sign In" } }     → key: login.submit
+  Namespaced files:  locales/en/auth.json → { "submit": "Sign In" }  → key: auth:submit
+```
+
+**Interpolation awareness:**
+
+```
+  Source text              Pattern           Stored as
+  ──────────────────────────────────────────────────────
+  "Hello {{name}}"         react-i18next     "Hello"     (base text for partial match)
+  "{count} items left"     react-intl        "items left" (base text)
+  "%(user)s logged in"     python-style      "logged in"  (base text)
+```
+
+---
+
+<br/>
+
+<div align="center">
+
+# The Scoring Engine
+
+*Ten specialized scorers. One formula. Zero guesswork.*
+
+</div>
+
+<br/>
 
 ### How Scores Are Calculated
 
-Each scorer returns a list of `ISignal` objects:
+Every scorer looks at a `(changedFile, testFile)` pair and returns **signals** — pieces of evidence for or against a connection.
 
 ```typescript
 interface ISignal {
-  source: string;          // which scorer produced this
-  type: string;            // signal type (e.g. 'DIRECT_IMPORT')
-  weight: number;          // strength of this signal (0.0–1.0)
-  matched: boolean;        // did it find a connection?
-  metadata?: Record<string, unknown>;
-  reason?: string;         // human-readable explanation
+  source: string;                    // which scorer found this
+  type: string;                      // e.g. 'DIRECT_IMPORT', 'SELECTOR_MATCH'
+  weight: number;                    // 0.0 – 1.0 (how strong is this evidence?)
+  matched: boolean;                  // did it find a connection?
+  metadata?: Record<string, any>;    // extra data (matched selectors, routes, etc.)
+  reason?: string;                   // human-readable: "Test imports changed file directly"
 }
 ```
 
-**The score formula:**
+### The Score Formula
 
 ```
-signals = all matched signals from all scorers, sorted descending
+  Given:  signals = [all matched signals, sorted by weight descending]
 
-finalScore = signals[0]                               // dominant signal
-           + min(sum(signals[1..n]) × 0.1,  0.05)    // tiebreaker bonus
-           (capped at 1.0)
+  ┌─────────────────────────────────────────────────────────────┐
+  │                                                             │
+  │  finalScore = signals[0].weight                             │
+  │             + min( sum(signals[1..n].weight) × 0.1,  0.05 )│
+  │                                                             │
+  │  (capped at 1.0)                                            │
+  │                                                             │
+  └─────────────────────────────────────────────────────────────┘
+
+  In English:
+
+  "The strongest signal wins.
+   Additional signals add a small tiebreaker — but they
+   can never carry the score on their own."
 ```
 
-In plain English: **one strong signal dominates**. Multiple weaker signals add a small tiebreaker bonus — but they can't carry a result on their own. This prevents false positives from accumulation of weak matches.
-
-**Ubiquity Dampener:**
+**Why this design?**
 
 ```
-If a file is imported by > 70% of all files in the codebase:
-  → it is "ubiquitous" (think: a utility module, a theme file, a base component)
-  → signals involving it are reduced to 30% of their original weight
+  Scenario A:  1 strong signal (direct import at 0.95)
+               → score: 0.95
+               → CORRECT: the test was literally written for this file
 
-Why: "If everything imports it, it doesn't tell you anything specific."
+  Scenario B:  5 weak signals (all ~0.2 each)
+               → score: 0.2 + min(0.8 * 0.1, 0.05) = 0.25
+               → CORRECT: many weak clues ≠ strong evidence
 
-Example:
-  src/utils/cn.ts  ← imported by 94% of the codebase
-  Signal weight:   0.7 × 0.3 = 0.21  (dampened)
-  Without dampening: 0.7 (would produce false HIGH confidence for every test)
+  Scenario C:  1 strong (0.85) + 2 medium (0.70 + 0.60)
+               → score: 0.85 + min(1.30 * 0.1, 0.05) = 0.90
+               → CORRECT: strong signal + corroborating evidence = boost
 ```
 
-### All Scorers
+### The Ubiquity Dampener
 
-| Scorer | Weight | What it detects |
-|---|---|---|
-| `DirectImportScorer` | **0.95** | Test directly imports the changed file |
-| `RouteMatchScorer` | **0.85** | Test visits a route that renders the changed component |
-| `TranslationMatchScorer` | **0.85** | Test `cy.contains()` text matches source `t()` keys |
-| `SelectorMatchScorer` | **0.80** | Test `data-testid`/`data-cy` selectors match source JSX attributes |
-| `ReduxChainScorer` | **0.75** | Both files belong to the same Redux slice chain |
-| `TransitiveImportScorer` | **0.70** | Test imports X, and X imports the changed file |
-| `ReduxConsumerScorer` | **0.65** | Test visits a route whose component uses the affected Redux chain |
-| `SelectorIdMatchScorer` | **0.65** | Test `#id` selectors match source `id=""` attributes |
-| `FilenameConventionScorer` | **0.60** | File names match after normalization (`LoginForm` ↔ `LoginForm.cy.ts`) |
-| `APIInterceptScorer` | **0.55** | Test `cy.intercept()` URL matches an API file path |
-
----
-
-**DirectImportScorer (0.95)**
-
-The clearest possible signal. If the test imports the changed file, it was written to test it.
-
-```typescript
-// cypress/e2e/login.cy.ts
-import { validateEmail } from '../../src/utils/validators';  // ← direct import
-
-// You change: src/utils/validators.ts
-// Score: 0.95 (near-certain)
-```
-
----
-
-**RouteMatchScorer (0.85)**
-
-Test visits a route → route renders a component → component is (or imports) the changed file.
+This is one of Suggestor's most important features. Without it, **every test in your project** would score HIGH against shared utility files.
 
 ```
-cy.visit('/login')
-      │
-      ▼ registry.routeMap
-LoginPage.tsx
-      │
-      ▼ importGraph.getDependencies() (depth ≤ 3)
-LoginForm.tsx  ← changed file found here
-      │
-      ▼
-Signal: ROUTE_MATCH, weight: 0.85
+  Problem:
+  ─────────────────────────────────────────────────
+  src/utils/cn.ts   ← imported by 94% of files
+
+  Without dampener:
+    cn.ts changes → 94% of tests get signal weight 0.70+
+    → Almost everything is HIGH confidence
+    → Useless. Might as well run all tests.
+
+  With dampener:
+  ─────────────────────────────────────────────────
+  If a file is imported by > 70% of the codebase:
+    signal.weight *= 0.3  (reduced to 30%)
+
+  cn.ts changes → signal weight: 0.70 × 0.30 = 0.21
+    → LOW confidence for most tests
+    → Only tests with ADDITIONAL strong signals survive
+
+  The 70% threshold is configurable (ubiquityThreshold in config).
 ```
 
----
-
-**TranslationMatchScorer (0.85)**
-
-Connects `cy.contains('Sign In')` in a test to `t('login.submitButton')` in source code, via the i18n index.
-
 ```
-cy.contains('Sign In')
-      │
-      ▼ textToKeys lookup (normalized: 'sign in')
-'login.submitButton'
-      │
-      ▼ keyToFiles lookup
-src/features/auth/LoginForm.tsx  ← changed file
-      │
-      ▼
-Signal: TRANSLATION_MATCH, weight: 0.85
-Reason: "Test text 'Sign In' matches translation key login.submitButton used in LoginForm.tsx"
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  File                  Imported by    Ubiquitous?   Dampener     │
+  │  ─────────────────────────────────────────────────────────────   │
+  │  src/utils/cn.ts       94% of files   YES           × 0.30      │
+  │  src/theme/colors.ts   81% of files   YES           × 0.30      │
+  │  src/hooks/useAuth.ts  12% of files   no            × 1.00      │
+  │  src/store/auth.ts      8% of files   no            × 1.00      │
+  │  src/pages/Login.tsx    1% of files   no            × 1.00      │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-**SelectorMatchScorer (0.80)**
+### All 10 Scorers
 
-The connector between the DOM and your tests. Matches `data-testid` and `data-cy` values between source JSX and Cypress selectors.
+<table>
+<tr>
+<th>#</th>
+<th>Scorer</th>
+<th>Weight</th>
+<th>What It Finds</th>
+<th>Think Of It As...</th>
+</tr>
+<tr>
+<td align="center"><strong>1</strong></td>
+<td><code>DirectImportScorer</code></td>
+<td><code>0.95</code></td>
+<td>Test file directly imports the changed file</td>
+<td>"The test was written for this file"</td>
+</tr>
+<tr>
+<td align="center"><strong>2</strong></td>
+<td><code>RouteMatchScorer</code></td>
+<td><code>0.85</code></td>
+<td>Test visits a route that renders the changed component (up to depth 3)</td>
+<td>"The test walks through this page"</td>
+</tr>
+<tr>
+<td align="center"><strong>3</strong></td>
+<td><code>TranslationMatchScorer</code></td>
+<td><code>0.85</code></td>
+<td>Test's <code>cy.contains()</code> text matches source <code>t()</code> keys via i18n index</td>
+<td>"The test reads text this file displays"</td>
+</tr>
+<tr>
+<td align="center"><strong>4</strong></td>
+<td><code>SelectorMatchScorer</code></td>
+<td><code>0.80</code></td>
+<td>Test's <code>data-testid</code>/<code>data-cy</code> selectors match source JSX attributes</td>
+<td>"The test clicks what this file renders"</td>
+</tr>
+<tr>
+<td align="center"><strong>5</strong></td>
+<td><code>ReduxChainScorer</code></td>
+<td><code>0.75</code></td>
+<td>Both files participate in the same Redux slice chain</td>
+<td>"They share the same state"</td>
+</tr>
+<tr>
+<td align="center"><strong>6</strong></td>
+<td><code>TransitiveImportScorer</code></td>
+<td><code>0.70</code></td>
+<td>Test imports file X, and X imports the changed file (one hop)</td>
+<td>"A friend of a friend"</td>
+</tr>
+<tr>
+<td align="center"><strong>7</strong></td>
+<td><code>ReduxConsumerScorer</code></td>
+<td><code>0.65</code></td>
+<td>Test visits a route whose component consumes the affected Redux chain</td>
+<td>"The page reads state you changed"</td>
+</tr>
+<tr>
+<td align="center"><strong>8</strong></td>
+<td><code>SelectorIdMatchScorer</code></td>
+<td><code>0.65</code></td>
+<td>Test <code>#id</code> selectors match source <code>id=""</code> attributes</td>
+<td>"Matching by element ID"</td>
+</tr>
+<tr>
+<td align="center"><strong>9</strong></td>
+<td><code>FilenameConventionScorer</code></td>
+<td><code>0.60</code></td>
+<td>Normalized file names match (<code>LoginForm</code> ~ <code>login-form.cy.ts</code>)</td>
+<td>"They were named after each other"</td>
+</tr>
+<tr>
+<td align="center"><strong>10</strong></td>
+<td><code>APIInterceptScorer</code></td>
+<td><code>0.55</code></td>
+<td>Test <code>cy.intercept()</code> URL pattern matches an API file path</td>
+<td>"The test mocks this API"</td>
+</tr>
+</table>
+
+---
+
+**How each scorer traces a connection:**
+
+**`DirectImportScorer`** — The smoking gun.
 
 ```
-Source file contains:                Test file contains:
-  <button data-testid="login-btn">     cy.get('[data-testid="login-btn"]')
+  login.cy.ts                        LoginForm.tsx
+  ─────────────                      ──────────────
+  import { validateEmail }  ────────►  export function validateEmail()
+    from '../../src/utils/validators'
 
-                    MATCH → Signal weight: 0.80
+  Verdict:  This test was written to test this file.
+  Signal:   DIRECT_IMPORT  weight=0.95
 ```
 
 ---
 
-**ReduxChainScorer (0.75)**
-
-Two approaches depending on test type:
+**`RouteMatchScorer`** — Following the URL.
 
 ```
-Unit/integration tests:
-  Test imports authSelectors.ts
-  Changed file is authSlice.ts
-  Both in chain "auth"
-  → Signal: REDUX_CHAIN_MATCH
+  auth-flow.cy.ts                    Registry                     LoginForm.tsx
+  ─────────────────                  ────────────────              ──────────────
+  cy.visit('/login')  ──────►  routeMap['/login']
+                                     │
+                                     ▼
+                               LoginPage.tsx
+                                     │
+                                     ▼ importGraph.getDependencies(depth ≤ 3)
+                                     │
+                               ┌─────┴──────┐
+                               │ LoginForm   │◄─── CHANGED FILE FOUND HERE
+                               │ AuthLayout  │
+                               │ useAuth     │
+                               └─────────────┘
 
-E2E tests (no direct Redux import):
-  Test visits /dashboard
-  DashboardPage imports selectUser (from authSelectors)
-  Changed file is authSlice.ts
-  authSelectors is in chain "auth"
-  → Signal: REDUX_CHAIN_CONSUMER
+  Verdict:  This test visits a page that renders the changed file.
+  Signal:   ROUTE_MATCH  weight=0.85
 ```
 
 ---
 
-**FilenameConventionScorer (0.60)**
-
-A simple but surprisingly powerful last resort.
+**`TranslationMatchScorer`** — The invisible link.
 
 ```
-Normalization steps:
-  1. Remove extension:    LoginForm.tsx     → LoginForm
-  2. Lowercase:           LoginForm         → loginform
-  3. Remove non-alnum:    login-form.cy.ts  → loginform
+  i18n-smoke.cy.ts                  i18n Index                    LoginForm.tsx
+  ────────────────                  ──────────                    ──────────────
+  cy.contains('Sign In') ──►  textToKeys['sign in']
+                                     │
+                                     ▼
+                               'login.submitButton'
+                                     │
+                                     ▼ keyToFiles['login.submitButton']
+                                     │
+                               ┌─────┴──────────┐
+                               │ LoginForm.tsx   │◄─── CHANGED FILE
+                               └────────────────┘
 
-  "loginform" === "loginform"  → match
+  Verdict:  Test asserts on text that this file displays via i18n.
+  Signal:   TRANSLATION_MATCH  weight=0.85
+  Reason:   "Test text 'Sign In' → key 'login.submitButton' → LoginForm.tsx"
 ```
-
-Catches the cases where all semantic analysis comes up empty but the naming convention is clear.
 
 ---
 
-**APIInterceptScorer (0.55)**
-
-Connects backend API files to the tests that mock them.
+**`SelectorMatchScorer`** — The DOM fingerprint.
 
 ```
-Test:        cy.intercept('POST', '/api/auth/login')
-Changed file: src/api/auth/login.ts
-
-Pattern match:  '/api/auth/login'  ∈  'src/api/auth/login.ts'  → match
-Signal: API_INTERCEPT_MATCH, weight: 0.55
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  SOURCE (LoginForm.tsx):           TEST (login.cy.ts):           │
+  │  ─────────────────────             ────────────────────          │
+  │                                                                  │
+  │  <form data-testid="login-form">   cy.get('[data-testid=        │
+  │    <input data-cy="email" />           "login-form"]')           │
+  │    <button data-testid=            cy.get('[data-cy="email"]')   │
+  │      "login-btn">                  cy.get('[data-testid=         │
+  │                                        "login-btn"]')           │
+  │                                                                  │
+  │  Matches found:  3 / 3                                           │
+  │  Signal:  SELECTOR_MATCH  weight=0.80                            │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
 ```
 
-Applies when the changed file path contains `/api/`, `/routes/`, or `/handlers/`.
+---
+
+**`ReduxChainScorer`** — Two strategies depending on test type.
+
+```
+  Strategy 1: Import-based (unit/integration tests)
+  ─────────────────────────────────────────────────
+
+  test imports authSelectors.ts  ←──┐
+  changed file is authSlice.ts  ←───┤── both in chain "auth"
+                                    │
+  Signal: REDUX_CHAIN_MATCH  weight=0.75
+
+
+  Strategy 2: Consumer-based (E2E tests, no direct Redux imports)
+  ───────────────────────────────────────────────────────────────
+
+  test visits /dashboard
+       │
+       ▼
+  DashboardPage.tsx
+       │
+       └── imports selectUser from authSelectors (chain: "auth")
+
+  changed file: authSagas.ts (also in chain: "auth")
+
+  Signal: REDUX_CHAIN_CONSUMER  weight=0.75
+```
+
+---
+
+**`TransitiveImportScorer`** — One degree of separation.
+
+```
+  navigation.cy.ts                    AuthLayout.tsx              LoginForm.tsx
+  ────────────────                    ──────────────              ──────────────
+  import { AuthLayout } ────────►  import { LoginForm } ────────►  CHANGED FILE
+      from '../../layouts'              from '../features/auth'
+
+  The test doesn't import LoginForm directly.
+  But it imports something that does.
+
+  Signal: TRANSITIVE_IMPORT  weight=0.70
+```
+
+---
+
+**`FilenameConventionScorer`** — The fallback that's surprisingly useful.
+
+```
+  Normalization pipeline:
+
+  Source:  LoginForm.tsx      →  remove ext  →  LoginForm   →  lowercase  →  loginform
+  Test:    login-form.cy.ts   →  remove ext  →  login-form  →  lowercase  →  loginform
+                                                                               │
+                                                             strip non-alnum ──┘
+                                                                    │
+                                                                loginform === loginform  ✓
+
+  Signal: FILENAME_MATCH  weight=0.60
+```
+
+---
+
+**`APIInterceptScorer`** — Connecting API mocks to API code.
+
+```
+  Test:                                Changed file:
+  ──────                               ───────────────
+  cy.intercept('POST',                 src/api/auth/login.ts
+    '/api/auth/login')                      │
+         │                                  │
+         └─── path segments match ──────────┘
+
+  Applies when changed file path contains: /api/  /routes/  /handlers/
+  Signal: API_INTERCEPT_MATCH  weight=0.55
+```
 
 ---
 
 ### Confidence Levels
 
 ```
-Score ≥ 0.8   →  HIGH    ██████████  Run this test. Something changed that it covers.
-Score ≥ 0.4   →  MEDIUM  █████░░░░░  Worth running. There's a meaningful connection.
-Score < 0.4   →  LOW     ██░░░░░░░░  Tenuous connection. Consider skipping in fast CI.
-```
+  Score         Level      Bar                     What to do
+  ──────────────────────────────────────────────────────────────
 
-**Example output for a changed file:**
+  ≥ 0.80        HIGH       ████████████████████    Run this. Always.
 
-```
-Changed: src/features/auth/LoginForm.tsx
+  ≥ 0.40        MEDIUM     ██████████░░░░░░░░░░    Worth running. Real connection exists.
 
-  Test File                              Score    Confidence  Primary Signal
-  ─────────────────────────────────────────────────────────────────────────
-  cypress/e2e/auth/login.cy.ts           0.97     HIGH        selector-match + direct-import
-  cypress/e2e/auth/auth-flow.cy.ts       0.91     HIGH        route-match (/login → LoginPage)
-  cypress/e2e/auth/forgot-password.cy.ts 0.85     HIGH        translation-match (login.*)
-  cypress/e2e/smoke/navigation.cy.ts     0.62     MEDIUM      transitive-import (AuthLayout)
-  cypress/e2e/i18n/smoke.cy.ts           0.44     MEDIUM      translation-match (login.submitButton)
-  cypress/e2e/admin/dashboard.cy.ts      0.21     LOW         filename-convention
+  < 0.40        LOW        ████░░░░░░░░░░░░░░░░    Tenuous. Skip in fast CI, include in nightly.
 ```
 
 ---
 
-## Development
+<br/>
+
+<div align="center">
+
+# Real-World Walkthroughs
+
+*Three end-to-end traces showing how Suggestor connects the dots no human would.*
+
+</div>
+
+<br/>
+
+### Trace 1 — The Selector Bridge
+
+> A junior dev changes a `data-testid` value and doesn't know 3 test files depend on it.
+
+```
+CHANGE: src/components/SearchBar.tsx
+        ─ data-testid="search-input" → data-testid="search-field"
+
+  Suggestor runs the SourceExtractor:
+    Old selectors: [{ attr: 'data-testid', value: 'search-input' }]
+    New selectors: [{ attr: 'data-testid', value: 'search-field' }]
+
+  Suggestor runs the SelectorMatchScorer against all tests:
+
+    search.cy.ts       → cy.get('[data-testid="search-input"]')     MATCH (old value)
+    navigation.cy.ts   → cy.get('[data-testid="search-input"]')     MATCH (old value)
+    home.cy.ts         → cy.get('[data-testid="search-input"]')     MATCH (old value)
+    billing.cy.ts      → cy.get('[data-testid="amount-input"]')     no match
+    login.cy.ts        → cy.get('[data-testid="email-input"]')      no match
+
+  Result:
+    search.cy.ts        HIGH   0.82   selector-match (search-input)
+    navigation.cy.ts    HIGH   0.82   selector-match (search-input)
+    home.cy.ts          HIGH   0.82   selector-match (search-input)
+
+  Those 3 tests WILL FAIL after this change.
+  Suggestor caught all 3.
+  Without Suggestor, the dev merges. Three tests break in nightly.
+```
+
+---
+
+### Trace 2 — The Translation Ghost
+
+> A product manager asks to change the button text from "Sign In" to "Log In". The developer changes the JSON file. Which tests break?
+
+```
+CHANGE: public/locales/en/translation.json
+        ─ "login.submit": "Sign In"  →  "login.submit": "Log In"
+
+  Suggestor rebuilds the i18n index:
+    textToKeys['sign in'] is now gone
+    textToKeys['log in']  = ['login.submit']
+    keyToFiles['login.submit'] = { LoginForm.tsx, MobileLogin.tsx }
+
+  Suggestor runs the TranslationMatchScorer:
+
+    login.cy.ts          → cy.contains('Sign In')
+                           textToKeys['sign in'] → EMPTY (text changed!)
+                           But LoginForm.tsx is in keyToFiles['login.submit']
+                           And SourceExtractor shows LoginForm uses t('login.submit')
+                           → Score: HIGH  "translation key login.submit"
+
+    auth-flow.cy.ts      → cy.contains('Sign In')
+                           Same chain → HIGH
+
+    billing.cy.ts        → cy.contains('Pay Now')
+                           No match → skip
+
+  Result:
+    login.cy.ts          HIGH   0.87   translation-match + route-match
+    auth-flow.cy.ts      HIGH   0.85   translation-match
+
+  Both tests will now fail because they assert on 'Sign In' which is now 'Log In'.
+  Suggestor knew because it traced: JSON value → key → source file → test assertion.
+```
+
+---
+
+### Trace 3 — The Redux Ripple
+
+> A backend engineer modifies the auth saga to add token refresh logic. Zero UI changes. Which Cypress tests need to run?
+
+```
+CHANGE: src/store/auth/authSagas.ts
+        ─ Added: yield put(refreshToken()) in watchLogin saga
+
+  Suggestor runs the ReduxChainAnalyzer:
+    authSagas.ts has role: SAGAS
+    It belongs to chain: "auth"
+    Chain "auth" members: authSlice, authSelectors, authSagas, authTypes
+    Chain "auth" consumers: LoginPage, ProfilePage, HeaderNav, AdminPanel
+
+  No test directly imports authSagas.ts.
+  No test has a selector matching authSagas.ts.
+  No test visits a route that renders authSagas.ts.
+
+  But the ReduxChainScorer knows:
+    login.cy.ts       → visits /login → LoginPage is a consumer of chain "auth"  → MATCH
+    profile.cy.ts     → visits /profile → ProfilePage is a consumer              → MATCH
+    admin.cy.ts       → visits /admin → AdminPanel is a consumer                 → MATCH
+    billing.cy.ts     → visits /billing → BillingPage is NOT a consumer          → skip
+
+  The ReduxConsumerScorer adds:
+    dashboard.cy.ts   → visits /dashboard → DashboardPage imports selectUser     → MATCH
+
+  Result:
+    login.cy.ts        HIGH    0.81   redux-chain (auth) via LoginPage
+    profile.cy.ts      MED     0.71   redux-consumer (auth) via ProfilePage
+    admin.cy.ts        MED     0.67   redux-consumer (auth) via AdminPanel
+    dashboard.cy.ts    MED     0.65   redux-consumer (auth) via DashboardPage
+
+  A saga change with zero UI impact — and Suggestor found 4 tests across 4 different
+  routes that exercise the affected state. A grep would have found zero.
+```
+
+---
+
+<br/>
+
+<div align="center">
+
+# Development
+
+</div>
+
+<br/>
 
 ### Setup
 
@@ -846,55 +1516,50 @@ pnpm install
 ### Running Tests
 
 ```bash
-# Run all v2 tests
-pnpm test:v2
-
-# Run with Jest
-pnpm test:jest
-
-# Run linter
-pnpm lint
+pnpm test:v2     # Run all v2 analyzer/scorer tests
+pnpm test:jest   # Run with Jest runner
+pnpm lint        # ESLint with auto-fix
+pnpm build       # TypeScript → dist/
 ```
 
 ### Project Structure
 
 ```
 src/v2/
-├── types/
+│
+├── types/                            ── INTERFACES & CONTRACTS ──
 │   ├── analyzers/
 │   │   ├── base.ts                   IAnalyzer<TInput, TOutput>, ISignal
 │   │   ├── source-extractor.ts       ISourceExtractionResult
 │   │   ├── cypress-extractor.ts      ICypressExtractionResult
-│   │   ├── redux-chain.ts            IReduxExtractionResult
-│   │   ├── i18n-analyzer.ts          II18nExtractionResult
+│   │   ├── redux-chain.ts            IReduxExtractionResult, IReduxChain
+│   │   ├── i18n-analyzer.ts          II18nExtractionResult, ITranslationIndex
 │   │   ├── route-analyzer.ts         IRouteExtractionResult
 │   │   └── import-graph.ts           IImportGraphExtractionResult
 │   ├── registry/
-│   │   ├── registry.ts               IRegistry, IFileEntry
-│   │   └── indexes.ts                ITranslationIndex, IReduxChain
+│   │   └── registry.ts               IRegistry, IFileEntry
 │   ├── scorers/
-│   │   ├── base.ts                   IScorer, IScorerContext
-│   │   └── score-result.ts           IScoreResult
+│   │   └── base.ts                   IScorer, IScorerContext, IScoreResult
 │   └── config.ts                     ISuggestorConfig
 │
-├── core/
+├── core/                             ── IMPLEMENTATIONS ──
 │   ├── analyzers/
 │   │   ├── base.ts                   BaseAnalyzer<TInput, TOutput>
-│   │   ├── source-extractor/         SourceExtractorAnalyzer
-│   │   ├── cypress-extractor/        CypressExtractorAnalyzer
-│   │   ├── redux-chain/              ReduxChainAnalyzer
-│   │   ├── i18n-analyzer/            I18nAnalyzer
-│   │   ├── route-analyzer/           RouteAnalyzer + AliasResolver
-│   │   └── import-graph-analyzer/    ImportGraphAnalyzer + AliasResolver
+│   │   ├── source-extractor/         TS AST → exports, selectors, i18n keys, Redux
+│   │   ├── cypress-extractor/        Cypress AST → routes, selectors, intercepts
+│   │   ├── redux-chain/              Redux files → named chains with consumers
+│   │   ├── i18n-analyzer/            JSON translations → bidirectional key↔text index
+│   │   ├── route-analyzer/           React Router → URL↔component map + AliasResolver
+│   │   └── import-graph-analyzer/    Imports → bidirectional dep graph + AliasResolver
 │   ├── registry/
-│   │   ├── registry.ts               Registry (central data store)
-│   │   ├── registry-builder.ts       RegistryBuilder (orchestrator)
-│   │   └── path-utils.ts             normalizePath()
+│   │   ├── registry.ts               Central in-memory data store
+│   │   ├── registry-builder.ts       Orchestrates analyzers, builds registry
+│   │   └── path-utils.ts             normalizePath() — consistent relative paths
 │   └── scoring/
-│       ├── scoring-engine.ts         ScoringEngine
-│       ├── scoring-config.ts         Default scorer weights & order
+│       ├── scoring-engine.ts          Runs scorers, computes final scores
+│       ├── scoring-config.ts          Default weights and scorer ordering
 │       └── scorers/
-│           ├── base.ts               BaseScorer
+│           ├── base.ts                BaseScorer (createSignal, buildResult)
 │           ├── direct-import-scorer.ts
 │           ├── route-match-scorer.ts
 │           ├── selector-match-scorer.ts
@@ -906,69 +1571,107 @@ src/v2/
 │           ├── filename-convention-scorer.ts
 │           └── api-intercept-scorer.ts
 │
-└── utils/
-    ├── enums.ts                      All enum definitions
-    └── constants.ts                  BUILTIN_CYPRESS_COMMANDS, regex patterns
+└── utils/                            ── SHARED ──
+    ├── enums.ts                      EAnalyzerName, EScorerType, EConfidenceLevel, ...
+    └── constants.ts                  BUILTIN_CYPRESS_COMMANDS (45+), regex patterns
 ```
 
-### Adding a New Analyzer
+### Extending Suggestor
+
+<details>
+<summary><strong>Adding a new Analyzer</strong></summary>
 
 ```typescript
 import { BaseAnalyzer } from '../base';
-import type { IMyExtractionResult } from '../../../types/analyzers/my-analyzer';
+import { EAnalyzerName } from '../../../utils/enums';
 
-export class MyAnalyzer extends BaseAnalyzer<string, IMyExtractionResult> {
-  name = EAnalyzerName.MY_ANALYZER;
+interface IMyResult {
+  // your extraction result shape
+}
+
+export class MyAnalyzer extends BaseAnalyzer<string, IMyResult> {
+  name = EAnalyzerName.MY_ANALYZER;  // add to enum first
   version = '1.0.0';
-  dependencies = [];  // other analyzers this one needs
+  dependencies = [];  // e.g. [EAnalyzerName.IMPORT_GRAPH]
 
-  extract(filePath: string): IMyExtractionResult {
-    // parse the file, return structured data
-    return { ... };
+  extract(filePath: string): IMyResult {
+    // Use ts.createSourceFile() to parse
+    // Walk the AST, extract what you need
+    return { /* ... */ };
   }
 
-  index(result: IMyExtractionResult, registry: IRegistry): void {
-    // store into registry indexes
+  index(result: IMyResult, registry: IRegistry): void {
+    // Store into a new registry index
   }
 }
 ```
 
-### Adding a New Scorer
+</details>
+
+<details>
+<summary><strong>Adding a new Scorer</strong></summary>
 
 ```typescript
 import { BaseScorer } from '../base';
-import type { IScorerContext, IScoreResult } from '../../../types/scorers';
+import { EScorerType } from '../../../utils/enums';
 
 export class MyScorer extends BaseScorer {
-  name = EScorerType.MY_SCORER;
+  name = EScorerType.MY_SCORER;  // add to enum first
   version = '1.0.0';
-  weight = 0.7;
-  description = 'Detects ...';
+  weight = 0.70;  // choose based on signal reliability
+  description = 'Detects X between changed files and tests';
 
-  evaluate(changedFile: string, testFile: string, ctx: IScorerContext): IScoreResult {
-    const signals = [];
+  evaluate(
+    changedFile: string,
+    testFile: string,
+    ctx: IScorerContext
+  ): ISignal[] {
+    const signals: ISignal[] = [];
 
-    // your matching logic here
-    if (/* match found */) {
+    // Your logic: look up data in ctx.registry
+    // Compare changedFile data vs testFile data
+
+    if (/* connection found */) {
       signals.push(this.createSignal({
-        type: 'MY_MATCH',
+        type: 'MY_SIGNAL_TYPE',
         weight: this.weight,
         matched: true,
-        reason: 'Found X in Y',
+        reason: `Human-readable explanation of the match`,
       }));
     }
 
-    return this.buildResult(signals);
+    return signals;
   }
 }
+
+// Then register it in scoring-config.ts
 ```
+
+</details>
 
 ---
 
+<br/>
+
 <div align="center">
 
-**Built with care for the engineers who have spent too long waiting for CI.**
+---
 
-[Report a bug](https://github.com/henit-chobisa/suggestor/issues) · [Request a feature](https://github.com/henit-chobisa/suggestor/issues) · [Contribute](./CONTRIBUTING.md)
+<br/>
+
+```
+  "The best test suite in the world is useless
+   if you don't know which tests to run."
+```
+
+<br/>
+
+**Built for the engineers who've spent too long watching CI spin.**
+
+<br/>
+
+[Report a Bug](https://github.com/henit-chobisa/suggestor/issues) &nbsp;&middot;&nbsp; [Request a Feature](https://github.com/henit-chobisa/suggestor/issues) &nbsp;&middot;&nbsp; [Contribute](./CONTRIBUTING.md)
+
+<br/>
 
 </div>
