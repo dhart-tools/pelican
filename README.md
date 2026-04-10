@@ -2,45 +2,21 @@
 
 <br/>
 
-```
-                              ____
-                          _,-'    '-._
-                        ,'             '.
-                      ,'    SUGGESTOR    '.
-                     /    ___________      \
-                    |   ,'           '.     |
-                    |  /  TEST        \    |
-                    | |  INTELLIGENCE  |   |
-                    |  \     ENGINE   /    |
-                    |   '._________.'     |
-                     \       | |         /
-                      '.     | |       ,'
-                        '-._ | | _.-'
-                            '| |'
-                        _____| |_____
-                       /      |      \
-                      /   ____+____   \
-                     |   |  SCORE  |   |
-                     |   | 0.97    |   |
-                     |   |  HIGH   |   |
-                      \  |_________|  /
-                       \_____________/
-
-```
+<img src="src/v2/assets/pelican.png" alt="Pelican" width="200" />
 
 <br/>
 
-# `suggestor`
+# `pelican`
 
 ### You changed one file. We'll tell you exactly which tests to run.
 
 <br/>
 
-[![Build](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/ci.yml?branch=main&style=for-the-badge&label=BUILD&logo=github)](https://github.com/henit-chobisa/suggestor/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/ci.yml?branch=main&style=for-the-badge&label=BUILD&logo=github)](https://github.com/dhart-tools/pelican/actions)
 &nbsp;&nbsp;
-[![Tests](https://img.shields.io/github/actions/workflow/status/henit-chobisa/suggestor/test.yml?branch=main&style=for-the-badge&label=TESTS&color=4caf50&logo=vitest)](https://github.com/henit-chobisa/suggestor/actions)
+[![Tests](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/test.yml?branch=main&style=for-the-badge&label=TESTS&color=4caf50&logo=vitest)](https://github.com/dhart-tools/pelican/actions)
 &nbsp;&nbsp;
-[![Contributors](https://img.shields.io/github/contributors/henit-chobisa/suggestor?style=for-the-badge&color=orange&logo=github)](https://github.com/henit-chobisa/suggestor/graphs/contributors)
+[![Contributors](https://img.shields.io/github/contributors/dhart-tools/pelican?style=for-the-badge&color=orange&logo=github)](https://github.com/dhart-tools/pelican/graphs/contributors)
 
 [![TypeScript](https://img.shields.io/badge/TYPESCRIPT-5.x-3178c6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 &nbsp;&nbsp;
@@ -87,11 +63,11 @@ Your Slack lights up.
     │                                                             │
     │   ┌───────────────────────────────────────────────────────┐ │
     │   │                                                       │ │
-    │   │   suggestor --changed src/features/auth/LoginForm.tsx │ │
+    │   │   pelican --changed src/features/auth/LoginForm.tsx │ │
     │   │                                                       │ │
     │   └───────────────────────────────────────────────────────┘ │
     │                                                             │
-    │   Suggestor thinks for ~2 seconds, then:                    │
+    │   Pelican thinks for ~2 seconds, then:                    │
     │                                                             │
     │   ● login.cy.ts              HIGH   0.97                    │
     │     ├─ direct-import         ██████████████████░░  0.95     │
@@ -123,7 +99,7 @@ Your Slack lights up.
 <tr>
 <td width="50%">
 
-### Without Suggestor
+### Without Pelican
 
 ```
 $ git push origin feature/update-profile
@@ -153,10 +129,10 @@ mattered. All of them ran "just in case."
 </td>
 <td width="50%">
 
-### With Suggestor
+### With Pelican
 
 ```
-$ suggestor --changed $(git diff --name-only)
+$ pelican --changed $(git diff --name-only)
   | cypress run --spec
 
 Analyzing: src/features/auth/LoginForm.tsx
@@ -206,7 +182,7 @@ Before we go deeper, let's address the elephant in the room. You're probably thi
 </tr>
 <tr>
 <td><strong>"We tag tests with metadata"</strong></td>
-<td>Metadata rots. Someone adds a new feature and forgets to tag the test. Someone refactors a component and the tag now points to a file that doesn't exist. Suggestor reads the actual code — it can't go stale.</td>
+<td>Metadata rots. Someone adds a new feature and forgets to tag the test. Someone refactors a component and the tag now points to a file that doesn't exist. Pelican reads the actual code — it can't go stale.</td>
 </tr>
 <tr>
 <td><strong>"We just run everything, CI is cheap"</strong></td>
@@ -214,7 +190,7 @@ Before we go deeper, let's address the elephant in the room. You're probably thi
 </tr>
 <tr>
 <td><strong>"We use code coverage data"</strong></td>
-<td>Coverage data requires running the tests first. It's a feedback loop — you need the answer <em>before</em> you run. Suggestor uses static analysis. It gives you the answer before anything executes.</td>
+<td>Coverage data requires running the tests first. It's a feedback loop — you need the answer <em>before</em> you run. Pelican uses static analysis. It gives you the answer before anything executes.</td>
 </tr>
 </table>
 
@@ -222,7 +198,7 @@ Before we go deeper, let's address the elephant in the room. You're probably thi
 
 ## How It Works — The Big Picture
 
-Suggestor has three layers. Each one builds on the last.
+Pelican has three layers. Each one builds on the last.
 
 ```
                     YOUR CODEBASE
@@ -306,7 +282,7 @@ Suggestor has three layers. Each one builds on the last.
 <tr>
 <td width="50%" valign="top">
 
-**Using Suggestor**
+**Using Pelican**
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Configuration](#configuration)
@@ -335,10 +311,18 @@ Suggestor has three layers. Each one builds on the last.
 - [Trace 2: The Translation Ghost](#trace-2--the-translation-ghost)
 - [Trace 3: The Redux Ripple](#trace-3--the-redux-ripple)
 
+**Scenarios You've Lived Through**
+- [The New Dev's First PR](#scenario-1--the-new-devs-first-pr)
+- [The "Which Tests Do I Run?" Slack Message](#scenario-2--the-which-tests-do-i-run-slack-message)
+- [The Shared Component Refactor](#scenario-3--the-shared-component-refactor)
+- [The Friday 5 PM Hotfix](#scenario-4--the-friday-5-pm-hotfix)
+- [The Config File Nobody Thinks About](#scenario-5--the-config-file-nobody-thinks-about)
+- [The Monorepo Migration](#scenario-6--the-monorepo-migration)
+
 **Development**
 - [Setup](#setup)
 - [Project Structure](#project-structure)
-- [Extending Suggestor](#extending-suggestor)
+- [Extending Pelican](#extending-pelican)
 
 </td>
 </tr>
@@ -349,8 +333,8 @@ Suggestor has three layers. Each one builds on the last.
 ## Installation
 
 ```bash
-git clone https://github.com/henit-chobisa/suggestor.git
-cd suggestor
+git clone https://github.com/dhart-tools/pelican.git
+cd pelican
 pnpm install
 pnpm build
 pnpm link
@@ -360,22 +344,22 @@ pnpm link
 
 ```bash
 # Single file
-suggestor --changed src/features/auth/LoginForm.tsx
+pelican --changed src/features/auth/LoginForm.tsx
 
 # From git diff (most common usage)
-suggestor --changed $(git diff --name-only HEAD~1)
+pelican --changed $(git diff --name-only HEAD~1)
 
 # JSON output for piping into CI
-suggestor --changed $(git diff --name-only HEAD~1) --format json
+pelican --changed $(git diff --name-only HEAD~1) --format json
 
 # Only HIGH confidence results
-suggestor --changed $(git diff --name-only HEAD~1) --min-confidence high
+pelican --changed $(git diff --name-only HEAD~1) --min-confidence high
 ```
 
 ## Configuration
 
 ```typescript
-// suggestor.config.ts
+// pelican.config.ts
 import type { ISuggestorConfig } from './src/v2/types/config';
 
 export default {
@@ -423,7 +407,7 @@ jobs:
       - name: Suggest tests
         id: suggest
         run: |
-          SPECS=$(suggestor --changed "${{ steps.changed.outputs.files }}" --format spec-list)
+          SPECS=$(pelican --changed "${{ steps.changed.outputs.files }}" --format spec-list)
           echo "specs=$SPECS" >> $GITHUB_OUTPUT
 
       - name: Run targeted tests
@@ -504,7 +488,7 @@ export function LoginForm() {
 </td>
 <td width="50%">
 
-**What Suggestor sees:**
+**What Pelican sees:**
 
 ```typescript
 {
@@ -617,7 +601,7 @@ describe('Login Flow', () => {
 </td>
 <td width="50%">
 
-**What Suggestor sees:**
+**What Pelican sees:**
 
 ```typescript
 {
@@ -672,7 +656,7 @@ cy.get('div > span.active:first')     →  { type: COMPLEX,   value: 'div > span
 
 > *Builds the complete bidirectional dependency graph of your entire codebase. Answers the fundamental question: "If I change file X, what else could break?"*
 
-This is the **backbone** of Suggestor. Almost every other scorer depends on it.
+This is the **backbone** of Pelican. Almost every other scorer depends on it.
 
 **What it tracks:**
 
@@ -690,7 +674,7 @@ This is the **backbone** of Suggestor. Almost every other scorer depends on it.
 Most codebases have barrel files — `index.ts` files that re-export from dozens of places. A naive import graph would say "LoginForm depends on `components/index.ts`." That's useless. We need to know *which specific component* it actually uses.
 
 ```
-       The Problem                              Suggestor's Solution
+       The Problem                              Pelican's Solution
   ─────────────────────                    ─────────────────────────────
 
   LoginForm.tsx                            Pass 1: Index barrels
@@ -741,7 +725,7 @@ Most codebases have barrel files — `index.ts` files that re-export from dozens
 
 **Built-in alias resolution:**
 
-Suggestor reads your project configuration and resolves aliases automatically:
+Pelican reads your project configuration and resolves aliases automatically:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -754,7 +738,7 @@ Suggestor reads your project configuration and resolves aliases automatically:
 │  Strategy:   Longest prefix match wins                               │
 │                                                                      │
 │  ┌──────────────────────┬────────────────────────────────┐          │
-│  │ You write            │ Suggestor resolves to           │          │
+│  │ You write            │ Pelican resolves to           │          │
 │  ├──────────────────────┼────────────────────────────────┤          │
 │  │ @/pages/Login        │ src/pages/Login.tsx             │          │
 │  │ @components/Button   │ src/components/Button.tsx       │          │
@@ -863,7 +847,7 @@ const Login = lazy(() =>
 
 > *Traces the entire lifecycle of Redux state — from action dispatch to selector consumption — and links every file in the chain together.*
 
-This is where Suggestor goes deeper than any grep or import-trace ever could. In a real-world Redux codebase, state flows through **5-7 files** across multiple directories. Changing one file in the chain can break tests that touch completely different parts of the UI.
+This is where Pelican goes deeper than any grep or import-trace ever could. In a real-world Redux codebase, state flows through **5-7 files** across multiple directories. Changing one file in the chain can break tests that touch completely different parts of the UI.
 
 **How Redux role detection works:**
 
@@ -925,7 +909,7 @@ This is where Suggestor goes deeper than any grep or import-trace ever could. In
 | `authSagas.ts` | auth | LoginPage, AdminPanel | login.cy.ts, admin.cy.ts |
 | `loginAction` in slice | auth | LoginPage | login.cy.ts |
 
-> **The non-obvious insight:** You changed `authSagas.ts` — a file that no test directly imports, that no route directly renders, that no selector directly references. But Suggestor knows it's part of the auth chain, and every consumer of auth state is potentially affected.
+> **The non-obvious insight:** You changed `authSagas.ts` — a file that no test directly imports, that no route directly renders, that no selector directly references. But Pelican knows it's part of the auth chain, and every consumer of auth state is potentially affected.
 
 ---
 
@@ -1073,7 +1057,7 @@ interface ISignal {
 
 ### The Ubiquity Dampener
 
-This is one of Suggestor's most important features. Without it, **every test in your project** would score HIGH against shared utility files.
+This is one of Pelican's most important features. Without it, **every test in your project** would score HIGH against shared utility files.
 
 ```
   Problem:
@@ -1381,7 +1365,7 @@ This is one of Suggestor's most important features. Without it, **every test in 
 
 # Real-World Walkthroughs
 
-*Three end-to-end traces showing how Suggestor connects the dots no human would.*
+*Three end-to-end traces showing how Pelican connects the dots no human would.*
 
 </div>
 
@@ -1395,11 +1379,11 @@ This is one of Suggestor's most important features. Without it, **every test in 
 CHANGE: src/components/SearchBar.tsx
         ─ data-testid="search-input" → data-testid="search-field"
 
-  Suggestor runs the SourceExtractor:
+  Pelican runs the SourceExtractor:
     Old selectors: [{ attr: 'data-testid', value: 'search-input' }]
     New selectors: [{ attr: 'data-testid', value: 'search-field' }]
 
-  Suggestor runs the SelectorMatchScorer against all tests:
+  Pelican runs the SelectorMatchScorer against all tests:
 
     search.cy.ts       → cy.get('[data-testid="search-input"]')     MATCH (old value)
     navigation.cy.ts   → cy.get('[data-testid="search-input"]')     MATCH (old value)
@@ -1413,8 +1397,8 @@ CHANGE: src/components/SearchBar.tsx
     home.cy.ts          HIGH   0.82   selector-match (search-input)
 
   Those 3 tests WILL FAIL after this change.
-  Suggestor caught all 3.
-  Without Suggestor, the dev merges. Three tests break in nightly.
+  Pelican caught all 3.
+  Without Pelican, the dev merges. Three tests break in nightly.
 ```
 
 ---
@@ -1427,12 +1411,12 @@ CHANGE: src/components/SearchBar.tsx
 CHANGE: public/locales/en/translation.json
         ─ "login.submit": "Sign In"  →  "login.submit": "Log In"
 
-  Suggestor rebuilds the i18n index:
+  Pelican rebuilds the i18n index:
     textToKeys['sign in'] is now gone
     textToKeys['log in']  = ['login.submit']
     keyToFiles['login.submit'] = { LoginForm.tsx, MobileLogin.tsx }
 
-  Suggestor runs the TranslationMatchScorer:
+  Pelican runs the TranslationMatchScorer:
 
     login.cy.ts          → cy.contains('Sign In')
                            textToKeys['sign in'] → EMPTY (text changed!)
@@ -1451,7 +1435,7 @@ CHANGE: public/locales/en/translation.json
     auth-flow.cy.ts      HIGH   0.85   translation-match
 
   Both tests will now fail because they assert on 'Sign In' which is now 'Log In'.
-  Suggestor knew because it traced: JSON value → key → source file → test assertion.
+  Pelican knew because it traced: JSON value → key → source file → test assertion.
 ```
 
 ---
@@ -1464,7 +1448,7 @@ CHANGE: public/locales/en/translation.json
 CHANGE: src/store/auth/authSagas.ts
         ─ Added: yield put(refreshToken()) in watchLogin saga
 
-  Suggestor runs the ReduxChainAnalyzer:
+  Pelican runs the ReduxChainAnalyzer:
     authSagas.ts has role: SAGAS
     It belongs to chain: "auth"
     Chain "auth" members: authSlice, authSelectors, authSagas, authTypes
@@ -1489,8 +1473,350 @@ CHANGE: src/store/auth/authSagas.ts
     admin.cy.ts        MED     0.67   redux-consumer (auth) via AdminPanel
     dashboard.cy.ts    MED     0.65   redux-consumer (auth) via DashboardPage
 
-  A saga change with zero UI impact — and Suggestor found 4 tests across 4 different
+  A saga change with zero UI impact — and Pelican found 4 tests across 4 different
   routes that exercise the affected state. A grep would have found zero.
+```
+
+---
+
+<br/>
+
+<div align="center">
+
+# Scenarios You've Lived Through
+
+*Every team has these stories. Pelican exists because we got tired of living them.*
+
+</div>
+
+<br/>
+
+### Scenario 1 — The New Dev's First PR
+
+> It's your first week. You fixed a typo in a component. You have no idea which tests to run. You're about to become *that person* who breaks the build.
+
+```
+  Monday, 10:15 AM. You're new. You joined Thursday.
+
+  You fixed a prop name in UserAvatar.tsx. One line. You're 90% sure
+  it's fine. But this is a 200k-line codebase and you've read maybe
+  300 lines of it.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  WITHOUT PELICAN:                                                │
+  │                                                                  │
+  │  You:     "Hey @team, I changed UserAvatar.tsx — which           │
+  │            tests should I check?"                                │
+  │                                                                  │
+  │  Sarah:   (typing...)  "hmm, probably avatar.cy.ts"              │
+  │  Mike:    (30 min later)  "oh also check profile.cy.ts,          │
+  │           it uses that component in a card"                      │
+  │  Sarah:   "wait, does the header still use the old avatar?"      │
+  │  Mike:    "I think we migrated that... let me check"             │
+  │  Mike:    (45 min later)  "yeah header-nav.cy.ts too"            │
+  │                                                                  │
+  │  Total time: 1 hour 15 minutes of your time + 2 engineers'      │
+  │  time, for a ONE LINE CHANGE.                                    │
+  │                                                                  │
+  │  And Mike forgot about the onboarding flow. That breaks Friday.  │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  WITH PELICAN:                                                   │
+  │                                                                  │
+  │  $ pelican --changed src/components/UserAvatar.tsx               │
+  │                                                                  │
+  │  ● avatar.cy.ts             HIGH   0.95  direct-import           │
+  │  ● profile-card.cy.ts       HIGH   0.87  selector-match          │
+  │  ● header-nav.cy.ts         HIGH   0.83  route-match             │
+  │  ● onboarding.cy.ts         MED    0.71  transitive-import       │
+  │                                                                  │
+  │  Total time: 2 seconds. Zero interruptions to the team.          │
+  │  And it caught the onboarding flow that Mike wouldn't have.      │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**The deeper problem Pelican solves here:** Institutional knowledge about test coverage lives in people's heads. When Sarah goes on vacation, when Mike switches teams, when the new dev joins — that knowledge is gone. Pelican makes it structural. It lives in the code, not in Slack threads.
+
+---
+
+### Scenario 2 — The "Which Tests Do I Run?" Slack Message
+
+> Every team has this ritual. A developer changes code. A tester asks what broke. The developer guesses. The tester runs what they're told. Both miss something.
+
+```
+  The conversation that happens 15 times a day:
+
+  #dev-qa channel:
+  ────────────────────────────────────────────────────────────────────
+
+  Dev:       "Hey QA, I pushed changes to the payment flow.
+              Touched PaymentForm.tsx and the Stripe hook."
+
+  Tester:    "Got it. I'll run the payment tests. Anything else?"
+
+  Dev:       "Hmm, maybe the checkout flow? Not sure if it
+              uses the same Stripe hook."
+
+  Tester:    "OK I'll add that. What about the subscription page?"
+
+  Dev:       "I don't think so... but maybe? Let me check."
+              (opens 4 files, traces imports for 10 minutes)
+              "Actually yeah, SubscriptionManager imports
+              useStripePayment transitively through BillingProvider."
+
+  Tester:    "OK so payment, checkout, AND subscription. Anything
+              else or can I start?"
+
+  Dev:       "I think that's it."
+
+  Narrator:  It was not it. The invoice download page also
+             uses the Stripe hook through a 3-level import chain
+             that neither of them knew about.
+```
+
+```
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  WITH PELICAN:                                                   │
+  │                                                                  │
+  │  $ pelican --changed src/features/payment/PaymentForm.tsx \      │
+  │                       src/hooks/useStripePayment.ts              │
+  │                                                                  │
+  │  ● payment.cy.ts            HIGH   0.97  direct-import           │
+  │  ● checkout-flow.cy.ts      HIGH   0.91  route-match + selector  │
+  │  ● subscription.cy.ts       HIGH   0.85  transitive-import       │
+  │  ● invoice-download.cy.ts   MED    0.72  transitive (3 hops)     │
+  │  ● billing-settings.cy.ts   MED    0.68  redux-consumer          │
+  │                                                                  │
+  │  The dev pastes this in Slack. The tester runs exactly these.    │
+  │  No guessing. No "I think that's it." No missed invoice page.   │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**What changes:** The developer-tester handoff goes from a 20-minute negotiation based on tribal knowledge to a 2-second command that produces a definitive, traceable answer. The tester trusts the output because it shows *why* each test was selected. The developer doesn't have to mentally trace import chains. Nobody has to guess.
+
+---
+
+### Scenario 3 — The Shared Component Refactor
+
+> You're updating the design system. One component change. Fourteen teams use it. Nobody knows how many tests touch it.
+
+```
+  You're on the platform team. Design wants to update the Button
+  component — new padding, new focus ring, slightly different
+  height. You're about to change a file that half the app imports.
+
+  The fear:
+  ─────────────────────────────────────────────────────────────
+
+  Button.tsx is imported by 47 components across 14 feature teams.
+  Those components are tested by... how many test files? You have
+  no idea. Your team owns Button. You don't own the tests.
+
+  You COULD run all 1,247 tests. But your PR review will say:
+  "CI took 43 minutes" and someone will ask why.
+
+  You COULD ask all 14 teams. But that's 14 Slack messages, 14
+  delayed responses, and 14 incomplete answers.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  $ pelican --changed src/design-system/Button.tsx                │
+  │                                                                  │
+  │  Analyzing... (Button.tsx is imported by 47 files)               │
+  │  Ubiquity dampener: Button.tsx imported by 38% — NOT ubiquitous  │
+  │                                                                  │
+  │  ● button-variants.cy.ts     HIGH   0.95  direct-import          │
+  │  ● login.cy.ts               HIGH   0.88  selector-match         │
+  │  ● checkout.cy.ts            HIGH   0.86  selector-match         │
+  │  ● signup-flow.cy.ts         HIGH   0.84  route → SignupForm     │
+  │  ● settings.cy.ts            HIGH   0.82  selector-match         │
+  │  ● modal-dialogs.cy.ts       MED    0.74  transitive-import      │
+  │  ● admin-dashboard.cy.ts     MED    0.71  route → AdminPage      │
+  │  ● search-results.cy.ts      MED    0.67  transitive-import      │
+  │  ● onboarding.cy.ts          MED    0.64  route → OnboardPage    │
+  │                                                                  │
+  │  9 tests across 7 teams. Not 1,247. Not 0.                      │
+  │                                                                  │
+  │  And if Button were truly ubiquitous (imported by 70%+),         │
+  │  the ubiquity dampener would kick in — only tests with           │
+  │  ADDITIONAL strong signals would make the cut.                   │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**The nuance here:** Pelican doesn't just find all 47 files that import Button. It finds the *tests* that exercise those files, scores them by real connection strength, and filters out the noise. A test that visits a page with a Button 4 levels deep is less relevant than a test that directly clicks `[data-testid="submit-btn"]`.
+
+---
+
+### Scenario 4 — The Friday 5 PM Hotfix
+
+> Production is down. Users are seeing a blank screen. You found the bug — a null check in the data fetching hook. You need to fix it, test it, and ship it. Now.
+
+```
+  5:04 PM Friday. PagerDuty is screaming.
+
+  The fix is one line:
+    - const data = response.data;
+    + const data = response?.data ?? [];
+
+  In useDataFetcher.ts. A hook used by... a lot of things.
+
+  You do NOT have 43 minutes for a full test suite.
+  You do NOT have time to ask the team which tests to run.
+  Half the team already left for the weekend.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  $ pelican --changed src/hooks/useDataFetcher.ts                 │
+  │            --min-confidence high                                  │
+  │                                                                  │
+  │  ● data-table.cy.ts          HIGH   0.93  direct-import          │
+  │  ● dashboard.cy.ts           HIGH   0.89  route + selector       │
+  │  ● user-list.cy.ts           HIGH   0.87  direct-import          │
+  │  ● search-results.cy.ts      HIGH   0.85  route-match            │
+  │  ● analytics.cy.ts           HIGH   0.81  transitive-import      │
+  │                                                                  │
+  │  5 tests. 4 minutes. HIGH confidence only.                       │
+  │  Enough to ship the hotfix with confidence.                      │
+  │                                                                  │
+  │  Monday morning, the nightly run will catch any LOW/MED edge     │
+  │  cases. But right now, your users can see the page again.        │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**Why `--min-confidence high` matters:** In an emergency, you don't need every tangentially-related test. You need the ones that *will definitely exercise your change*. Pelican's confidence levels let you dial the scope to match the urgency. HIGH for hotfixes. MEDIUM for normal PRs. Everything for nightly.
+
+---
+
+### Scenario 5 — The Config File Nobody Thinks About
+
+> Someone updates the route configuration. No component code changed. No test fails locally. But 6 tests break in CI because the URLs shifted.
+
+```
+  The change seems harmless:
+
+  // routes.config.ts
+  - { path: 'settings', element: <SettingsPage /> }
+  + { path: 'preferences', element: <SettingsPage /> }
+
+  Just a rename. The component is the same. All the props are
+  the same. The logic is identical.
+
+  But in your test suite:
+    cy.visit('/settings')         ← 3 tests do this
+    cy.url().should('include', '/settings')  ← 2 more assert this
+
+  None of them import routes.config.ts. A grep for "settings"
+  returns 200+ results across the codebase. You can't tell
+  which ones are route-related and which are unrelated.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  $ pelican --changed src/routes.config.ts                        │
+  │                                                                  │
+  │  Pelican rebuilds the routeMap:                                  │
+  │    /settings is now gone                                         │
+  │    /preferences → SettingsPage.tsx (new)                         │
+  │                                                                  │
+  │  ● settings.cy.ts            HIGH   0.92  route-match /settings  │
+  │  ● user-preferences.cy.ts    HIGH   0.88  route-match /settings  │
+  │  ● account.cy.ts             HIGH   0.84  route-match /settings  │
+  │  ● navigation-smoke.cy.ts    MED    0.72  url-assertion          │
+  │  ● sidebar-nav.cy.ts         MED    0.65  url-assertion          │
+  │                                                                  │
+  │  5 tests that will break. All because of a URL rename.           │
+  │  Pelican caught them through route analysis, not string matching.│
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**The insight:** Route changes are invisible to import analysis and difficult for grep. Pelican's RouteAnalyzer understands that `cy.visit('/settings')` is semantically connected to the route config — not because the test imports it, but because the test *navigates to a path it defines*.
+
+---
+
+### Scenario 6 — The Monorepo Migration
+
+> Your team is migrating from feature folders to a packages-based monorepo structure. Imports are being rewritten. File paths are changing. Half the import aliases are broken. Which tests still pass?
+
+```
+  Week 3 of the monorepo migration. You just moved
+  the entire auth feature from:
+    src/features/auth/*  →  packages/auth/src/*
+
+  73 files moved. Import paths rewritten with new aliases.
+  The TypeScript compiler says it's fine. ESLint says it's fine.
+
+  But your Cypress tests still use the old routes. Some tests
+  import helpers from the old paths. Some tests assert on
+  text that now comes from a different translation namespace.
+
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                                                                  │
+  │  $ pelican --changed $(git diff --name-only main)                │
+  │                                                                  │
+  │  Analyzing 73 changed files...                                   │
+  │                                                                  │
+  │  ● login.cy.ts               HIGH   0.97  direct-import          │
+  │    ├─ import path changed    ██████████████████░░  0.95           │
+  │    └─ route still valid      ██████████████████░░  0.85           │
+  │                                                                  │
+  │  ● auth-flow.cy.ts           HIGH   0.94  route + selector       │
+  │  ● registration.cy.ts        HIGH   0.91  route + translation    │
+  │  ● password-reset.cy.ts      HIGH   0.89  route-match            │
+  │  ● mfa-setup.cy.ts           HIGH   0.86  direct-import          │
+  │  ● session-timeout.cy.ts     HIGH   0.83  redux-chain (auth)     │
+  │  ● profile-security.cy.ts    MED    0.74  transitive-import      │
+  │  ● admin-users.cy.ts         MED    0.71  redux-consumer         │
+  │  ● audit-log.cy.ts           MED    0.68  redux-consumer         │
+  │  ● onboarding.cy.ts          MED    0.62  transitive-import      │
+  │                                                                  │
+  │  10 tests to validate the migration. Not 1,247.                  │
+  │  Run these 10 green, and you know auth works in its new home.    │
+  │                                                                  │
+  └──────────────────────────────────────────────────────────────────┘
+```
+
+**Why this is hard without Pelican:** During a migration, import paths change but semantic relationships stay the same. `LoginForm` still renders `[data-testid="login-btn"]`, still lives at `/login`, still uses `selectUser` from the auth Redux chain. Pelican traces these semantic connections regardless of where the files physically live.
+
+---
+
+<div align="center">
+
+### The Pattern
+
+</div>
+
+Every scenario above shares the same root problem:
+
+```
+  ┌─────────────────────────────────────────────────────────────────────┐
+  │                                                                     │
+  │  The knowledge of "which tests cover which code" exists             │
+  │  somewhere in your organization.                                    │
+  │                                                                     │
+  │  But it's fragmented:                                               │
+  │    • Partly in the senior dev's head (she wrote those tests)        │
+  │    • Partly in the QA team's spreadsheet (last updated 3 months     │
+  │      ago)                                                           │
+  │    • Partly in tribal knowledge shared over Slack (good luck        │
+  │      finding that thread)                                           │
+  │    • Partly in nobody's head (the connection is too indirect        │
+  │      for any human to track)                                        │
+  │                                                                     │
+  │  Pelican doesn't ask anyone.                                        │
+  │  It reads the code and works it out.                                │
+  │                                                                     │
+  │  Every time. In 2 seconds. With receipts.                           │
+  │                                                                     │
+  └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -1508,8 +1834,8 @@ CHANGE: src/store/auth/authSagas.ts
 ### Setup
 
 ```bash
-git clone https://github.com/henit-chobisa/suggestor.git
-cd suggestor
+git clone https://github.com/dhart-tools/pelican.git
+cd pelican
 pnpm install
 ```
 
@@ -1576,7 +1902,7 @@ src/v2/
     └── constants.ts                  BUILTIN_CYPRESS_COMMANDS (45+), regex patterns
 ```
 
-### Extending Suggestor
+### Extending Pelican
 
 <details>
 <summary><strong>Adding a new Analyzer</strong></summary>
@@ -1670,7 +1996,7 @@ export class MyScorer extends BaseScorer {
 
 <br/>
 
-[Report a Bug](https://github.com/henit-chobisa/suggestor/issues) &nbsp;&middot;&nbsp; [Request a Feature](https://github.com/henit-chobisa/suggestor/issues) &nbsp;&middot;&nbsp; [Contribute](./CONTRIBUTING.md)
+[Report a Bug](https://github.com/dhart-tools/pelican/issues) &nbsp;&middot;&nbsp; [Request a Feature](https://github.com/dhart-tools/pelican/issues) &nbsp;&middot;&nbsp; [Contribute](./CONTRIBUTING.md)
 
 <br/>
 
