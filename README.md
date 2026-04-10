@@ -22,7 +22,7 @@
 &nbsp;&nbsp;
 [![Cypress](https://img.shields.io/badge/CYPRESS-NATIVE-69D3A7?style=for-the-badge&logo=cypress&logoColor=white)](https://www.cypress.io/)
 &nbsp;&nbsp;
-[![License](https://img.shields.io/badge/LICENSE-MIT-blue?style=for-the-badge)](./LICENSE)
+[![License](https://img.shields.io/badge/LICENSE-ELv2-blue?style=for-the-badge)](./LICENSE)
 
 <br/>
 
@@ -35,6 +35,10 @@
 <br/>
 
 </div>
+
+> [!WARNING]
+> **Pelican is licensed under the [Elastic License 2.0 (ELv2)](./LICENSE).**
+> You are free to use, modify, and self-host this software. However, you **may not** offer Pelican as a hosted or managed service to third parties without explicit written permission from the author. Commercial exploitation — including reselling, white-labeling, or building a paid product directly from this codebase — is prohibited under these terms. If you want to use Pelican commercially, [reach out](https://github.com/dhart-tools/pelican/issues).
 
 ## It's 4:47 PM on a Thursday.
 
