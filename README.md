@@ -12,9 +12,9 @@
 
 <br/>
 
-[![Build](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/ci.yml?branch=main&style=for-the-badge&label=BUILD&logo=github)](https://github.com/dhart-tools/pelican/actions)
+[![Build](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/build-test.yml?branch=main&style=for-the-badge&label=BUILD&logo=github)](https://github.com/dhart-tools/pelican/actions)
 &nbsp;&nbsp;
-[![Tests](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/test.yml?branch=main&style=for-the-badge&label=TESTS&color=4caf50&logo=vitest)](https://github.com/dhart-tools/pelican/actions)
+[![Lint](https://img.shields.io/github/actions/workflow/status/dhart-tools/pelican/test-lint.yml?branch=main&style=for-the-badge&label=LINT&color=4caf50&logo=eslint)](https://github.com/dhart-tools/pelican/actions)
 &nbsp;&nbsp;
 [![Contributors](https://img.shields.io/github/contributors/dhart-tools/pelican?style=for-the-badge&color=orange&logo=github)](https://github.com/dhart-tools/pelican/graphs/contributors)
 
