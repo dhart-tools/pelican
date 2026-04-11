@@ -1,0 +1,2332 @@
+{
+  "files": [
+    [
+      "src/main.tsx",
+      {
+        "name": "main.tsx",
+        "type": "source",
+        "path": "src/main.tsx",
+        "exports": [
+          "React",
+          "ReactDOM",
+          "App"
+        ],
+        "imports": [
+          "react",
+          "react-dom/client",
+          "i18n",
+          "App"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/i18n.ts",
+      {
+        "name": "i18n.ts",
+        "type": "source",
+        "path": "src/i18n.ts",
+        "exports": [
+          "i18n",
+          "initReactI18next"
+        ],
+        "imports": [
+          "i18next",
+          "react-i18next"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/App.tsx",
+      {
+        "name": "App.tsx",
+        "type": "source",
+        "path": "src/App.tsx",
+        "exports": [
+          "BrowserRouter",
+          "Routes",
+          "Route",
+          "Provider",
+          "store",
+          "Navbar",
+          "HomePage",
+          "LoginPage",
+          "RegisterPage",
+          "ProductsPage",
+          "CartPage"
+        ],
+        "imports": [
+          "react-router-dom",
+          "react-redux",
+          "store",
+          "components/common/Navbar",
+          "pages/HomePage",
+          "pages/LoginPage",
+          "pages/RegisterPage",
+          "pages/ProductsPage",
+          "pages/CartPage"
+        ],
+        "classes": [],
+        "functions": [
+          "App"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [
+          {
+            "path": "/",
+            "component": "HomePage",
+            "isLazy": false,
+            "isDynamic": false
+          },
+          {
+            "path": "/login",
+            "component": "LoginPage",
+            "isLazy": false,
+            "isDynamic": false
+          },
+          {
+            "path": "/register",
+            "component": "RegisterPage",
+            "isLazy": false,
+            "isDynamic": false
+          },
+          {
+            "path": "/products",
+            "component": "ProductsPage",
+            "isLazy": false,
+            "isDynamic": false
+          },
+          {
+            "path": "/cart",
+            "component": "CartPage",
+            "isLazy": false,
+            "isDynamic": false
+          }
+        ],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/store/productSlice.ts",
+      {
+        "name": "productSlice.ts",
+        "type": "source",
+        "path": "src/store/productSlice.ts",
+        "exports": [
+          "createSlice",
+          "PayloadAction",
+          "Product"
+        ],
+        "imports": [
+          "@reduxjs/toolkit",
+          "../api/products"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [
+          "ProductState"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": [
+            "products"
+          ]
+        }
+      }
+    ],
+    [
+      "src/store/index.ts",
+      {
+        "name": "index.ts",
+        "type": "source",
+        "path": "src/store/index.ts",
+        "exports": [
+          "configureStore",
+          "authReducer",
+          "cartReducer",
+          "productReducer"
+        ],
+        "imports": [
+          "@reduxjs/toolkit",
+          "authSlice",
+          "cartSlice",
+          "productSlice"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/store/cartSlice.ts",
+      {
+        "name": "cartSlice.ts",
+        "type": "source",
+        "path": "src/store/cartSlice.ts",
+        "exports": [
+          "createSlice",
+          "PayloadAction"
+        ],
+        "imports": [
+          "@reduxjs/toolkit"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [
+          "CartItem",
+          "CartState"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": [
+            "cart"
+          ]
+        }
+      }
+    ],
+    [
+      "src/store/authSlice.ts",
+      {
+        "name": "authSlice.ts",
+        "type": "source",
+        "path": "src/store/authSlice.ts",
+        "exports": [
+          "createSlice",
+          "PayloadAction"
+        ],
+        "imports": [
+          "@reduxjs/toolkit"
+        ],
+        "classes": [],
+        "functions": [],
+        "interfaces": [
+          "AuthState"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": [
+            "auth"
+          ]
+        }
+      }
+    ],
+    [
+      "src/pages/RegisterPage.tsx",
+      {
+        "name": "RegisterPage.tsx",
+        "type": "source",
+        "path": "src/pages/RegisterPage.tsx",
+        "exports": [
+          "useNavigate",
+          "RegisterForm"
+        ],
+        "imports": [
+          "react-router-dom",
+          "../components/auth/RegisterForm"
+        ],
+        "classes": [],
+        "functions": [
+          "RegisterPage"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/pages/ProductsPage.tsx",
+      {
+        "name": "ProductsPage.tsx",
+        "type": "source",
+        "path": "src/pages/ProductsPage.tsx",
+        "exports": [
+          "ProductList"
+        ],
+        "imports": [
+          "../components/products/ProductList"
+        ],
+        "classes": [],
+        "functions": [
+          "ProductsPage"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "products-page"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/pages/LoginPage.tsx",
+      {
+        "name": "LoginPage.tsx",
+        "type": "source",
+        "path": "src/pages/LoginPage.tsx",
+        "exports": [
+          "useNavigate",
+          "LoginForm"
+        ],
+        "imports": [
+          "react-router-dom",
+          "../components/auth/LoginForm"
+        ],
+        "classes": [],
+        "functions": [
+          "LoginPage"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/pages/HomePage.tsx",
+      {
+        "name": "HomePage.tsx",
+        "type": "source",
+        "path": "src/pages/HomePage.tsx",
+        "exports": [
+          "Link",
+          "useTranslation"
+        ],
+        "imports": [
+          "react-router-dom",
+          "react-i18next"
+        ],
+        "classes": [],
+        "functions": [
+          "HomePage"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "home-page"
+          },
+          {
+            "attr": "data-testid",
+            "value": "go-to-products"
+          },
+          {
+            "attr": "data-testid",
+            "value": "go-to-login"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [
+          "common.home",
+          "products.title",
+          "auth.signIn"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/pages/CartPage.tsx",
+      {
+        "name": "CartPage.tsx",
+        "type": "source",
+        "path": "src/pages/CartPage.tsx",
+        "exports": [
+          "CartSummary"
+        ],
+        "imports": [
+          "../components/cart/CartSummary"
+        ],
+        "classes": [],
+        "functions": [
+          "CartPage"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "cart-page"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/api/products.ts",
+      {
+        "name": "products.ts",
+        "type": "source",
+        "path": "src/api/products.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [
+          "fetchProducts",
+          "fetchProductById"
+        ],
+        "interfaces": [
+          "Product",
+          "ProductsResponse"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/api/orders.ts",
+      {
+        "name": "orders.ts",
+        "type": "source",
+        "path": "src/api/orders.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [
+          "placeOrder",
+          "fetchOrders"
+        ],
+        "interfaces": [
+          "OrderItem",
+          "Order",
+          "PlaceOrderPayload"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/api/auth.ts",
+      {
+        "name": "auth.ts",
+        "type": "source",
+        "path": "src/api/auth.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [
+          "loginApi",
+          "logoutApi",
+          "registerApi",
+          "refreshTokenApi"
+        ],
+        "interfaces": [
+          "LoginPayload",
+          "AuthUser",
+          "RegisterPayload"
+        ],
+        "keywords": [],
+        "selectors": [],
+        "jsxTextContent": [],
+        "translationKeys": [],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/common/Navbar.tsx",
+      {
+        "name": "Navbar.tsx",
+        "type": "source",
+        "path": "src/components/common/Navbar.tsx",
+        "exports": [
+          "useSelector",
+          "useDispatch",
+          "Link",
+          "useTranslation",
+          "selectCartCount",
+          "selectIsAuthenticated",
+          "logoutUser",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react-redux",
+          "react-router-dom",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../store/authSlice",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "Navbar"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "navbar"
+          },
+          {
+            "attr": "data-testid",
+            "value": "nav-home"
+          },
+          {
+            "attr": "data-testid",
+            "value": "nav-products"
+          },
+          {
+            "attr": "data-testid",
+            "value": "nav-cart"
+          },
+          {
+            "attr": "data-testid",
+            "value": "nav-logout"
+          }
+        ],
+        "jsxTextContent": [
+          "(",
+          ")",
+          "Logout"
+        ],
+        "translationKeys": [
+          "common.home",
+          "products.title",
+          "cart.title"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [
+            "selectCartCount",
+            "selectIsAuthenticated"
+          ],
+          "actionsDispatched": [
+            "logoutUser"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/products/ProductList.tsx",
+      {
+        "name": "ProductList.tsx",
+        "type": "source",
+        "path": "src/components/products/ProductList.tsx",
+        "exports": [
+          "useEffect",
+          "useSelector",
+          "useDispatch",
+          "useTranslation",
+          "selectProducts",
+          "selectProductsLoading",
+          "setProducts",
+          "setProductsLoading",
+          "fetchProducts",
+          "ProductCard",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react",
+          "react-redux",
+          "react-i18next",
+          "../../store/productSlice",
+          "../../api/products",
+          "ProductCard",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "ProductList"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "products-loading"
+          },
+          {
+            "attr": "data-testid",
+            "value": "products-empty"
+          },
+          {
+            "attr": "data-testid",
+            "value": "product-list"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [
+          "common.loading",
+          "products.noProducts",
+          "products.title"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [
+            "selectProducts",
+            "selectProductsLoading"
+          ],
+          "actionsDispatched": [
+            "setProductsLoading",
+            "setProducts",
+            "setProductsLoading"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/products/ProductCard.tsx",
+      {
+        "name": "ProductCard.tsx",
+        "type": "source",
+        "path": "src/components/products/ProductCard.tsx",
+        "exports": [
+          "useDispatch",
+          "useTranslation",
+          "addToCart",
+          "Product",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../api/products",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "ProductCard",
+          "handleAddToCart"
+        ],
+        "interfaces": [
+          "ProductCardProps"
+        ],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "product-card"
+          },
+          {
+            "attr": "id",
+            "value": ""
+          },
+          {
+            "attr": "data-testid",
+            "value": "product-price"
+          },
+          {
+            "attr": "data-testid",
+            "value": "add-to-cart-btn"
+          },
+          {
+            "attr": "data-testid",
+            "value": "out-of-stock"
+          }
+        ],
+        "jsxTextContent": [
+          ": $"
+        ],
+        "translationKeys": [
+          "products.price",
+          "products.addToCart",
+          "products.outOfStock"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [
+            "addToCart"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/cart/CartSummary.tsx",
+      {
+        "name": "CartSummary.tsx",
+        "type": "source",
+        "path": "src/components/cart/CartSummary.tsx",
+        "exports": [
+          "useSelector",
+          "useDispatch",
+          "useTranslation",
+          "selectCartItems",
+          "selectCartTotal",
+          "clearCart",
+          "setCheckingOut",
+          "placeOrder",
+          "CartItem",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../api/orders",
+          "CartItem",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "CartSummary",
+          "handleCheckout"
+        ],
+        "interfaces": [],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "cart-empty"
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-summary"
+          },
+          {
+            "attr": "id",
+            "value": "cart-checkout-section"
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-total"
+          },
+          {
+            "attr": "data-testid",
+            "value": "checkout-btn"
+          }
+        ],
+        "jsxTextContent": [
+          ": $"
+        ],
+        "translationKeys": [
+          "cart.empty",
+          "cart.title",
+          "cart.total",
+          "cart.checkout"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [
+            "selectCartItems",
+            "selectCartTotal"
+          ],
+          "actionsDispatched": [
+            "setCheckingOut",
+            "clearCart",
+            "setCheckingOut"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/cart/CartItem.tsx",
+      {
+        "name": "CartItem.tsx",
+        "type": "source",
+        "path": "src/components/cart/CartItem.tsx",
+        "exports": [
+          "useDispatch",
+          "useTranslation",
+          "removeFromCart",
+          "updateQuantity",
+          "CartItemType",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../store/cartSlice",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "CartItem"
+        ],
+        "interfaces": [
+          "CartItemProps"
+        ],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "cart-item"
+          },
+          {
+            "attr": "id",
+            "value": ""
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-item-name"
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-item-price"
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-item-qty"
+          },
+          {
+            "attr": "data-testid",
+            "value": "cart-item-remove"
+          }
+        ],
+        "jsxTextContent": [
+          "$"
+        ],
+        "translationKeys": [
+          "cart.remove"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [
+            "updateQuantity",
+            "removeFromCart"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/auth/RegisterForm.tsx",
+      {
+        "name": "RegisterForm.tsx",
+        "type": "source",
+        "path": "src/components/auth/RegisterForm.tsx",
+        "exports": [
+          "useState",
+          "useTranslation",
+          "registerApi"
+        ],
+        "imports": [
+          "react",
+          "react-i18next",
+          "../../api/auth"
+        ],
+        "classes": [],
+        "functions": [
+          "RegisterForm",
+          "handleSubmit"
+        ],
+        "interfaces": [
+          "RegisterFormProps"
+        ],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "data-testid",
+            "value": "register-name"
+          },
+          {
+            "attr": "data-testid",
+            "value": "register-email"
+          },
+          {
+            "attr": "data-testid",
+            "value": "register-password"
+          },
+          {
+            "attr": "data-testid",
+            "value": "register-error"
+          },
+          {
+            "attr": "data-testid",
+            "value": "register-submit"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [
+          "common.error",
+          "auth.register",
+          "auth.emailPlaceholder",
+          "auth.passwordPlaceholder",
+          "auth.register"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "src/components/auth/LoginForm.tsx",
+      {
+        "name": "LoginForm.tsx",
+        "type": "source",
+        "path": "src/components/auth/LoginForm.tsx",
+        "exports": [
+          "useState",
+          "useDispatch",
+          "useTranslation",
+          "loginUser",
+          "setAuthError",
+          "setAuthLoading",
+          "loginApi",
+          "AppDispatch"
+        ],
+        "imports": [
+          "react",
+          "react-redux",
+          "react-i18next",
+          "../../store/authSlice",
+          "../../api/auth",
+          "../../store"
+        ],
+        "classes": [],
+        "functions": [
+          "LoginForm",
+          "handleSubmit"
+        ],
+        "interfaces": [
+          "LoginFormProps"
+        ],
+        "keywords": [],
+        "selectors": [
+          {
+            "attr": "id",
+            "value": "login-form"
+          },
+          {
+            "attr": "data-testid",
+            "value": "email-input"
+          },
+          {
+            "attr": "data-testid",
+            "value": "password-input"
+          },
+          {
+            "attr": "data-testid",
+            "value": "login-submit"
+          }
+        ],
+        "jsxTextContent": [],
+        "translationKeys": [
+          "auth.loginError",
+          "auth.loginTitle",
+          "auth.emailPlaceholder",
+          "auth.passwordPlaceholder",
+          "auth.signIn",
+          "auth.noAccount",
+          "auth.forgotPassword"
+        ],
+        "routesDefined": [],
+        "reduxUsage": {
+          "selectorsUsed": [],
+          "actionsDispatched": [
+            "setAuthLoading",
+            "loginUser",
+            "setAuthError"
+          ],
+          "slicesDefined": []
+        }
+      }
+    ],
+    [
+      "cypress/e2e/products/products.cy.ts",
+      {
+        "name": "products.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/products/products.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/products",
+            "/products",
+            "/products"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "product-list",
+              "raw": "[data-testid=\"product-list\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "product-card",
+              "raw": "[data-testid=\"product-card\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "product-price",
+              "raw": "[data-testid=\"product-price\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "add-to-cart-btn",
+              "raw": "[data-testid=\"add-to-cart-btn\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "out-of-stock",
+              "raw": "[data-testid=\"out-of-stock\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "add-to-cart-btn",
+              "raw": "[data-testid=\"add-to-cart-btn\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-cart",
+              "raw": "[data-testid=\"nav-cart\"]"
+            }
+          ],
+          "containsText": [
+            "Products",
+            "Add to Cart",
+            "Out of Stock",
+            "Loading...",
+            "No products found"
+          ],
+          "interceptedAPIs": [
+            {
+              "method": "GET",
+              "urlPattern": "/api/products*"
+            },
+            {
+              "method": "GET",
+              "urlPattern": "/api/products*"
+            },
+            {
+              "method": "GET",
+              "urlPattern": "/api/products*"
+            }
+          ],
+          "urlAssertions": [],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Products page"
+          ],
+          "itBlocks": [
+            "shows the product list",
+            "shows prices",
+            "shows Add to Cart for in-stock products",
+            "shows Out of Stock for unavailable products",
+            "adds a product to cart",
+            "shows loading state before products arrive",
+            "shows empty state when no products"
+          ]
+        }
+      }
+    ],
+    [
+      "cypress/e2e/common/navigation.cy.ts",
+      {
+        "name": "navigation.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/common/navigation.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/",
+            "/login",
+            "/products"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "navbar",
+              "raw": "[data-testid=\"navbar\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-products",
+              "raw": "[data-testid=\"nav-products\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-cart",
+              "raw": "[data-testid=\"nav-cart\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-cart",
+              "raw": "[data-testid=\"nav-cart\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "email-input",
+              "raw": "[data-testid=\"email-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "password-input",
+              "raw": "[data-testid=\"password-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "login-submit",
+              "raw": "[data-testid=\"login-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-logout",
+              "raw": "[data-testid=\"nav-logout\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "nav-home",
+              "raw": "[data-testid=\"nav-home\"]"
+            }
+          ],
+          "containsText": [
+            "Home",
+            "Products"
+          ],
+          "interceptedAPIs": [
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/login"
+            }
+          ],
+          "urlAssertions": [
+            {
+              "operator": "include",
+              "expectedValue": "/products"
+            },
+            {
+              "operator": "include",
+              "expectedValue": "/cart"
+            }
+          ],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Navigation"
+          ],
+          "itBlocks": [
+            "renders the navbar on home page",
+            "navigates to products page",
+            "navigates to cart page",
+            "shows cart count badge",
+            "shows logout button when authenticated",
+            "navigates home from navbar link"
+          ]
+        }
+      }
+    ],
+    [
+      "cypress/e2e/common/home.cy.ts",
+      {
+        "name": "home.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/common/home.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "home-page",
+              "raw": "[data-testid=\"home-page\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "go-to-products",
+              "raw": "[data-testid=\"go-to-products\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "go-to-login",
+              "raw": "[data-testid=\"go-to-login\"]"
+            }
+          ],
+          "containsText": [
+            "Home",
+            "Sign In"
+          ],
+          "interceptedAPIs": [],
+          "urlAssertions": [
+            {
+              "operator": "include",
+              "expectedValue": "/products"
+            },
+            {
+              "operator": "include",
+              "expectedValue": "/login"
+            }
+          ],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Home page"
+          ],
+          "itBlocks": [
+            "renders the home page",
+            "links to products",
+            "links to login"
+          ]
+        }
+      }
+    ],
+    [
+      "cypress/e2e/cart/cart.cy.ts",
+      {
+        "name": "cart.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/cart/cart.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/products",
+            "/cart"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "add-to-cart-btn",
+              "raw": "[data-testid=\"add-to-cart-btn\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-summary",
+              "raw": "[data-testid=\"cart-summary\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-item",
+              "raw": "[data-testid=\"cart-item\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-total",
+              "raw": "[data-testid=\"cart-total\"]"
+            },
+            {
+              "type": "id",
+              "value": "cart-checkout-section",
+              "raw": "#cart-checkout-section"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-item-remove",
+              "raw": "[data-testid=\"cart-item-remove\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-item-qty",
+              "raw": "[data-testid=\"cart-item-qty\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-total",
+              "raw": "[data-testid=\"cart-total\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "checkout-btn",
+              "raw": "[data-testid=\"checkout-btn\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-item-remove",
+              "raw": "[data-testid=\"cart-item-remove\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "cart-empty",
+              "raw": "[data-testid=\"cart-empty\"]"
+            }
+          ],
+          "containsText": [
+            "Your Cart",
+            "Total",
+            "Your cart is empty",
+            "Your cart is empty",
+            "Proceed to Checkout",
+            "Your cart is empty"
+          ],
+          "interceptedAPIs": [
+            {
+              "method": "GET",
+              "urlPattern": "/api/products*"
+            },
+            {
+              "method": "POST",
+              "urlPattern": "/api/orders"
+            }
+          ],
+          "urlAssertions": [],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Cart page"
+          ],
+          "itBlocks": [
+            "shows cart summary with items",
+            "displays cart total",
+            "selects checkout section by id",
+            "removes item from cart",
+            "updates quantity",
+            "places an order via checkout",
+            "shows empty cart state"
+          ]
+        }
+      }
+    ],
+    [
+      "cypress/e2e/auth/register.cy.ts",
+      {
+        "name": "register.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/auth/register.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/register"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "register-name",
+              "raw": "[data-testid=\"register-name\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-email",
+              "raw": "[data-testid=\"register-email\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-password",
+              "raw": "[data-testid=\"register-password\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-submit",
+              "raw": "[data-testid=\"register-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-name",
+              "raw": "[data-testid=\"register-name\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-email",
+              "raw": "[data-testid=\"register-email\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-password",
+              "raw": "[data-testid=\"register-password\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-submit",
+              "raw": "[data-testid=\"register-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-name",
+              "raw": "[data-testid=\"register-name\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-email",
+              "raw": "[data-testid=\"register-email\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-password",
+              "raw": "[data-testid=\"register-password\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-submit",
+              "raw": "[data-testid=\"register-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "register-error",
+              "raw": "[data-testid=\"register-error\"]"
+            }
+          ],
+          "containsText": [
+            "Create Account"
+          ],
+          "interceptedAPIs": [
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/register"
+            },
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/register"
+            }
+          ],
+          "urlAssertions": [
+            {
+              "operator": "include",
+              "expectedValue": "/login"
+            }
+          ],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Register flow"
+          ],
+          "itBlocks": [
+            "renders the register form",
+            "registers a new user",
+            "shows error on failed registration"
+          ]
+        }
+      }
+    ],
+    [
+      "cypress/e2e/auth/login.cy.ts",
+      {
+        "name": "login.cy.ts",
+        "type": "test",
+        "path": "cypress/e2e/auth/login.cy.ts",
+        "exports": [],
+        "imports": [],
+        "classes": [],
+        "functions": [],
+        "interfaces": [],
+        "keywords": [],
+        "cypress": {
+          "visitedRoutes": [
+            "/login"
+          ],
+          "selectors": [
+            {
+              "type": "data-testid",
+              "value": "email-input",
+              "raw": "[data-testid=\"email-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "password-input",
+              "raw": "[data-testid=\"password-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "login-submit",
+              "raw": "[data-testid=\"login-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "email-input",
+              "raw": "[data-testid=\"email-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "password-input",
+              "raw": "[data-testid=\"password-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "login-submit",
+              "raw": "[data-testid=\"login-submit\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "email-input",
+              "raw": "[data-testid=\"email-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "password-input",
+              "raw": "[data-testid=\"password-input\"]"
+            },
+            {
+              "type": "data-testid",
+              "value": "login-submit",
+              "raw": "[data-testid=\"login-submit\"]"
+            },
+            {
+              "type": "id",
+              "value": "login-form",
+              "raw": "#login-form"
+            }
+          ],
+          "containsText": [
+            "Sign In",
+            "Invalid credentials",
+            "Don't have an account?"
+          ],
+          "interceptedAPIs": [
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/login"
+            },
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/logout"
+            },
+            {
+              "method": "POST",
+              "urlPattern": "/api/auth/login"
+            }
+          ],
+          "urlAssertions": [
+            {
+              "operator": "include",
+              "expectedValue": "/products"
+            },
+            {
+              "operator": "include",
+              "expectedValue": "/register"
+            }
+          ],
+          "customCommandsUsed": [],
+          "describeBlocks": [
+            "Login flow"
+          ],
+          "itBlocks": [
+            "renders the login form with all elements",
+            "logs in with valid credentials",
+            "shows error on invalid credentials",
+            "selects form by id",
+            "navigates to register page from login"
+          ]
+        }
+      }
+    ]
+  ],
+  "importGraph": {
+    "dependencies": [
+      [
+        "src/main.tsx",
+        [
+          "react",
+          "react-dom/client",
+          "i18n",
+          "App"
+        ]
+      ],
+      [
+        "src/i18n.ts",
+        [
+          "i18next",
+          "react-i18next"
+        ]
+      ],
+      [
+        "src/App.tsx",
+        [
+          "react-router-dom",
+          "react-redux",
+          "store",
+          "components/common/Navbar",
+          "pages/HomePage",
+          "pages/LoginPage",
+          "pages/RegisterPage",
+          "pages/ProductsPage",
+          "pages/CartPage"
+        ]
+      ],
+      [
+        "src/store/productSlice.ts",
+        [
+          "@reduxjs/toolkit",
+          "../api/products"
+        ]
+      ],
+      [
+        "src/store/index.ts",
+        [
+          "@reduxjs/toolkit",
+          "authSlice",
+          "cartSlice",
+          "productSlice"
+        ]
+      ],
+      [
+        "src/store/cartSlice.ts",
+        [
+          "@reduxjs/toolkit"
+        ]
+      ],
+      [
+        "src/store/authSlice.ts",
+        [
+          "@reduxjs/toolkit"
+        ]
+      ],
+      [
+        "src/pages/RegisterPage.tsx",
+        [
+          "react-router-dom",
+          "../components/auth/RegisterForm"
+        ]
+      ],
+      [
+        "src/pages/ProductsPage.tsx",
+        [
+          "../components/products/ProductList"
+        ]
+      ],
+      [
+        "src/pages/LoginPage.tsx",
+        [
+          "react-router-dom",
+          "../components/auth/LoginForm"
+        ]
+      ],
+      [
+        "src/pages/HomePage.tsx",
+        [
+          "react-router-dom",
+          "react-i18next"
+        ]
+      ],
+      [
+        "src/pages/CartPage.tsx",
+        [
+          "../components/cart/CartSummary"
+        ]
+      ],
+      [
+        "src/api/products.ts",
+        []
+      ],
+      [
+        "src/api/orders.ts",
+        []
+      ],
+      [
+        "src/api/auth.ts",
+        []
+      ],
+      [
+        "src/components/common/Navbar.tsx",
+        [
+          "react-redux",
+          "react-router-dom",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../store/authSlice",
+          "../../store"
+        ]
+      ],
+      [
+        "src/components/products/ProductList.tsx",
+        [
+          "react",
+          "react-redux",
+          "react-i18next",
+          "../../store/productSlice",
+          "../../api/products",
+          "ProductCard",
+          "../../store"
+        ]
+      ],
+      [
+        "src/components/products/ProductCard.tsx",
+        [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../api/products",
+          "../../store"
+        ]
+      ],
+      [
+        "src/components/cart/CartSummary.tsx",
+        [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../api/orders",
+          "CartItem",
+          "../../store"
+        ]
+      ],
+      [
+        "src/components/cart/CartItem.tsx",
+        [
+          "react-redux",
+          "react-i18next",
+          "../../store/cartSlice",
+          "../../store"
+        ]
+      ],
+      [
+        "src/components/auth/RegisterForm.tsx",
+        [
+          "react",
+          "react-i18next",
+          "../../api/auth"
+        ]
+      ],
+      [
+        "src/components/auth/LoginForm.tsx",
+        [
+          "react",
+          "react-redux",
+          "react-i18next",
+          "../../store/authSlice",
+          "../../api/auth",
+          "../../store"
+        ]
+      ],
+      [
+        "cypress/e2e/products/products.cy.ts",
+        []
+      ],
+      [
+        "cypress/e2e/common/navigation.cy.ts",
+        []
+      ],
+      [
+        "cypress/e2e/common/home.cy.ts",
+        []
+      ],
+      [
+        "cypress/e2e/cart/cart.cy.ts",
+        []
+      ],
+      [
+        "cypress/e2e/auth/register.cy.ts",
+        []
+      ],
+      [
+        "cypress/e2e/auth/login.cy.ts",
+        []
+      ]
+    ],
+    "dependents": [
+      [
+        "react",
+        [
+          "src/main.tsx",
+          "src/components/products/ProductList.tsx",
+          "src/components/auth/RegisterForm.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ],
+      [
+        "react-dom/client",
+        [
+          "src/main.tsx"
+        ]
+      ],
+      [
+        "i18n",
+        [
+          "src/main.tsx"
+        ]
+      ],
+      [
+        "App",
+        [
+          "src/main.tsx"
+        ]
+      ],
+      [
+        "i18next",
+        [
+          "src/i18n.ts"
+        ]
+      ],
+      [
+        "react-i18next",
+        [
+          "src/i18n.ts",
+          "src/pages/HomePage.tsx",
+          "src/components/common/Navbar.tsx",
+          "src/components/products/ProductList.tsx",
+          "src/components/products/ProductCard.tsx",
+          "src/components/cart/CartSummary.tsx",
+          "src/components/cart/CartItem.tsx",
+          "src/components/auth/RegisterForm.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ],
+      [
+        "react-router-dom",
+        [
+          "src/App.tsx",
+          "src/pages/RegisterPage.tsx",
+          "src/pages/LoginPage.tsx",
+          "src/pages/HomePage.tsx",
+          "src/components/common/Navbar.tsx"
+        ]
+      ],
+      [
+        "react-redux",
+        [
+          "src/App.tsx",
+          "src/components/common/Navbar.tsx",
+          "src/components/products/ProductList.tsx",
+          "src/components/products/ProductCard.tsx",
+          "src/components/cart/CartSummary.tsx",
+          "src/components/cart/CartItem.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ],
+      [
+        "store",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "components/common/Navbar",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "pages/HomePage",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "pages/LoginPage",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "pages/RegisterPage",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "pages/ProductsPage",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "pages/CartPage",
+        [
+          "src/App.tsx"
+        ]
+      ],
+      [
+        "@reduxjs/toolkit",
+        [
+          "src/store/productSlice.ts",
+          "src/store/index.ts",
+          "src/store/cartSlice.ts",
+          "src/store/authSlice.ts"
+        ]
+      ],
+      [
+        "../api/products",
+        [
+          "src/store/productSlice.ts"
+        ]
+      ],
+      [
+        "authSlice",
+        [
+          "src/store/index.ts"
+        ]
+      ],
+      [
+        "cartSlice",
+        [
+          "src/store/index.ts"
+        ]
+      ],
+      [
+        "productSlice",
+        [
+          "src/store/index.ts"
+        ]
+      ],
+      [
+        "../components/auth/RegisterForm",
+        [
+          "src/pages/RegisterPage.tsx"
+        ]
+      ],
+      [
+        "../components/products/ProductList",
+        [
+          "src/pages/ProductsPage.tsx"
+        ]
+      ],
+      [
+        "../components/auth/LoginForm",
+        [
+          "src/pages/LoginPage.tsx"
+        ]
+      ],
+      [
+        "../components/cart/CartSummary",
+        [
+          "src/pages/CartPage.tsx"
+        ]
+      ],
+      [
+        "../../store/cartSlice",
+        [
+          "src/components/common/Navbar.tsx",
+          "src/components/products/ProductCard.tsx",
+          "src/components/cart/CartSummary.tsx",
+          "src/components/cart/CartItem.tsx"
+        ]
+      ],
+      [
+        "../../store/authSlice",
+        [
+          "src/components/common/Navbar.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ],
+      [
+        "../../store",
+        [
+          "src/components/common/Navbar.tsx",
+          "src/components/products/ProductList.tsx",
+          "src/components/products/ProductCard.tsx",
+          "src/components/cart/CartSummary.tsx",
+          "src/components/cart/CartItem.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ],
+      [
+        "../../store/productSlice",
+        [
+          "src/components/products/ProductList.tsx"
+        ]
+      ],
+      [
+        "../../api/products",
+        [
+          "src/components/products/ProductList.tsx",
+          "src/components/products/ProductCard.tsx"
+        ]
+      ],
+      [
+        "ProductCard",
+        [
+          "src/components/products/ProductList.tsx"
+        ]
+      ],
+      [
+        "../../api/orders",
+        [
+          "src/components/cart/CartSummary.tsx"
+        ]
+      ],
+      [
+        "CartItem",
+        [
+          "src/components/cart/CartSummary.tsx"
+        ]
+      ],
+      [
+        "../../api/auth",
+        [
+          "src/components/auth/RegisterForm.tsx",
+          "src/components/auth/LoginForm.tsx"
+        ]
+      ]
+    ]
+  },
+  "selectorIndex": [
+    [
+      "products-page",
+      [
+        "src/pages/ProductsPage.tsx"
+      ]
+    ],
+    [
+      "home-page",
+      [
+        "src/pages/HomePage.tsx"
+      ]
+    ],
+    [
+      "go-to-products",
+      [
+        "src/pages/HomePage.tsx"
+      ]
+    ],
+    [
+      "go-to-login",
+      [
+        "src/pages/HomePage.tsx"
+      ]
+    ],
+    [
+      "cart-page",
+      [
+        "src/pages/CartPage.tsx"
+      ]
+    ],
+    [
+      "navbar",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ],
+    [
+      "nav-home",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ],
+    [
+      "nav-products",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ],
+    [
+      "nav-cart",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ],
+    [
+      "nav-logout",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ],
+    [
+      "products-loading",
+      [
+        "src/components/products/ProductList.tsx"
+      ]
+    ],
+    [
+      "products-empty",
+      [
+        "src/components/products/ProductList.tsx"
+      ]
+    ],
+    [
+      "product-list",
+      [
+        "src/components/products/ProductList.tsx"
+      ]
+    ],
+    [
+      "product-card",
+      [
+        "src/components/products/ProductCard.tsx"
+      ]
+    ],
+    [
+      "",
+      [
+        "src/components/products/ProductCard.tsx",
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "product-price",
+      [
+        "src/components/products/ProductCard.tsx"
+      ]
+    ],
+    [
+      "add-to-cart-btn",
+      [
+        "src/components/products/ProductCard.tsx"
+      ]
+    ],
+    [
+      "out-of-stock",
+      [
+        "src/components/products/ProductCard.tsx"
+      ]
+    ],
+    [
+      "cart-empty",
+      [
+        "src/components/cart/CartSummary.tsx"
+      ]
+    ],
+    [
+      "cart-summary",
+      [
+        "src/components/cart/CartSummary.tsx"
+      ]
+    ],
+    [
+      "cart-checkout-section",
+      [
+        "src/components/cart/CartSummary.tsx"
+      ]
+    ],
+    [
+      "cart-total",
+      [
+        "src/components/cart/CartSummary.tsx"
+      ]
+    ],
+    [
+      "checkout-btn",
+      [
+        "src/components/cart/CartSummary.tsx"
+      ]
+    ],
+    [
+      "cart-item",
+      [
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "cart-item-name",
+      [
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "cart-item-price",
+      [
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "cart-item-qty",
+      [
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "cart-item-remove",
+      [
+        "src/components/cart/CartItem.tsx"
+      ]
+    ],
+    [
+      "register-name",
+      [
+        "src/components/auth/RegisterForm.tsx"
+      ]
+    ],
+    [
+      "register-email",
+      [
+        "src/components/auth/RegisterForm.tsx"
+      ]
+    ],
+    [
+      "register-password",
+      [
+        "src/components/auth/RegisterForm.tsx"
+      ]
+    ],
+    [
+      "register-error",
+      [
+        "src/components/auth/RegisterForm.tsx"
+      ]
+    ],
+    [
+      "register-submit",
+      [
+        "src/components/auth/RegisterForm.tsx"
+      ]
+    ],
+    [
+      "login-form",
+      [
+        "src/components/auth/LoginForm.tsx"
+      ]
+    ],
+    [
+      "email-input",
+      [
+        "src/components/auth/LoginForm.tsx"
+      ]
+    ],
+    [
+      "password-input",
+      [
+        "src/components/auth/LoginForm.tsx"
+      ]
+    ],
+    [
+      "login-submit",
+      [
+        "src/components/auth/LoginForm.tsx"
+      ]
+    ]
+  ],
+  "routeMap": [
+    [
+      "/",
+      "src/App.tsx"
+    ],
+    [
+      "/login",
+      "src/App.tsx"
+    ],
+    [
+      "/register",
+      "src/App.tsx"
+    ],
+    [
+      "/products",
+      "src/App.tsx"
+    ],
+    [
+      "/cart",
+      "src/App.tsx"
+    ]
+  ],
+  "translationIndex": {
+    "keyToText": [],
+    "textToKeys": [],
+    "keyToFiles": [],
+    "dynamicKeys": [],
+    "keyToStaticText": []
+  },
+  "reduxChains": [],
+  "textIndex": [
+    [
+      "logout",
+      [
+        "src/components/common/Navbar.tsx"
+      ]
+    ]
+  ]
+}

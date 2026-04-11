@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "CommonJS",
-    "moduleResolution": "Node",
+    "module": "Preserve",
+    "moduleResolution": "Bundler",
+    "jsx": "react",
     "outDir": "dist",
     "rootDir": "src",
     "strict": true,
@@ -15,10 +16,9 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@v2/*": ["src/v2/*"],
-      "@root/*": ["src/*"]
+      "@/*": ["src/*"]
     }
   },
-  "include": ["src/v2/**/*"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "context"]
 }
