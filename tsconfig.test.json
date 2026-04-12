@@ -1,11 +1,7 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "module": "ES2022",
-    "paths": {
-      "@/*": ["src/*"],
-      "ink-testing-library": ["node_modules/ink-testing-library/build/index"]
-    }
+    "module": "ES2022"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
