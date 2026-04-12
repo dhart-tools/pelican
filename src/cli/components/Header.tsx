@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface HeaderProps {
   icon: string;
@@ -16,15 +17,17 @@ export function Header({ icon, title, subtitle }: HeaderProps) {
   return (
     <Box justifyContent="space-between" marginBottom={0}>
       <Box>
-        <Text color={palette.brand} bold>{icon}</Text>
+        <Text color={palette.brand} bold>
+          {icon}
+        </Text>
         <Text>{'  '}</Text>
-        <Text color={palette.text} bold>PELICAN</Text>
+        <Text color={palette.text} bold>
+          PELICAN
+        </Text>
         <Text color={palette.dim}>{'  ·  '}</Text>
         <Text color={palette.sub}>{title}</Text>
       </Box>
-      {subtitle && (
-        <Text color={palette.dim}>{subtitle}</Text>
-      )}
+      {subtitle && <Text color={palette.dim}>{subtitle}</Text>}
     </Box>
   );
 }

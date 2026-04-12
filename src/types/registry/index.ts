@@ -44,7 +44,6 @@ export interface IFileEntry {
   };
 }
 
-
 export interface IRegistry {
   readonly files: Map<string, IFileEntry>;
   readonly importGraph: IImportGraph;

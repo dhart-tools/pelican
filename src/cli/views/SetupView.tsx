@@ -1,19 +1,18 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { Header } from '../components/Header';
-import { StatusStep } from '../components/StatusStep';
-import { Panel } from '../components/Panel';
-import { SectionDivider } from '../components/SectionDivider';
-import { palette } from '../theme';
-import { ISetupState } from '../types';
+import React from 'react';
+
+import { Header } from '@/cli/components/Header';
+import { Panel } from '@/cli/components/Panel';
+import { SectionDivider } from '@/cli/components/SectionDivider';
+import { StatusStep } from '@/cli/components/StatusStep';
+import { palette } from '@/cli/theme';
+import { ISetupState } from '@/cli/types';
 
 export function SetupView(state: ISetupState) {
   const isDone = state.phase === 'done';
   const isError = state.phase === 'error';
 
-  const borderColor = isError ? palette.rose
-    : isDone ? palette.emerald
-    : palette.border;
+  const borderColor = isError ? palette.rose : isDone ? palette.emerald : palette.border;
 
   return (
     <Panel borderColor={borderColor}>
@@ -31,11 +30,13 @@ export function SetupView(state: ISetupState) {
           <SectionDivider label="setup complete" />
           <Box flexDirection="column" paddingLeft={2} marginTop={1}>
             <Box>
-              <Text color={palette.dim}>next  </Text>
-              <Text color={palette.brand} bold>pelican registry build</Text>
+              <Text color={palette.dim}>next </Text>
+              <Text color={palette.brand} bold>
+                pelican registry build
+              </Text>
             </Box>
             <Box marginTop={1}>
-              <Text color={palette.dim}>then  </Text>
+              <Text color={palette.dim}>then </Text>
               <Text color={palette.cyan}>pelican analyze --files {'<path>'}</Text>
             </Box>
           </Box>
@@ -45,7 +46,9 @@ export function SetupView(state: ISetupState) {
       {isError && state.error && (
         <>
           <SectionDivider />
-          <Text color={palette.rose} bold>✘  {state.error}</Text>
+          <Text color={palette.rose} bold>
+            ✘ {state.error}
+          </Text>
         </>
       )}
     </Panel>

@@ -1,9 +1,11 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { palette, scorerBarColor } from '../theme';
-import { SignalBadge } from './SignalBadge';
-import { SectionDivider } from './SectionDivider';
+import React from 'react';
+
+import { palette, scorerBarColor } from '@/cli/theme';
 import { IScoreResult } from '@/types/scorers';
+
+import { SectionDivider } from './SectionDivider';
+import { SignalBadge } from './SignalBadge';
 
 interface ResultsTableProps {
   results: Array<{
@@ -44,18 +46,23 @@ interface ResultRowProps {
 
 function ResultRow({ testFile, score, confidence, signals }: ResultRowProps) {
   const matched = signals.filter((s) => s.matched && s.weight > 0);
-  const dotColor = confidence === 'high'
-    ? palette.emerald
-    : confidence === 'medium'
-    ? palette.amber
-    : palette.rose;
+  const dotColor =
+    confidence === 'high'
+      ? palette.emerald
+      : confidence === 'medium'
+        ? palette.amber
+        : palette.rose;
 
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box justifyContent="space-between">
         <Box>
-          <Text color={dotColor} bold>●  </Text>
-          <Text color={palette.cyan} bold>{shortPath(testFile)}</Text>
+          <Text color={dotColor} bold>
+            ●{' '}
+          </Text>
+          <Text color={palette.cyan} bold>
+            {shortPath(testFile)}
+          </Text>
         </Box>
         <Box marginLeft={2}>
           <SignalBadge confidence={confidence as never} score={score} />
@@ -71,9 +78,9 @@ function ResultRow({ testFile, score, confidence, signals }: ResultRowProps) {
             return (
               <Box key={i}>
                 <Text color={palette.muted}>{tree} </Text>
-                <Text color={palette.dim}>{label}  </Text>
+                <Text color={palette.dim}>{label} </Text>
                 <ScoreBar weight={sig.weight} confidence={confidence} />
-                <Text color={palette.dim}>  {sig.weight.toFixed(2)}</Text>
+                <Text color={palette.dim}> {sig.weight.toFixed(2)}</Text>
               </Box>
             );
           })}
@@ -132,12 +139,15 @@ export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
 
       <SectionDivider />
       <Box marginTop={0}>
-        <Text color={palette.text} bold>{flat.length}</Text>
-        {flat.length < totalCandidates
-          ? <Text color={palette.dim}> of {totalCandidates} suggestions</Text>
-          : <Text color={palette.dim}> suggestion{flat.length !== 1 ? 's' : ''}</Text>
-        }
-        <Text color={palette.muted}>   ·   </Text>
+        <Text color={palette.text} bold>
+          {flat.length}
+        </Text>
+        {flat.length < totalCandidates ? (
+          <Text color={palette.dim}> of {totalCandidates} suggestions</Text>
+        ) : (
+          <Text color={palette.dim}> suggestion{flat.length !== 1 ? 's' : ''}</Text>
+        )}
+        <Text color={palette.muted}> · </Text>
         <Text color={palette.dim}>sorted by confidence</Text>
       </Box>
     </>

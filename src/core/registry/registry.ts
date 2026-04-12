@@ -254,14 +254,8 @@ export class Registry implements IRegistry {
     const data = {
       files: Array.from(this.files.entries()),
       importGraph: {
-        dependencies: Array.from(this.importGraph.dependencies, ([k, v]) => [
-          k,
-          Array.from(v),
-        ]),
-        dependents: Array.from(this.importGraph.dependents, ([k, v]) => [
-          k,
-          Array.from(v),
-        ]),
+        dependencies: Array.from(this.importGraph.dependencies, ([k, v]) => [k, Array.from(v)]),
+        dependents: Array.from(this.importGraph.dependents, ([k, v]) => [k, Array.from(v)]),
       },
       selectorIndex: Array.from(this.selectorIndex.entries()).map(([k, v]) => [k, Array.from(v)]),
       routeMap: Array.from(this.routeMap.entries()),

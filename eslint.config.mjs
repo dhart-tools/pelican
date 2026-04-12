@@ -52,7 +52,7 @@ export default [
     },
   },
   {
-    files: ['**/*.test.ts', '**/*.spec.ts', '**/__tests__/**/*.ts'],
+    files: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/__tests__/**/*.{ts,tsx}'],
     languageOptions: {
       globals: {
         ...globals.jest,

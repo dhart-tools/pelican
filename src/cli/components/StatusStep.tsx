@@ -1,7 +1,8 @@
-import React from 'react';
 import { Box, Text } from 'ink';
 import Spinner from 'ink-spinner';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface StatusStepProps {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -47,9 +48,7 @@ export function StatusStep({ status, label, detail }: StatusStepProps) {
       <Text color={iconColor}>{icon}</Text>
       <Text>{'  '}</Text>
       <Text color={labelColor}>{paddedLabel}</Text>
-      {detail && (
-        <Text color={palette.dim}>{detail}</Text>
-      )}
+      {detail && <Text color={palette.dim}>{detail}</Text>}
     </Box>
   );
 }

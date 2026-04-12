@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Text, useStdout } from 'ink';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface SectionDividerProps {
   label?: string;
@@ -39,7 +40,9 @@ export function SectionDivider({ label }: SectionDividerProps) {
   return (
     <Box>
       <Text color={palette.borderSub}>{'──'}</Text>
-      <Text color={palette.sub} bold>{labelStr}</Text>
+      <Text color={palette.sub} bold>
+        {labelStr}
+      </Text>
       <Text color={palette.borderSub}>{'─'.repeat(dashes)}</Text>
     </Box>
   );

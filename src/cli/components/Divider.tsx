@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Text, useStdout } from 'ink';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface DividerProps {
   color?: string;

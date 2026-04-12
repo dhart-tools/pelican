@@ -1,5 +1,5 @@
-import { EImportExportType } from '@/utils/enums';
 import { IAliasResolverConfig } from '@/types/analyzers/route-analyzer';
+import { EImportExportType } from '@/utils/enums';
 
 /**
  * Import Metadata - represents a single import in a source file.
@@ -32,7 +32,6 @@ export interface IExportMetadata {
   /** The type of export */
   type: EImportExportType;
 }
-
 
 /**
  * Extraction result for a single file's import and export metadata.

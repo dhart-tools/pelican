@@ -2,23 +2,23 @@ import { ITheme } from './types';
 
 export const theme: ITheme = {
   colors: {
-    primary:   '#0891B2',
+    primary: '#0891B2',
     secondary: '#0369A1',
-    success:   '#065F46',
-    warning:   '#92400E',
-    error:     '#991B1B',
-    dim:       '#6B7280',
-    muted:     '#9CA3AF',
+    success: '#065F46',
+    warning: '#92400E',
+    error: '#991B1B',
+    dim: '#6B7280',
+    muted: '#9CA3AF',
   },
   icons: {
-    success:   '✔',
-    error:     '✘',
-    warning:   '⚠',
-    info:      'ℹ',
-    arrow:     '›',
-    bullet:    '●',
-    circle:    '○',
-    star:      '★',
+    success: '✔',
+    error: '✘',
+    warning: '⚠',
+    info: 'ℹ',
+    arrow: '›',
+    bullet: '●',
+    circle: '○',
+    star: '★',
     analyzing: '◆',
   },
 } as const;
@@ -26,55 +26,55 @@ export const theme: ITheme = {
 // ─── Light palette (dark text on light/white terminal bg) ────────────────────
 
 const lightPalette = {
-  brand:     '#0891B2',
+  brand: '#0891B2',
   brandDark: '#0E7490',
 
-  emerald:   '#065F46',
-  amber:     '#92400E',
-  rose:      '#991B1B',
+  emerald: '#065F46',
+  amber: '#92400E',
+  rose: '#991B1B',
 
   badgeHigh: '#059669',
-  badgeMed:  '#D97706',
-  badgeLow:  '#DC2626',
+  badgeMed: '#D97706',
+  badgeLow: '#DC2626',
   badgeText: '#FFFFFF',
 
-  text:      '#111827',
-  sub:       '#374151',
-  dim:       '#6B7280',
-  muted:     '#9CA3AF',
+  text: '#111827',
+  sub: '#374151',
+  dim: '#6B7280',
+  muted: '#9CA3AF',
 
-  border:    '#4B5563',   // Gray-600 — clearly visible on white
-  borderSub: '#9CA3AF',   // Gray-400 — inner dividers, softer
-  cyan:      '#0369A1',
-  barFill:   '#0891B2',
-  barEmpty:  '#D1D5DB',
+  border: '#4B5563', // Gray-600 — clearly visible on white
+  borderSub: '#9CA3AF', // Gray-400 — inner dividers, softer
+  cyan: '#0369A1',
+  barFill: '#0891B2',
+  barEmpty: '#D1D5DB',
 };
 
 // ─── Dark palette (light text on dark terminal bg) ───────────────────────────
 
 const darkPalette = {
-  brand:     '#22D3EE',   // Cyan-400 — bright teal on dark bg
-  brandDark: '#06B6D4',   // Cyan-500
+  brand: '#22D3EE', // Cyan-400 — bright teal on dark bg
+  brandDark: '#06B6D4', // Cyan-500
 
-  emerald:   '#34D399',   // Emerald-400 — HIGH confidence
-  amber:     '#FBBF24',   // Amber-400 — MED confidence
-  rose:      '#F87171',   // Red-400 — LOW confidence / errors
+  emerald: '#34D399', // Emerald-400 — HIGH confidence
+  amber: '#FBBF24', // Amber-400 — MED confidence
+  rose: '#F87171', // Red-400 — LOW confidence / errors
 
-  badgeHigh: '#059669',   // Emerald-600 — badge bg (solid)
-  badgeMed:  '#D97706',   // Amber-600
-  badgeLow:  '#DC2626',   // Red-600
+  badgeHigh: '#059669', // Emerald-600 — badge bg (solid)
+  badgeMed: '#D97706', // Amber-600
+  badgeLow: '#DC2626', // Red-600
   badgeText: '#FFFFFF',
 
-  text:      '#F9FAFB',   // Near-white — primary content
-  sub:       '#E5E7EB',   // Gray-200 — labels
-  dim:       '#9CA3AF',   // Gray-400 — de-emphasized
-  muted:     '#6B7280',   // Gray-500 — hints
+  text: '#F9FAFB', // Near-white — primary content
+  sub: '#E5E7EB', // Gray-200 — labels
+  dim: '#9CA3AF', // Gray-400 — de-emphasized
+  muted: '#6B7280', // Gray-500 — hints
 
-  border:    '#4B5563',   // Gray-600 — panel outer border
-  borderSub: '#374151',   // Gray-700 — inner dividers
-  cyan:      '#38BDF8',   // Sky-400 — filenames
-  barFill:   '#22D3EE',   // Cyan-400
-  barEmpty:  '#374151',   // Gray-700
+  border: '#4B5563', // Gray-600 — panel outer border
+  borderSub: '#374151', // Gray-700 — inner dividers
+  cyan: '#38BDF8', // Sky-400 — filenames
+  barFill: '#22D3EE', // Cyan-400
+  barEmpty: '#374151', // Gray-700
 };
 
 export type ThemeName = 'light' | 'dark';
@@ -100,19 +100,27 @@ export function getThemeName(): ThemeName {
 
 export function confidenceColor(confidence: string): string {
   switch (confidence) {
-    case 'high':   return palette.emerald;
-    case 'medium': return palette.amber;
-    case 'low':    return palette.rose;
-    default:       return palette.dim;
+    case 'high':
+      return palette.emerald;
+    case 'medium':
+      return palette.amber;
+    case 'low':
+      return palette.rose;
+    default:
+      return palette.dim;
   }
 }
 
 export function confidenceBadgeBg(confidence: string): string {
   switch (confidence) {
-    case 'high':   return palette.badgeHigh;
-    case 'medium': return palette.badgeMed;
-    case 'low':    return palette.badgeLow;
-    default:       return palette.dim;
+    case 'high':
+      return palette.badgeHigh;
+    case 'medium':
+      return palette.badgeMed;
+    case 'low':
+      return palette.badgeLow;
+    default:
+      return palette.dim;
   }
 }
 

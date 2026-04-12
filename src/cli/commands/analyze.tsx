@@ -1,26 +1,27 @@
-import React, { useState, useEffect } from 'react';
-import { render } from 'ink';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Command } from 'commander';
-import { RegistryBuilder } from '@/core/registry/registry-builder';
-import { Registry } from '@/core/registry/registry';
-import { ScoringEngine } from '@/core/scoring/scoring-engine';
-import { loadProjectConfig, toScoringConfig } from '../config-loader';
-import { AnalyzeView } from '../views/AnalyzeView';
-import { IAnalyzeState, IAnalyzeOptions } from '../types';
-import { loadTheme } from '../user-config';
 
+import { Command } from 'commander';
+import { render } from 'ink';
+import React, { useState, useEffect } from 'react';
+
+import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
+import { IAnalyzeState, IAnalyzeOptions } from '@/cli/types';
+import { loadTheme } from '@/cli/user-config';
+import { AnalyzeView } from '@/cli/views/AnalyzeView';
+import { Registry } from '@/core/registry/registry';
+import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
-import { RouteMatchScorer } from '@/core/scoring/scorers/route-match-scorer';
-import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
-import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
 import { ReduxChainScorer } from '@/core/scoring/scorers/redux-chain-scorer';
 import { ReduxConsumerScorer } from '@/core/scoring/scorers/redux-consumer-scorer';
-import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { RouteMatchScorer } from '@/core/scoring/scorers/route-match-scorer';
 import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-scorer';
-import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
+import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
+import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
+import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { ScoringEngine } from '@/core/scoring/scoring-engine';
 
 const REGISTRY_CACHE_PATH = '.suggestor/registry.json';
 
@@ -118,7 +119,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let changedFiles: string[];
         if (options.files) {
-          changedFiles = options.files.split(',').map((f) => f.trim()).filter(Boolean);
+          changedFiles = options.files
+            .split(',')
+            .map((f) => f.trim())
+            .filter(Boolean);
         } else {
           throw new Error('No --files specified. Git auto-detection not yet implemented.');
         }
@@ -139,7 +143,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
         const maxResults = parseInt(options.maxResults) || 10;
-        const results: Array<{ changedFile: string; suggestedTests: ReturnType<typeof engine.evaluateTests> }> = [];
+        const results: Array<{
+          changedFile: string;
+          suggestedTests: ReturnType<typeof engine.evaluateTests>;
+        }> = [];
 
         for (let i = 0; i < changedFiles.length; i++) {
           const changedFile = changedFiles[i];
@@ -150,9 +157,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           }));
 
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
-          const relevant = scoreResults.filter(
-            (r) => r.score >= config.scoring.minConfidence,
-          );
+          const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
 
           results.push({
             changedFile,
@@ -211,7 +216,10 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   registry.deserialize(cacheData);
 
   const changedFiles = options.files
-    ? options.files.split(',').map((f) => f.trim()).filter(Boolean)
+    ? options.files
+        .split(',')
+        .map((f) => f.trim())
+        .filter(Boolean)
     : [];
 
   const scoringConfig = toScoringConfig(config);

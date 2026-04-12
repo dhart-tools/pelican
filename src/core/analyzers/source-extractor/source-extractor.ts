@@ -3,13 +3,7 @@ import * as ts from 'typescript';
 import { BaseAnalyzer } from '@/core/analyzers/base';
 import { ISourceExtractionResult } from '@/types/analyzers';
 import { SELECTOR_ATTRIBUTES } from '@/utils/constants';
-import {
-  EFunctionCall,
-  ERedux,
-  EReactRouter,
-  EReactComponent,
-  EAnalyzerName,
-} from '@/utils/enums';
+import { EFunctionCall, ERedux, EReactRouter, EReactComponent, EAnalyzerName } from '@/utils/enums';
 
 /**
  * Analyzer that extracts semantic information from source files using TypeScript's Compiler API.

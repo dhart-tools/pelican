@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react';
-import { render } from 'ink';
 import * as fs from 'fs/promises';
+
 import { Command } from 'commander';
-import { SetupView } from '../views/SetupView';
-import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '../types';
-import { loadTheme } from '../user-config';
+import { render } from 'ink';
+import React, { useState, useEffect } from 'react';
+
+import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
+import { loadTheme } from '@/cli/user-config';
+import { SetupView } from '@/cli/views/SetupView';
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -51,7 +53,11 @@ export async function detectProjectConfig(): Promise<{
 
     // Detect Cypress
     if (pkg.devDependencies?.cypress || pkg.dependencies?.cypress) {
-      steps.push({ name: 'Cypress detected', status: 'success', detail: 'cypress-extractor enabled' });
+      steps.push({
+        name: 'Cypress detected',
+        status: 'success',
+        detail: 'cypress-extractor enabled',
+      });
       if (!config.scoring.enabledScorers.includes('selector-match')) {
         config.scoring.enabledScorers.push('selector-match');
       }
@@ -79,7 +85,10 @@ export async function detectProjectConfig(): Promise<{
       steps.push({
         name: 'Redux Toolkit detected',
         status: 'success',
-        detail: existingDirs.length > 0 ? `store dirs: ${existingDirs.join(', ')}` : 'no store dirs found',
+        detail:
+          existingDirs.length > 0
+            ? `store dirs: ${existingDirs.join(', ')}`
+            : 'no store dirs found',
       });
     } else {
       steps.push({ name: 'Redux', status: 'idle', detail: 'not found' });
@@ -180,10 +189,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         setState((s) => ({
           ...s,
           phase: 'building-registry',
-          steps: [
-            ...s.steps,
-            { name: 'Building registry...', status: 'loading' as const },
-          ],
+          steps: [...s.steps, { name: 'Building registry...', status: 'loading' as const }],
         }));
 
         // Mark as done — user can run `suggestor registry build` separately
@@ -192,7 +198,11 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           phase: 'done',
           steps: s.steps.map((step) =>
             step.status === 'loading'
-              ? { ...step, status: 'success' as const, detail: 'run `suggestor registry build` to build' }
+              ? {
+                  ...step,
+                  status: 'success' as const,
+                  detail: 'run `suggestor registry build` to build',
+                }
               : step,
           ),
         }));
