@@ -1,21 +1,20 @@
 {
-  "name": "suggestor",
+  "name": "pelican",
   "version": "1.0.0",
-  "description": "",
+  "description": "Semantic test suggester for Cypress",
   "type": "module",
   "bin": {
-    "suggestor": "./dist/cli.js"
+    "pelican": "./dist/cli/entry.js"
   },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js",
-    "setup-env": "node scripts/setup-env.js",
-    "suggestor": "node dist/cli.js",
+    "build": "tsc && esbuild src/cli/entry.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=dist/cli/entry.js",
+    "dev": "tsx src/cli/entry.ts",
+    "start": "node dist/cli/entry.js",
+    "pelican": "node dist/cli/entry.js",
     "link": "npm link",
-    "test:v2": "tsx --test src/v2/**/*.test.ts",
-    "test:jest": "jest",
-    "lint": "eslint 'src/v2/**/*.{ts,tsx}' --fix"
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:jest": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "lint": "eslint 'src/**/*.{ts,tsx}' --fix"
   },
   "dependencies": {
     "@t3-oss/env-core": "^0.11.1",
@@ -33,18 +32,21 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^10.0.1",
+    "@jest/globals": "^30.3.0",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.12.0",
     "@types/react": "^19.2.14",
     "@typescript-eslint/eslint-plugin": "^8.57.2",
     "@typescript-eslint/parser": "^8.57.2",
     "cypress": "^15.12.0",
+    "esbuild": "^0.28.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.5",
     "globals": "^17.4.0",
+    "ink-testing-library": "^4.0.0",
     "jest": "^30.3.0",
     "jest-junit": "^16.0.0",
     "prettier": "^3.8.1",

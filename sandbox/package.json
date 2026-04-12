@@ -1,0 +1,30 @@
+{
+  "name": "pelican-sandbox",
+  "version": "1.0.0",
+  "description": "Sandbox React app covering all Pelican scorer and analyzer scenarios",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "cypress:open": "cypress open",
+    "cypress:run": "cypress run",
+    "analyze": "pelican analyze"
+  },
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.0.0",
+    "i18next": "^23.0.0",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-i18next": "^13.0.0",
+    "react-redux": "^9.0.0",
+    "react-router-dom": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "@vitejs/plugin-react": "^4.0.0",
+    "cypress": "^13.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.0.0"
+  }
+}

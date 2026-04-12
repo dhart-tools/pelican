@@ -1,0 +1,38 @@
+{
+  "auth": {
+    "loginTitle": "Sign In",
+    "signIn": "Sign In",
+    "register": "Create Account",
+    "emailPlaceholder": "Email address",
+    "passwordPlaceholder": "Password",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "loginError": "Invalid credentials. Please try again.",
+    "logoutSuccess": "You have been signed out."
+  },
+  "products": {
+    "title": "Products",
+    "addToCart": "Add to Cart",
+    "outOfStock": "Out of Stock",
+    "price": "Price",
+    "noProducts": "No products found",
+    "viewDetails": "View Details"
+  },
+  "cart": {
+    "title": "Your Cart",
+    "total": "Total",
+    "checkout": "Proceed to Checkout",
+    "empty": "Your cart is empty",
+    "remove": "Remove",
+    "items": "{{count}} items",
+    "orderPlaced": "Order placed successfully!"
+  },
+  "common": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "home": "Home",
+    "back": "Go Back",
+    "save": "Save",
+    "cancel": "Cancel"
+  }
+}

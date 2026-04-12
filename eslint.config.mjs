@@ -63,7 +63,7 @@ export default [
     },
   },
   {
-    files: ['src/v2/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -71,18 +71,11 @@ export default [
           'patterns': [
             {
               'group': ['../*'],
-              'message': 'Use path aliases (@v2/* or @root/*) instead of relative imports.'
+              'message': 'Use path aliases (@/*) instead of relative imports.'
             }
           ]
         }
       ]
-    }
-  },
-  {
-    files: ['src/commands/**/*', 'src/core/**/*', 'src/llm/**/*', 'src/ui/**/*'],
-    rules: {
-      '@typescript-eslint/no-unused-vars': 'off',
-      'import/no-relative-parent-imports': 'off',
     }
   },
   {
