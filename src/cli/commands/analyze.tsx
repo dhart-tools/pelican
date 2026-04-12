@@ -60,6 +60,7 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
 async function loadOrBuildRegistry(
   config: Awaited<ReturnType<typeof loadProjectConfig>>,
   onPhaseChange: (phase: IAnalyzeState['phase']) => void,
+  debug = false,
 ): Promise<Registry> {
   const registry = new Registry();
 
@@ -76,6 +77,8 @@ async function loadOrBuildRegistry(
       sourceDirs: config.sourceDirs,
       testPatterns: config.testPatterns,
       projectRoot: process.cwd(),
+      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      debug,
     });
 
     // Save cache
@@ -206,14 +209,41 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
  *   // { "results": [...], "stats": { ... } }
  */
 export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
+  const debug = options.debug ?? false;
   const config = await loadProjectConfig(options.config);
   if (options.minConfidence) {
     config.scoring.minConfidence = parseFloat(options.minConfidence);
   }
 
+  if (debug) {
+    debugLog(`config loaded: enabledScorers=${config.scoring.enabledScorers.join(',')}`);
+    debugLog(`pathAliases: ${JSON.stringify(config.analyzers.cypressExtractor.pathAliases ?? {})}`);
+  }
+
   const registry = new Registry();
-  const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
-  registry.deserialize(cacheData);
+  try {
+    const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
+    registry.deserialize(cacheData);
+    if (debug) {
+      debugLog(`registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`);
+    }
+  } catch {
+    if (debug) {
+      debugLog('registry cache not found, building fresh...');
+    }
+    const builder = new RegistryBuilder();
+    const builtRegistry = await builder.buildFromDirectories({
+      sourceDirs: config.sourceDirs,
+      testPatterns: config.testPatterns,
+      projectRoot: process.cwd(),
+      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      debug,
+    });
+    const dir = path.dirname(REGISTRY_CACHE_PATH);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(REGISTRY_CACHE_PATH, builtRegistry.serialize(), 'utf-8');
+    registry.deserialize(builtRegistry.serialize());
+  }
 
   const changedFiles = options.files
     ? options.files
@@ -229,8 +259,37 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
   const maxResults = parseInt(options.maxResults) || 10;
 
+  if (debug) {
+    debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
+  }
+
   const results = changedFiles.map((changedFile) => {
+    if (debug) {
+      const entry = registry.getFile(changedFile);
+      debugLog(`\n─── scoring: ${changedFile} ───`);
+      if (entry) {
+        debugLog(`  selectors: ${JSON.stringify(entry.selectors ?? [])}`);
+        debugLog(`  translationKeys: ${(entry.translationKeys ?? []).length}`);
+        debugLog(`  imports: ${entry.imports.length}`);
+      } else {
+        debugLog(`  ⚠ file not found in registry!`);
+      }
+    }
+
     const scoreResults = engine.evaluateTests(changedFile, testFiles);
+
+    if (debug) {
+      // Show top 5 results regardless of threshold
+      const top = scoreResults.slice(0, 5);
+      for (const r of top) {
+        debugLog(`  → ${r.testFile}`);
+        debugLog(`    score=${r.score.toFixed(3)} confidence=${r.confidence}`);
+        for (const s of r.signals) {
+          debugLog(`    ${s.matched ? '✓' : '✗'} ${s.source} (${s.weight}) — ${s.reason}`);
+        }
+      }
+    }
+
     const relevant = scoreResults
       .filter((r) => r.score >= config.scoring.minConfidence)
       .slice(0, maxResults);
@@ -238,6 +297,10 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   });
 
   console.log(JSON.stringify({ results }, null, 2));
+}
+
+function debugLog(msg: string): void {
+  process.stderr.write(`[debug] ${msg}\n`);
 }
 
 // ─── Commander Action ────────────────────────────────────────────
@@ -252,6 +315,7 @@ export const analyzeCommand = new Command('analyze')
   .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
   .option('--max-results <number>', 'Maximum number of results', '10')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
+  .option('--debug', 'Print detailed extraction and scoring info to stderr')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {
     // --ci is shorthand for --output json

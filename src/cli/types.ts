@@ -128,7 +128,15 @@ export interface IProjectConfig {
   analyzers: {
     enabled: string[];
     sourceExtractor: { enabled: boolean; selectorStrategy: string[] };
-    cypressExtractor: { enabled: boolean };
+    cypressExtractor: {
+      enabled: boolean;
+      /**
+       * Path alias mappings for resolving test imports (e.g. JSON fixture files).
+       * Keys are the alias prefix, values are the directory they map to (relative to project root).
+       * Example: { "@fixtures/": "cypress/fixtures/", "@support/": "cypress/support/" }
+       */
+      pathAliases?: Record<string, string>;
+    };
     reduxChain: { enabled: boolean; storeDirs: string[] };
     i18n: { enabled: boolean; library: string; localesPath: string };
     routeAnalyzer: { enabled: boolean; routerFile: string };
@@ -154,12 +162,14 @@ export interface IAnalyzeOptions {
   maxResults: string;
   config?: string;
   ci?: boolean;
+  debug?: boolean;
 }
 
 export interface IRegistryBuildOptions {
   force?: boolean;
   output: string;
   config?: string;
+  debug?: boolean;
 }
 
 export interface ISetupOptions {

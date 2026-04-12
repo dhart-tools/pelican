@@ -80,6 +80,8 @@ function RegistryBuildApp({ options }: { options: IRegistryBuildOptions }) {
             sourceDirs: config.sourceDirs,
             testPatterns: config.testPatterns,
             projectRoot: process.cwd(),
+            pathAliases: config.analyzers.cypressExtractor.pathAliases,
+            debug: options.debug,
           });
 
           setState((s) => ({ ...s, phase: 'saving' }));
@@ -120,6 +122,7 @@ export const registryBuildCommand = new Command('registry')
       .description('Build registry from source and test files')
       .option('-f, --force', 'Force rebuild even if cache exists')
       .option('-o, --output <path>', 'Output path for registry', '.suggestor/registry.json')
+      .option('--debug', 'Print detailed extraction info to stderr')
       .option('-c, --config <path>', 'Path to config file')
       .action(async (opts: IRegistryBuildOptions) => {
         await loadTheme();

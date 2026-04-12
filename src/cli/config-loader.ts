@@ -11,7 +11,12 @@ const DEFAULT_CONFIG: IProjectConfig = {
   analyzers: {
     enabled: ['source-extractor', 'cypress-extractor', 'import-graph-analyzer'],
     sourceExtractor: { enabled: true, selectorStrategy: ['data-testid', 'data-cy'] },
-    cypressExtractor: { enabled: true },
+    cypressExtractor: {
+      enabled: true,
+      pathAliases: {
+        '@fixtures/': 'cypress/fixtures/',
+      },
+    },
     reduxChain: { enabled: false, storeDirs: [] },
     i18n: { enabled: false, library: 'react-i18next', localesPath: '' },
     routeAnalyzer: { enabled: false, routerFile: '' },
