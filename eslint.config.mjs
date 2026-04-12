@@ -64,6 +64,7 @@ export default [
   },
   {
     files: ['src/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', '**/*.spec.{ts,tsx}', '**/__tests__/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
         'error',

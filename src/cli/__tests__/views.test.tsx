@@ -1,10 +1,11 @@
 import { render } from 'ink-testing-library';
 import React from 'react';
 
-import { AnalyzeView } from '@/cli/views/AnalyzeView';
-import { RegistryBuildView } from '@/cli/views/RegistryBuildView';
-import { SetupView } from '@/cli/views/SetupView';
 import { EConfidenceLevel } from '@/utils/enums';
+
+import { AnalyzeView } from '../views/AnalyzeView';
+import { RegistryBuildView } from '../views/RegistryBuildView';
+import { SetupView } from '../views/SetupView';
 
 describe('AnalyzeView', () => {
   it('shows loading steps during loading-config phase', () => {

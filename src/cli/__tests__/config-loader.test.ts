@@ -3,7 +3,7 @@ import { jest } from '@jest/globals';
 import type {
   loadProjectConfig as LoadProjectConfigFn,
   toScoringConfig as ToScoringConfigFn,
-} from '@/cli/config-loader';
+} from '../config-loader';
 
 // ESM-compatible mock for fs/promises
 const mockReadFile = jest.fn<() => Promise<string>>();
@@ -20,7 +20,7 @@ let loadProjectConfig: typeof LoadProjectConfigFn;
 let toScoringConfig: typeof ToScoringConfigFn;
 
 beforeAll(async () => {
-  const mod = await import('@/cli/config-loader');
+  const mod = await import('../config-loader');
   loadProjectConfig = mod.loadProjectConfig;
   toScoringConfig = mod.toScoringConfig;
 });

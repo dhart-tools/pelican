@@ -1,11 +1,12 @@
 import { render } from 'ink-testing-library';
 import React from 'react';
 
-import { Header } from '@/cli/components/Header';
-import { ProgressBar } from '@/cli/components/ProgressBar';
-import { SignalBadge } from '@/cli/components/SignalBadge';
-import { StatusStep } from '@/cli/components/StatusStep';
 import { EConfidenceLevel } from '@/utils/enums';
+
+import { Header } from '../components/Header';
+import { ProgressBar } from '../components/ProgressBar';
+import { SignalBadge } from '../components/SignalBadge';
+import { StatusStep } from '../components/StatusStep';
 
 describe('Header', () => {
   it('renders icon and title', () => {
