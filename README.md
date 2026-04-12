@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="src/v2/assets/pelican.png" alt="Pelican" width="200" />
+<img src="src/assets/pelican.png" alt="Pelican" width="200" />
 
 <br/>
 
