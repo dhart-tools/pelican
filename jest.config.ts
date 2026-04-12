@@ -18,6 +18,7 @@ export default {
       transform: {
         '^.+\\.tsx?$': ['ts-jest', {
           useESM: true,
+          tsconfig: 'tsconfig.test.json',
         }],
       },
     },
@@ -38,10 +39,7 @@ export default {
       transform: {
         '^.+\\.tsx?$': ['ts-jest', {
           useESM: true,
-          tsconfig: {
-            module: 'ES2022',
-            moduleResolution: 'bundler',
-          },
+          tsconfig: 'tsconfig.test.json',
         }],
       },
     },
