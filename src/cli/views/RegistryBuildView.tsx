@@ -1,11 +1,12 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { Header } from '../components/Header';
-import { StatusStep } from '../components/StatusStep';
-import { Panel } from '../components/Panel';
-import { SectionDivider } from '../components/SectionDivider';
-import { palette } from '../theme';
-import { IRegistryBuildState } from '../types';
+import React from 'react';
+
+import { Header } from '@/cli/components/Header';
+import { Panel } from '@/cli/components/Panel';
+import { SectionDivider } from '@/cli/components/SectionDivider';
+import { StatusStep } from '@/cli/components/StatusStep';
+import { palette } from '@/cli/theme';
+import { IRegistryBuildState } from '@/cli/types';
 
 const STEPS = [
   'scanning',
@@ -16,18 +17,20 @@ const STEPS = [
 ] as const;
 
 const STEP_LABELS: Record<string, string> = {
-  'scanning':           'scanning files',
-  'extracting-source':  'extracting source',
-  'extracting-tests':   'extracting tests',
-  'building-indexes':   'building indexes',
-  'saving':             'saving registry',
+  scanning: 'scanning files',
+  'extracting-source': 'extracting source',
+  'extracting-tests': 'extracting tests',
+  'building-indexes': 'building indexes',
+  saving: 'saving registry',
 };
 
 function StatCell({ label, value }: { label: string; value: string | number }) {
   return (
     <Box flexDirection="column" marginRight={4}>
       <Text color={palette.dim}>{label}</Text>
-      <Text color={palette.text} bold>{String(value)}</Text>
+      <Text color={palette.text} bold>
+        {String(value)}
+      </Text>
     </Box>
   );
 }
@@ -43,9 +46,12 @@ export function RegistryBuildView(state: IRegistryBuildState) {
     return 'idle';
   }
 
-  const borderColor = state.phase === 'error' ? palette.rose
-    : state.phase === 'done' ? palette.emerald
-    : palette.border;
+  const borderColor =
+    state.phase === 'error'
+      ? palette.rose
+      : state.phase === 'done'
+        ? palette.emerald
+        : palette.border;
 
   return (
     <Panel borderColor={borderColor}>
@@ -62,12 +68,12 @@ export function RegistryBuildView(state: IRegistryBuildState) {
         <>
           <SectionDivider label="registry built" />
           <Box marginTop={1}>
-            <StatCell label="source"       value={state.stats.sourceFiles} />
-            <StatCell label="tests"        value={state.stats.testFiles} />
+            <StatCell label="source" value={state.stats.sourceFiles} />
+            <StatCell label="tests" value={state.stats.testFiles} />
             <StatCell label="dependencies" value={state.stats.dependencies.toLocaleString()} />
-            <StatCell label="selectors"    value={state.stats.selectors} />
-            <StatCell label="routes"       value={state.stats.routes} />
-            <StatCell label="duration"     value={`${(state.stats.duration / 1000).toFixed(1)}s`} />
+            <StatCell label="selectors" value={state.stats.selectors} />
+            <StatCell label="routes" value={state.stats.routes} />
+            <StatCell label="duration" value={`${(state.stats.duration / 1000).toFixed(1)}s`} />
           </Box>
         </>
       )}
@@ -75,7 +81,9 @@ export function RegistryBuildView(state: IRegistryBuildState) {
       {state.phase === 'error' && (
         <>
           <SectionDivider />
-          <Text color={palette.rose} bold>✘  {state.error}</Text>
+          <Text color={palette.rose} bold>
+            ✘ {state.error}
+          </Text>
         </>
       )}
     </Panel>

@@ -1,10 +1,12 @@
-import React from 'react';
 import { render } from 'ink-testing-library';
-import { Header } from '../components/Header';
-import { StatusStep } from '../components/StatusStep';
-import { SignalBadge } from '../components/SignalBadge';
-import { ProgressBar } from '../components/ProgressBar';
+import React from 'react';
+
 import { EConfidenceLevel } from '@/utils/enums';
+
+import { Header } from '../components/Header';
+import { ProgressBar } from '../components/ProgressBar';
+import { SignalBadge } from '../components/SignalBadge';
+import { StatusStep } from '../components/StatusStep';
 
 describe('Header', () => {
   it('renders icon and title', () => {
@@ -34,9 +36,7 @@ describe('StatusStep', () => {
   });
 
   it('renders error icon for error status', () => {
-    const { lastFrame } = render(
-      <StatusStep status="error" label="Failed" detail="timeout" />,
-    );
+    const { lastFrame } = render(<StatusStep status="error" label="Failed" detail="timeout" />);
     expect(lastFrame()).toContain('✘');
     expect(lastFrame()).toContain('Failed');
     expect(lastFrame()).toContain('timeout');
@@ -62,25 +62,19 @@ describe('StatusStep', () => {
 
 describe('SignalBadge', () => {
   it('renders HIGH with score', () => {
-    const { lastFrame } = render(
-      <SignalBadge confidence={EConfidenceLevel.HIGH} score={0.95} />,
-    );
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.HIGH} score={0.95} />);
     expect(lastFrame()).toContain('HIGH');
     expect(lastFrame()).toContain('0.95');
   });
 
   it('renders MED for medium confidence', () => {
-    const { lastFrame } = render(
-      <SignalBadge confidence={EConfidenceLevel.MEDIUM} score={0.62} />,
-    );
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.MEDIUM} score={0.62} />);
     expect(lastFrame()).toContain('MED');
     expect(lastFrame()).toContain('0.62');
   });
 
   it('renders LOW for low confidence', () => {
-    const { lastFrame } = render(
-      <SignalBadge confidence={EConfidenceLevel.LOW} score={0.35} />,
-    );
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.LOW} score={0.35} />);
     expect(lastFrame()).toContain('LOW');
     expect(lastFrame()).toContain('0.35');
   });
@@ -105,9 +99,7 @@ describe('ProgressBar', () => {
   });
 
   it('renders count when provided', () => {
-    const { lastFrame } = render(
-      <ProgressBar value={50} showCount={{ current: 5, total: 10 }} />,
-    );
+    const { lastFrame } = render(<ProgressBar value={50} showCount={{ current: 5, total: 10 }} />);
     expect(lastFrame()).toContain('(5/10)');
   });
 

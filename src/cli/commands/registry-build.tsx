@@ -1,14 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { render } from 'ink';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+
 import { Command } from 'commander';
-import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { render } from 'ink';
+import React, { useState, useEffect } from 'react';
+
+import { loadProjectConfig } from '@/cli/config-loader';
+import { IRegistryBuildState, IRegistryBuildOptions } from '@/cli/types';
+import { loadTheme } from '@/cli/user-config';
+import { RegistryBuildView } from '@/cli/views/RegistryBuildView';
 import { Registry } from '@/core/registry/registry';
-import { loadProjectConfig } from '../config-loader';
-import { RegistryBuildView } from '../views/RegistryBuildView';
-import { IRegistryBuildState, IRegistryBuildOptions } from '../types';
-import { loadTheme } from '../user-config';
+import { RegistryBuilder } from '@/core/registry/registry-builder';
 
 /** Silence console.log/warn while Ink is rendering to avoid TUI corruption. */
 function silenceConsole() {
@@ -25,12 +27,12 @@ function silenceConsole() {
 /** Extract stats from a Registry instance. */
 function statsFromRegistry(registry: Registry, duration: number) {
   return {
-    totalFiles:    registry.files.size,
-    sourceFiles:   registry.getFilesByType('source').length,
-    testFiles:     registry.getFilesByType('test').length,
-    dependencies:  registry.importGraph.dependencies.size,
-    selectors:     registry.getSelectorIndex().size,
-    routes:        registry.getRouteMap().size,
+    totalFiles: registry.files.size,
+    sourceFiles: registry.getFilesByType('source').length,
+    testFiles: registry.getFilesByType('test').length,
+    dependencies: registry.importGraph.dependencies.size,
+    selectors: registry.getSelectorIndex().size,
+    routes: registry.getRouteMap().size,
     duration,
   };
 }

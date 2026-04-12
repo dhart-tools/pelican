@@ -1,5 +1,9 @@
 import { jest } from '@jest/globals';
-import type { loadProjectConfig as LoadProjectConfigFn, toScoringConfig as ToScoringConfigFn } from '../config-loader';
+
+import type {
+  loadProjectConfig as LoadProjectConfigFn,
+  toScoringConfig as ToScoringConfigFn,
+} from '../config-loader';
 
 // ESM-compatible mock for fs/promises
 const mockReadFile = jest.fn<() => Promise<string>>();
@@ -80,17 +84,13 @@ describe('loadProjectConfig', () => {
   });
 
   it('merges testPatterns from user config', async () => {
-    mockReadFile.mockResolvedValue(
-      JSON.stringify({ testPatterns: ['**/*.spec.ts'] }),
-    );
+    mockReadFile.mockResolvedValue(JSON.stringify({ testPatterns: ['**/*.spec.ts'] }));
     const config = await loadProjectConfig();
     expect(config.testPatterns).toEqual(['**/*.spec.ts']);
   });
 
   it('merges ignorePatterns from user config', async () => {
-    mockReadFile.mockResolvedValue(
-      JSON.stringify({ ignorePatterns: ['node_modules', 'build'] }),
-    );
+    mockReadFile.mockResolvedValue(JSON.stringify({ ignorePatterns: ['node_modules', 'build'] }));
     const config = await loadProjectConfig();
     expect(config.ignorePatterns).toEqual(['node_modules', 'build']);
   });

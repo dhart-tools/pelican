@@ -1,9 +1,10 @@
 import { Command } from 'commander';
+
 import { analyzeCommand } from './commands/analyze';
-import { setupCommand } from './commands/setup';
-import { registryBuildCommand } from './commands/registry-build';
-import { themeCommand } from './commands/theme';
 import { demoCommand } from './commands/demo';
+import { registryBuildCommand } from './commands/registry-build';
+import { setupCommand } from './commands/setup';
+import { themeCommand } from './commands/theme';
 
 /**
  * Registers all v2 CLI commands onto the given Commander program.

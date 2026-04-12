@@ -1,31 +1,23 @@
-import React from 'react';
 import { render } from 'ink-testing-library';
+import React from 'react';
+
+import { EConfidenceLevel } from '@/utils/enums';
+
 import { AnalyzeView } from '../views/AnalyzeView';
 import { RegistryBuildView } from '../views/RegistryBuildView';
 import { SetupView } from '../views/SetupView';
-import { EConfidenceLevel } from '@/utils/enums';
 
 describe('AnalyzeView', () => {
   it('shows loading steps during loading-config phase', () => {
     const { lastFrame } = render(
-      <AnalyzeView
-        phase="loading-config"
-        changedFiles={[]}
-        results={[]}
-        progress={0}
-      />,
+      <AnalyzeView phase="loading-config" changedFiles={[]} results={[]} progress={0} />,
     );
     expect(lastFrame()).toContain('configuration');
   });
 
   it('shows all steps as success when done', () => {
     const { lastFrame } = render(
-      <AnalyzeView
-        phase="done"
-        changedFiles={['src/Button.tsx']}
-        results={[]}
-        progress={100}
-      />,
+      <AnalyzeView phase="done" changedFiles={['src/Button.tsx']} results={[]} progress={100} />,
     );
     expect(lastFrame()).toContain('✔');
     expect(lastFrame()).toContain('configuration');
@@ -133,12 +125,7 @@ describe('RegistryBuildView', () => {
 
   it('shows error message when phase is error', () => {
     const { lastFrame } = render(
-      <RegistryBuildView
-        phase="error"
-        totalFiles={0}
-        processedFiles={0}
-        error="Failed to scan"
-      />,
+      <RegistryBuildView phase="error" totalFiles={0} processedFiles={0} error="Failed to scan" />,
     );
     expect(lastFrame()).toContain('Failed to scan');
   });

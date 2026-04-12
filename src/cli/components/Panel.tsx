@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, useStdout } from 'ink';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface PanelProps {
   children: React.ReactNode;
@@ -13,10 +14,7 @@ const MAX_PANEL_WIDTH = 96;
  * The single outer panel for an entire view.
  * All sections live inside with SectionDivider separating them.
  */
-export function Panel({
-  children,
-  borderColor = palette.border,
-}: PanelProps) {
+export function Panel({ children, borderColor = palette.border }: PanelProps) {
   const { stdout } = useStdout();
   const cols = stdout?.columns ?? 80;
   const panelWidth = Math.min(cols - 4, MAX_PANEL_WIDTH);

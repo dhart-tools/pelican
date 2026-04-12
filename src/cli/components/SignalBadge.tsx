@@ -1,6 +1,7 @@
-import React from 'react';
 import { Text } from 'ink';
-import { confidenceBadgeBg, palette } from '../theme';
+import React from 'react';
+
+import { confidenceBadgeBg, palette } from '@/cli/theme';
 import { EConfidenceLevel } from '@/utils/enums';
 
 interface SignalBadgeProps {
@@ -25,9 +26,14 @@ export function SignalBadge({ confidence, score }: SignalBadgeProps) {
 
   return (
     <Text>
-      <Text backgroundColor={bg} color={palette.badgeText} bold> {label} </Text>
+      <Text backgroundColor={bg} color={palette.badgeText} bold>
+        {' '}
+        {label}{' '}
+      </Text>
       <Text>{'  '}</Text>
-      <Text color={bg} bold>{score.toFixed(2)}</Text>
+      <Text color={bg} bold>
+        {score.toFixed(2)}
+      </Text>
     </Text>
   );
 }

@@ -1,9 +1,10 @@
-import React from 'react';
+import { Command } from 'commander';
 import { render } from 'ink';
 import { Box, Text } from 'ink';
-import { Command } from 'commander';
-import { palette, setTheme, ThemeName } from '../theme';
-import { readUserConfig, writeUserConfig } from '../user-config';
+import React from 'react';
+
+import { palette, setTheme, ThemeName } from '@/cli/theme';
+import { readUserConfig, writeUserConfig } from '@/cli/user-config';
 
 function ThemeResult({ themeName, changed }: { themeName: ThemeName; changed: boolean }) {
   const label = themeName === 'dark' ? 'dark' : 'light';
@@ -13,16 +14,22 @@ function ThemeResult({ themeName, changed }: { themeName: ThemeName; changed: bo
     <Box flexDirection="column" marginX={1} marginY={1}>
       {changed ? (
         <Box>
-          <Text color="#34D399" bold>✔  </Text>
+          <Text color="#34D399" bold>
+            ✔{' '}
+          </Text>
           <Text color={palette.text}>Theme set to </Text>
-          <Text color={accent} bold>{label}</Text>
-          <Text color={palette.dim}>  ·  saved to ~/.pelican/config.json</Text>
+          <Text color={accent} bold>
+            {label}
+          </Text>
+          <Text color={palette.dim}> · saved to ~/.pelican/config.json</Text>
         </Box>
       ) : (
         <Box>
           <Text color={palette.dim}>Current theme: </Text>
-          <Text color={accent} bold>{label}</Text>
-          <Text color={palette.muted}>  ·  run </Text>
+          <Text color={accent} bold>
+            {label}
+          </Text>
+          <Text color={palette.muted}> · run </Text>
           <Text color={palette.brand} bold>
             pelican theme {themeName === 'dark' ? 'light' : 'dark'}
           </Text>
@@ -42,9 +49,7 @@ export const themeCommand = new Command('theme')
     if (!name) {
       // Show current theme
       setTheme(config.theme);
-      const { waitUntilExit } = render(
-        <ThemeResult themeName={config.theme} changed={false} />,
-      );
+      const { waitUntilExit } = render(<ThemeResult themeName={config.theme} changed={false} />);
       await waitUntilExit();
       return;
     }
@@ -58,8 +63,6 @@ export const themeCommand = new Command('theme')
     await writeUserConfig({ theme: themeName });
     setTheme(themeName);
 
-    const { waitUntilExit } = render(
-      <ThemeResult themeName={themeName} changed={true} />,
-    );
+    const { waitUntilExit } = render(<ThemeResult themeName={themeName} changed={true} />);
     await waitUntilExit();
   });

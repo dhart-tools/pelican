@@ -1,8 +1,8 @@
 import * as path from 'path';
 
+import { ImportGraphAnalyzer } from '@/core/analyzers/import-graph-analyzer/import-graph-analyzer';
 import { IImportGraphExtractionResult, ISpecRegistry } from '@/types/analyzers';
 import { EImportExportType } from '@/utils/enums';
-import { ImportGraphAnalyzer } from '@/core/analyzers/import-graph-analyzer/import-graph-analyzer';
 
 describe('ImportGraphAnalyzer', () => {
   let analyzer: ImportGraphAnalyzer;

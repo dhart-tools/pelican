@@ -14,8 +14,8 @@ import {
   IAliasMap,
   IAliasResolverConfig,
 } from '@/types/analyzers';
+import { PROJECT_EXTENSIONS } from '@/utils/constants';
 import { EAnalyzerName, EImportExportType } from '@/utils/enums';
-import { PROJECT_EXTENSIONS } from '@/utils/constants'
 // =============================================================================
 // AliasResolver
 // =============================================================================
@@ -401,7 +401,10 @@ export class ImportGraphAnalyzer extends BaseAnalyzer<
           name: element.name.text,
           source: specifier && ts.isStringLiteral(specifier) ? specifier.text : undefined,
           resolvedSource,
-          type: node.isTypeOnly || element.isTypeOnly ? EImportExportType.TYPE : EImportExportType.NAMED,
+          type:
+            node.isTypeOnly || element.isTypeOnly
+              ? EImportExportType.TYPE
+              : EImportExportType.NAMED,
         });
       }
     } else if (!exportClause && resolvedSource) {

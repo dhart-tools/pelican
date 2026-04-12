@@ -1,6 +1,8 @@
 import * as fs from 'fs/promises';
-import { IProjectConfig } from './types';
+
 import { ISuggestorConfig } from '@/types/config';
+
+import { IProjectConfig } from './types';
 
 const DEFAULT_CONFIG: IProjectConfig = {
   sourceDirs: ['src'],

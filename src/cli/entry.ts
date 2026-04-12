@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+
 import { registerV2Commands } from './index';
 
 const program = new Command();

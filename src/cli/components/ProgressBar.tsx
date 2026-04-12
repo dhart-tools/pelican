@@ -1,6 +1,7 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { palette } from '../theme';
+import React from 'react';
+
+import { palette } from '@/cli/theme';
 
 interface ProgressBarProps {
   value: number;
@@ -34,9 +35,14 @@ export function ProgressBar({
       <Text color={color}>{FILL.repeat(filled)}</Text>
       <Text color={palette.muted}>{EMPTY.repeat(empty)}</Text>
       <Box marginLeft={1}>
-        <Text color={palette.text} bold>{Math.round(pct)}%</Text>
+        <Text color={palette.text} bold>
+          {Math.round(pct)}%
+        </Text>
         {showCount && (
-          <Text color={palette.dim}> ({showCount.current}/{showCount.total})</Text>
+          <Text color={palette.dim}>
+            {' '}
+            ({showCount.current}/{showCount.total})
+          </Text>
         )}
       </Box>
     </Box>

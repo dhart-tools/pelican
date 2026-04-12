@@ -1,9 +1,10 @@
 import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+
 import { setTheme, ThemeName } from './theme';
 
-const CONFIG_DIR  = path.join(os.homedir(), '.pelican');
+const CONFIG_DIR = path.join(os.homedir(), '.pelican');
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json');
 
 interface UserConfig {

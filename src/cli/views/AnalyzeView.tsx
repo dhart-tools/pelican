@@ -1,22 +1,23 @@
-import React from 'react';
 import { Box, Text } from 'ink';
-import { Header } from '../components/Header';
-import { StatusStep } from '../components/StatusStep';
-import { ResultsTable } from '../components/ResultsTable';
-import { Panel } from '../components/Panel';
-import { SectionDivider } from '../components/SectionDivider';
-import { palette } from '../theme';
-import { IAnalyzeState, AnalyzePhase } from '../types';
+import React from 'react';
+
+import { Header } from '@/cli/components/Header';
+import { Panel } from '@/cli/components/Panel';
+import { ResultsTable } from '@/cli/components/ResultsTable';
+import { SectionDivider } from '@/cli/components/SectionDivider';
+import { StatusStep } from '@/cli/components/StatusStep';
+import { palette } from '@/cli/theme';
+import { IAnalyzeState, AnalyzePhase } from '@/cli/types';
 
 const PHASE_LABELS: Record<AnalyzePhase, string> = {
-  'loading-config':    'configuration',
-  'loading-registry':  'loading registry',
+  'loading-config': 'configuration',
+  'loading-registry': 'loading registry',
   'building-registry': 'building registry',
   'detecting-changes': 'detecting changes',
-  'analyzing':         'running analyzers',
-  'scoring':           'scoring relevance',
-  'done':              'analysis complete',
-  'error':             'error',
+  analyzing: 'running analyzers',
+  scoring: 'scoring relevance',
+  done: 'analysis complete',
+  error: 'error',
 };
 
 export function AnalyzeView(state: IAnalyzeState) {
@@ -55,9 +56,12 @@ export function AnalyzeView(state: IAnalyzeState) {
     }
   }
 
-  const borderColor = state.phase === 'error' ? palette.rose
-    : state.phase === 'done' ? palette.emerald
-    : palette.border;
+  const borderColor =
+    state.phase === 'error'
+      ? palette.rose
+      : state.phase === 'done'
+        ? palette.emerald
+        : palette.border;
 
   const isDone = state.phase === 'done';
   const hasResults = isDone && state.results.length > 0;
@@ -79,7 +83,9 @@ export function AnalyzeView(state: IAnalyzeState) {
         ))}
         {state.phase === 'scoring' && state.currentFile && (
           <Box paddingLeft={7} marginTop={1}>
-            <Text color={palette.brand} bold>◆  </Text>
+            <Text color={palette.brand} bold>
+              ◆{' '}
+            </Text>
             <Text color={palette.cyan}>{state.currentFile}</Text>
           </Box>
         )}
@@ -91,8 +97,10 @@ export function AnalyzeView(state: IAnalyzeState) {
           <Box marginTop={1}>
             <Text color={palette.dim}>
               No changed files detected. Try{' '}
-              <Text color={palette.brand} bold>--files</Text>
-              {' '}to specify files explicitly.
+              <Text color={palette.brand} bold>
+                --files
+              </Text>{' '}
+              to specify files explicitly.
             </Text>
           </Box>
         </>
@@ -103,7 +111,9 @@ export function AnalyzeView(state: IAnalyzeState) {
       {state.phase === 'error' && state.error && (
         <>
           <SectionDivider />
-          <Text color={palette.rose} bold>✘  {state.error}</Text>
+          <Text color={palette.rose} bold>
+            ✘ {state.error}
+          </Text>
         </>
       )}
     </Panel>

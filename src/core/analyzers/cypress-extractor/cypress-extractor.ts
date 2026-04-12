@@ -287,8 +287,11 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
     let urlPattern = '';
 
     const HTTP_METHODS = new Set([
-      EHttpMethod.GET, EHttpMethod.POST, EHttpMethod.PUT,
-      EHttpMethod.DELETE, EHttpMethod.PATCH,
+      EHttpMethod.GET,
+      EHttpMethod.POST,
+      EHttpMethod.PUT,
+      EHttpMethod.DELETE,
+      EHttpMethod.PATCH,
     ]);
 
     const args = node.arguments;
