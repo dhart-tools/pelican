@@ -125,6 +125,11 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
       this.extractFunctionCalls(node, result);
     }
 
+    // Extract selector-like properties from object literals (e.g. { dataTestId: 'SaveButton' })
+    if (ts.isPropertyAssignment(node)) {
+      this.extractObjectPropertySelector(node, result);
+    }
+
     ts.forEachChild(node, (child) => this.visitNode(child, result));
   }
 
@@ -138,16 +143,6 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
     const moduleSpecifier = node.moduleSpecifier;
     if (ts.isStringLiteral(moduleSpecifier)) {
       result.imports.push(moduleSpecifier.text);
-
-      if (node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)) {
-        for (const element of node.importClause.namedBindings.elements) {
-          result.exports.push(element.name.text);
-        }
-      }
-
-      if (node.importClause?.name) {
-        result.exports.push(node.importClause.name.text);
-      }
     }
   }
 
@@ -207,6 +202,25 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
       return attr.initializer.text;
     }
     return '';
+  }
+
+  /**
+   * Extracts selectors from object literal property assignments.
+   * Catches patterns like `{ dataTestId: 'SaveButton' }` that aren't JSX attributes.
+   *
+   * @param node The property assignment node
+   * @param result The result object to populate
+   */
+  private extractObjectPropertySelector(
+    node: ts.PropertyAssignment,
+    result: ISourceExtractionResult,
+  ): void {
+    const propName = node.name.getText();
+    if (!SELECTOR_ATTRIBUTES.includes(propName)) return;
+
+    if (node.initializer && ts.isStringLiteral(node.initializer)) {
+      result.selectors.push({ attr: propName, value: node.initializer.text });
+    }
   }
 
   /**

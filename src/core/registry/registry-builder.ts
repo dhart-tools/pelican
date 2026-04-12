@@ -82,7 +82,11 @@ export class RegistryBuilder {
     for (const filePath of testFiles) {
       try {
         const sourceCode = await fs.readFile(filePath, 'utf-8');
-        const result = await cypressExtractor.extract({ filePath, sourceCode });
+        const result = await cypressExtractor.extract({
+          filePath,
+          sourceCode,
+          resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
+        });
         fileEntries.push(this.convertCypressExtractionToFileEntry(result, filePath));
       } catch (error) {
         console.warn(`[RegistryBuilder] Failed to process test file ${filePath}:`, error);
@@ -143,6 +147,41 @@ export class RegistryBuilder {
     });
 
     return files.map((f) => normalizePath(f, this.projectRoot));
+  }
+
+  /**
+   * Resolves a JSON import path to its parsed content.
+   * Handles relative imports and common Cypress path aliases (@fixtures/, @/).
+   */
+  private async resolveJsonImport(
+    importPath: string,
+    fromFile: string,
+  ): Promise<Record<string, unknown> | null> {
+    const candidates: string[] = [];
+
+    if (importPath.startsWith('.')) {
+      // Relative import — resolve from the importing file's directory
+      candidates.push(path.resolve(this.projectRoot, path.dirname(fromFile), importPath));
+    } else if (importPath.startsWith('@fixtures/') || importPath.startsWith('@fixtures\\')) {
+      // Common Cypress alias: @fixtures/ → cypress/fixtures/
+      candidates.push(
+        path.resolve(this.projectRoot, 'cypress/fixtures', importPath.slice('@fixtures/'.length)),
+      );
+    } else if (importPath.startsWith('@/') || importPath.startsWith('@\\')) {
+      // Project root alias: @/ → ./
+      candidates.push(path.resolve(this.projectRoot, importPath.slice('@/'.length)));
+    }
+
+    for (const candidate of candidates) {
+      try {
+        const content = await fs.readFile(candidate, 'utf-8');
+        return JSON.parse(content) as Record<string, unknown>;
+      } catch {
+        // Try next candidate
+      }
+    }
+
+    return null;
   }
 
   private convertSourceExtractionToFileEntry(

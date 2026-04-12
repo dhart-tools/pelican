@@ -59,6 +59,6 @@ export const REGEX_TEST_ID = /\[data-testid=(["'])(.*?)\1\]/;
 export const REGEX_DATA_CY = /\[data-cy=(["'])(.*?)\1\]/;
 export const REGEX_SELECTOR_SPLIT = /[.#[:]|\s+/;
 
-export const SELECTOR_ATTRIBUTES = ['data-testid', 'data-cy', 'id', 'aria-label'];
+export const SELECTOR_ATTRIBUTES = ['data-testid', 'data-cy', 'dataTestId', 'id', 'aria-label'];
 
 export const PROJECT_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx'];

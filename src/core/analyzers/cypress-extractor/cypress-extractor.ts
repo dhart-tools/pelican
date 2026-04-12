@@ -16,6 +16,18 @@ import {
   ESelectorAttr,
   EAnalyzerName,
 } from '@/utils/enums';
+
+export interface CypressExtractorInput {
+  filePath: string;
+  sourceCode: string;
+  /**
+   * Optional callback to resolve JSON namespace imports.
+   * Given an import path (e.g. "@fixtures/dataTestIds.json"), returns the parsed JSON object.
+   * This allows the extractor to resolve `cy.get(dataTestIds.facilityName)` to actual selector strings.
+   */
+  resolveJsonImport?: (importPath: string) => Promise<Record<string, unknown> | null>;
+}
+
 /**
  * Analyzer that extracts semantic information from Cypress test files.
  *
@@ -28,12 +40,15 @@ import {
  * console.log(result.visitedRoutes); // ['/login']
  */
 export class CypressExtractorAnalyzer extends BaseAnalyzer<
-  { filePath: string; sourceCode: string },
+  CypressExtractorInput,
   ICypressExtractionResult
 > {
   name = EAnalyzerName.CYPRESS_EXTRACTOR;
   version = '1.0.0';
   dependencies = [];
+
+  /** Resolved namespace imports: binding name → { property → value } */
+  private importBindings: Map<string, Record<string, unknown>> = new Map();
 
   /**
    * Placeholder implementation for indexing.
@@ -49,16 +64,14 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
    * @param input The input containing file path and source code.
    * @returns A promise resolving to the Cypress extraction result.
    */
-  async extract(input: {
-    filePath: string;
-    sourceCode: string;
-  }): Promise<ICypressExtractionResult> {
-    const { filePath, sourceCode } = input;
+  async extract(input: CypressExtractorInput): Promise<ICypressExtractionResult> {
+    const { filePath, sourceCode, resolveJsonImport } = input;
 
     const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
     const result: ICypressExtractionResult = {
       filePath,
+      imports: [],
       describeBlocks: [],
       itBlocks: [],
       visitedRoutes: [],
@@ -69,9 +82,56 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       customCommandsUsed: [],
     };
 
+    // Phase 1: Resolve JSON namespace imports so we can dereference variable selectors
+    if (resolveJsonImport) {
+      await this.resolveNamespaceImports(sourceFile, resolveJsonImport);
+    }
+
+    // Phase 2: Extract imports + cypress commands
     this.visitNode(sourceFile, result);
 
+    // Cleanup instance state
+    this.importBindings.clear();
+
     return result;
+  }
+
+  /**
+   * Scans top-level import declarations for `import * as X from "*.json"` patterns,
+   * resolves them via the provided callback, and stores the results in `this.importBindings`.
+   */
+  private async resolveNamespaceImports(
+    sourceFile: ts.SourceFile,
+    resolveJsonImport: (importPath: string) => Promise<Record<string, unknown> | null>,
+  ): Promise<void> {
+    this.importBindings.clear();
+
+    const pending: Array<{ bindingName: string; modulePath: string }> = [];
+
+    ts.forEachChild(sourceFile, (node) => {
+      if (!ts.isImportDeclaration(node)) return;
+      const moduleSpecifier = node.moduleSpecifier;
+      if (!ts.isStringLiteral(moduleSpecifier)) return;
+      if (!moduleSpecifier.text.endsWith('.json')) return;
+
+      // import * as X from "file.json"
+      if (
+        node.importClause?.namedBindings &&
+        ts.isNamespaceImport(node.importClause.namedBindings)
+      ) {
+        pending.push({
+          bindingName: node.importClause.namedBindings.name.text,
+          modulePath: moduleSpecifier.text,
+        });
+      }
+    });
+
+    for (const { bindingName, modulePath } of pending) {
+      const resolved = await resolveJsonImport(modulePath);
+      if (resolved) {
+        this.importBindings.set(bindingName, resolved);
+      }
+    }
   }
 
   /**
@@ -81,6 +141,14 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
    * @param result The result object to populate.
    */
   private visitNode(node: ts.Node, result: ICypressExtractionResult): void {
+    // Extract import module paths
+    if (ts.isImportDeclaration(node)) {
+      const moduleSpecifier = node.moduleSpecifier;
+      if (ts.isStringLiteral(moduleSpecifier)) {
+        result.imports!.push(moduleSpecifier.text);
+      }
+    }
+
     if (ts.isCallExpression(node)) {
       this.extractCypressCommand(node, result);
       this.extractDescribeOrIt(node, result);
@@ -162,6 +230,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       default:
         if (!BUILTIN_CYPRESS_COMMANDS.has(commandName)) {
           result.customCommandsUsed.push(commandName);
+          this.extractCustomCommandHints(node, commandName, result);
         }
     }
   }
@@ -189,6 +258,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
 
   /**
    * Extracts a selector from a cy.get() or cy.find() command.
+   * Handles both string literals and resolved property access expressions (e.g. dataTestIds.xxx).
    *
    * @param node The call expression node.
    * @param result The result object to populate.
@@ -198,14 +268,38 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
 
     const selectorArg = node.arguments[0];
 
-    if (ts.isStringLiteral(selectorArg)) {
-      const selectorString = selectorArg.text;
-      const parsed = this.parseCSSSelector(selectorString);
+    let selectorString: string | null = null;
 
+    if (ts.isStringLiteral(selectorArg)) {
+      selectorString = selectorArg.text;
+    } else if (ts.isPropertyAccessExpression(selectorArg)) {
+      selectorString = this.resolvePropertyAccess(selectorArg);
+    }
+
+    if (selectorString) {
+      const parsed = this.parseCSSSelector(selectorString);
       if (parsed) {
         result.selectors.push(parsed);
       }
     }
+  }
+
+  /**
+   * Resolves a property access expression (e.g. `dataTestIds.facilityName`) to its string value
+   * using previously resolved JSON namespace imports.
+   */
+  private resolvePropertyAccess(expr: ts.PropertyAccessExpression): string | null {
+    const obj = expr.expression;
+    const prop = expr.name.text;
+
+    if (ts.isIdentifier(obj)) {
+      const binding = this.importBindings.get(obj.text);
+      if (binding && typeof binding[prop] === 'string') {
+        return binding[prop] as string;
+      }
+    }
+
+    return null;
   }
 
   /**
@@ -356,6 +450,22 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
             }
           }
         }
+      }
+    }
+  }
+
+  /**
+   * Extracts hints from custom command arguments.
+   * If any string literal argument looks like a route (starts with "/"), capture it as a visited route.
+   */
+  private extractCustomCommandHints(
+    node: ts.CallExpression,
+    _commandName: string,
+    result: ICypressExtractionResult,
+  ): void {
+    for (const arg of node.arguments) {
+      if (ts.isStringLiteral(arg) && arg.text.startsWith('/')) {
+        result.visitedRoutes.push(arg.text);
       }
     }
   }

@@ -33,7 +33,7 @@ describe('SourceExtractorAnalyzer', () => {
    * export { e };
    *
    * @expected Expects 'module' and 'default-module' to be in imports.
-   * @expected Expects 'a', 'c', 'd', and 'e' to be in exports.
+   * @expected Expects only 'e' to be in exports (imported names should NOT appear in exports).
    */
   test('extractImport() and extractExport(): should handle named and default imports/exports', async () => {
     const sourceCode = `
@@ -44,10 +44,10 @@ describe('SourceExtractorAnalyzer', () => {
     const result = await extractor.extract({ filePath: 'imports.ts', sourceCode });
     expect(result.imports).toContain('module');
     expect(result.imports).toContain('default-module');
-    expect(result.exports).toContain('a');
-    expect(result.exports).toContain('c');
-    expect(result.exports).toContain('d');
     expect(result.exports).toContain('e');
+    expect(result.exports).not.toContain('a');
+    expect(result.exports).not.toContain('c');
+    expect(result.exports).not.toContain('d');
   });
 
   /**
@@ -55,22 +55,23 @@ describe('SourceExtractorAnalyzer', () => {
    *
    * @example
    * // Input source code:
-   * <div data-testid="t1" data-cy="c1" id="id1" aria-label="a1" random="ignored" />
+   * <div data-testid="t1" data-cy="c1" id="id1" aria-label="a1" dataTestId="dt1" random="ignored" />
    *
-   * @expected Expects all four supported selectors (data-testid, data-cy, id, aria-label) to be extracted, ignoring 'random'.
+   * @expected Expects all five supported selectors (data-testid, data-cy, dataTestId, id, aria-label) to be extracted, ignoring 'random'.
    */
   test('extractJSXAttributes(): should extract specific data attributes', async () => {
     const sourceCode = `
       export const Comp = () => (
-        <div data-testid="t1" data-cy="c1" id="id1" aria-label="a1" random="ignored" />
+        <div data-testid="t1" data-cy="c1" id="id1" aria-label="a1" dataTestId="dt1" random="ignored" />
       );
     `;
     const result = await extractor.extract({ filePath: 'jsx.tsx', sourceCode });
-    expect(result.selectors.length).toBe(4);
+    expect(result.selectors.length).toBe(5);
     expect(result.selectors.some((s) => s.attr === 'data-testid' && s.value === 't1')).toBe(true);
     expect(result.selectors.some((s) => s.attr === 'data-cy' && s.value === 'c1')).toBe(true);
     expect(result.selectors.some((s) => s.attr === 'id' && s.value === 'id1')).toBe(true);
     expect(result.selectors.some((s) => s.attr === 'aria-label' && s.value === 'a1')).toBe(true);
+    expect(result.selectors.some((s) => s.attr === 'dataTestId' && s.value === 'dt1')).toBe(true);
   });
 
   /**
