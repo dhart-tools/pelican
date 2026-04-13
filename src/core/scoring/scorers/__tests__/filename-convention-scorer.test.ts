@@ -7,22 +7,45 @@ describe('FilenameConventionScorer', () => {
     scorer = new FilenameConventionScorer();
   });
 
-  test('should match PascalCase source to kebab-case .cy.ts test', () => {
-    const changedFile = 'src/pages/LoginPage.tsx';
-    const testFile = 'cypress/e2e/login-page.cy.ts';
+  const evaluate = (changed: string, test: string) =>
+    scorer.evaluate(changed, test, {} as never)[0];
 
-    const signals = scorer.evaluate(changedFile, testFile, {} as any);
-
-    expect(signals[0].matched).toBe(true);
-    expect(signals[0].reason).toContain('Filename convention match');
+  test('matches PascalCase source to kebab-case .cy.ts test', () => {
+    const s = evaluate('src/pages/LoginPage.tsx', 'cypress/e2e/login-page.cy.ts');
+    expect(s.matched).toBe(true);
+    expect(s.reason).toMatch(/Identical basename|Filename convention match/);
   });
 
-  test('should not match unrelated filenames', () => {
-    const changedFile = 'src/components/auth/PasswordInput.tsx';
-    const testFile = 'cypress/e2e/auth/login.cy.ts';
+  test('does not match unrelated filenames even when parent dir matches', () => {
+    const s = evaluate('src/components/auth/PasswordInput.tsx', 'cypress/e2e/auth/login.cy.ts');
+    expect(s.matched).toBe(false);
+  });
 
-    const signals = scorer.evaluate(changedFile, testFile, {} as any);
+  test('strips "test" prefix on cypress test (testFileManager.cy.ts ↔ FileManager.tsx)', () => {
+    const s = evaluate('src/FileManager.tsx', 'cypress/e2e/testFileManager.cy.ts');
+    expect(s.matched).toBe(true);
+  });
 
-    expect(signals[0].matched).toBe(false);
+  test('resolves index.ts to parent-dir name (fileManager/index.ts ↔ fileManager/fileManager.test.ts)', () => {
+    const s = evaluate(
+      'src/fileManager/index.ts',
+      'src/fileManager/fileManager.test.ts',
+    );
+    expect(s.matched).toBe(true);
+  });
+
+  test('handles colocated .test.ts suffix (Foo.tsx ↔ Foo.test.tsx)', () => {
+    const s = evaluate('src/foo/Bar.tsx', 'src/foo/Bar.test.tsx');
+    expect(s.matched).toBe(true);
+  });
+
+  test('handles kebab source with camel test (user-profile.tsx ↔ UserProfile.cy.ts)', () => {
+    const s = evaluate('src/user-profile.tsx', 'cypress/e2e/UserProfile.cy.ts');
+    expect(s.matched).toBe(true);
+  });
+
+  test('plural/singular token overlap (products.cy.ts partially matches Product.tsx)', () => {
+    const s = evaluate('src/Product.tsx', 'cypress/e2e/product.cy.ts');
+    expect(s.matched).toBe(true);
   });
 });

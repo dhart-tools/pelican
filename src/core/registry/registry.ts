@@ -1,6 +1,7 @@
 import { normalizePath } from '@/core/registry/path-utils';
 import { ITranslationIndex, IReduxChain, IImportGraph } from '@/types/analyzers';
 import { IRegistry, IFileEntry } from '@/types/registry';
+import { normalizeTestSelector } from '@/utils/selector-normalize';
 
 export class Registry implements IRegistry {
   public files: Map<string, IFileEntry> = new Map();
@@ -82,6 +83,44 @@ export class Registry implements IRegistry {
     return this.importGraph.dependents.get(normalizePath(filePath)) || new Set();
   }
 
+  // Lazy-built inverted index: selector value → number of TEST files that
+  // reference it. Used to dampen ubiquitous-selector matches (e.g. `NavBar`
+  // selectors appear in nearly every spec, so selector-match on NavBar should
+  // not pin every spec to HIGH confidence).
+  private testSelectorFreq: Map<string, number> | undefined;
+  private testFileCountCache: number | undefined;
+
+  private ensureTestSelectorFreq(): void {
+    if (this.testSelectorFreq) return;
+    const freq = new Map<string, number>();
+    let tests = 0;
+    for (const f of this.files.values()) {
+      if (f.type !== 'test') continue;
+      tests += 1;
+      const seen = new Set<string>();
+      const sels = f.cypress?.selectors || [];
+      for (const s of sels) {
+        const norm = normalizeTestSelector(s);
+        const v = norm?.value;
+        if (!v || seen.has(v)) continue;
+        seen.add(v);
+        freq.set(v, (freq.get(v) || 0) + 1);
+      }
+    }
+    this.testSelectorFreq = freq;
+    this.testFileCountCache = tests;
+  }
+
+  getTestSelectorFrequency(value: string): number {
+    this.ensureTestSelectorFreq();
+    return this.testSelectorFreq!.get(value) || 0;
+  }
+
+  getTestFileCount(): number {
+    this.ensureTestSelectorFreq();
+    return this.testFileCountCache || 0;
+  }
+
   // ========== Build Methods ==========
 
   buildFromFileEntries(entries: IFileEntry[]): void {
@@ -139,11 +178,40 @@ export class Registry implements IRegistry {
   }
 
   buildRouteMap(entries: IFileEntry[]): void {
+    // Global index: component tag name (PascalCase) → source file path.
+    // Used to resolve `<Route path="/foo"><BarContainer/></Route>` to BarContainer's file.
+    const componentIndex = new Map<string, string>();
+    for (const e of entries) {
+      if (e.type !== 'source') continue;
+      const base = e.path.split('/').pop() ?? '';
+      const name = base.replace(/\.(tsx?|jsx?|mts|cts|mjs|cjs)$/i, '');
+      if (name === 'index') {
+        const parent = e.path.split('/').slice(-2, -1)[0];
+        if (parent && !componentIndex.has(parent)) componentIndex.set(parent, e.path);
+      } else if (!componentIndex.has(name)) {
+        componentIndex.set(name, e.path);
+      }
+    }
+
     for (const entry of entries) {
-      if (entry.type === 'source' && entry.routesDefined) {
-        for (const route of entry.routesDefined) {
-          this.routeMap.set(route.path, entry.path);
+      if (entry.type !== 'source' || !entry.routesDefined) continue;
+      for (const route of entry.routesDefined) {
+        // 1. Prefer: declaring file's resolved imports whose basename matches the tag name.
+        let target: string | undefined;
+        for (const imp of entry.imports) {
+          const base = (imp.split('/').pop() ?? '').replace(/\.(tsx?|jsx?|mts|cts|mjs|cjs)$/i, '');
+          if (base === route.component) { target = imp; break; }
+          // index.tsx: match parent dir
+          if (base === 'index') {
+            const parent = imp.split('/').slice(-2, -1)[0];
+            if (parent === route.component) { target = imp; break; }
+          }
         }
+        // 2. Fallback: global component-name index.
+        if (!target) target = componentIndex.get(route.component);
+        // 3. Last resort: the declaring file itself (old behavior).
+        if (!target) target = entry.path;
+        this.routeMap.set(route.path, target);
       }
     }
   }

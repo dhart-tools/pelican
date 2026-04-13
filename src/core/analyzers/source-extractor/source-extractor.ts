@@ -109,8 +109,10 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
       const tagName = ts.isJsxElement(node)
         ? node.openingElement.tagName.getText()
         : node.tagName.getText();
-      if (tagName === EReactComponent.ROUTE) {
-        this.extractRouteFromJSX(result, node as ts.JsxSelfClosingElement);
+      // Accept any `*Route` tag (Route, PrivateRoute, PublicRoute, ProtectedRoute…)
+      // or `AuthenticatedRoute`, etc. Real apps rarely use React Router's raw `Route`.
+      if (tagName === EReactComponent.ROUTE || /Route$/.test(tagName)) {
+        this.extractRouteFromJSX(result, node);
       }
     }
 
@@ -183,7 +185,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
           const attrName = attr.name.getText();
           const attrValue = this.getAttributeValue(attr);
 
-          if (SELECTOR_ATTRIBUTES.includes(attrName)) {
+          if (SELECTOR_ATTRIBUTES.includes(attrName) && attrValue) {
             result.selectors.push({ attr: attrName, value: attrValue });
           }
         }
@@ -198,8 +200,20 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    * @returns The attribute value string, or an empty string if not a string literal
    */
   private getAttributeValue(attr: ts.JsxAttribute): string {
-    if (attr.initializer && ts.isStringLiteral(attr.initializer)) {
+    if (!attr.initializer) return '';
+    if (ts.isStringLiteral(attr.initializer)) {
       return attr.initializer.text;
+    }
+    // `data-test={`transaction-item-${id}`}` — use static head as best-effort value
+    // so prefix-matching in SelectorMatchScorer can still match `getBySelLike(...)`.
+    if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+      const expr = attr.initializer.expression;
+      if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+        return expr.text;
+      }
+      if (ts.isTemplateExpression(expr)) {
+        return expr.head.text;
+      }
     }
     return '';
   }
@@ -287,32 +301,65 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    */
   private extractRouteFromJSX(
     result: ISourceExtractionResult,
-    routeElement: ts.JsxSelfClosingElement,
+    routeElement: ts.JsxElement | ts.JsxSelfClosingElement,
   ): void {
     let path: string | null = null;
     let component: string | null = null;
 
-    for (const attr of routeElement.attributes.properties) {
-      if (ts.isJsxAttribute(attr)) {
-        const attrName = attr.name.getText();
+    const attributes = ts.isJsxSelfClosingElement(routeElement)
+      ? routeElement.attributes.properties
+      : routeElement.openingElement.attributes.properties;
 
-        if (
-          attrName === EReactRouter.PATH &&
-          attr.initializer &&
-          ts.isStringLiteral(attr.initializer)
-        ) {
+    for (const attr of attributes) {
+      if (!ts.isJsxAttribute(attr)) continue;
+      const attrName = attr.name.getText();
+
+      if (attrName === EReactRouter.PATH && attr.initializer) {
+        if (ts.isStringLiteral(attr.initializer)) {
           path = attr.initializer.text;
-        }
-
-        if (
-          attrName === EReactRouter.ELEMENT &&
-          attr.initializer &&
-          ts.isJsxExpression(attr.initializer)
+        } else if (
+          ts.isJsxExpression(attr.initializer) &&
+          attr.initializer.expression &&
+          ts.isStringLiteral(attr.initializer.expression)
         ) {
-          const jsxExpr = attr.initializer as ts.JsxExpression;
-          if (jsxExpr.expression && ts.isJsxSelfClosingElement(jsxExpr.expression)) {
-            component = jsxExpr.expression.tagName.getText();
-          }
+          path = attr.initializer.expression.text;
+        }
+      }
+
+      // React Router v6: `element={<Foo />}`
+      if (
+        attrName === EReactRouter.ELEMENT &&
+        attr.initializer &&
+        ts.isJsxExpression(attr.initializer) &&
+        attr.initializer.expression
+      ) {
+        const expr = attr.initializer.expression;
+        if (ts.isJsxSelfClosingElement(expr)) component = expr.tagName.getText();
+        else if (ts.isJsxElement(expr)) component = expr.openingElement.tagName.getText();
+      }
+
+      // React Router v5 / custom: `component={Foo}`
+      if (
+        attrName === 'component' &&
+        attr.initializer &&
+        ts.isJsxExpression(attr.initializer) &&
+        attr.initializer.expression &&
+        ts.isIdentifier(attr.initializer.expression)
+      ) {
+        component = attr.initializer.expression.text;
+      }
+    }
+
+    // Children-as-route pattern: `<PrivateRoute path="/x"><Foo /></PrivateRoute>`
+    if (!component && ts.isJsxElement(routeElement)) {
+      for (const child of routeElement.children) {
+        if (ts.isJsxSelfClosingElement(child)) {
+          component = child.tagName.getText();
+          break;
+        }
+        if (ts.isJsxElement(child)) {
+          component = child.openingElement.tagName.getText();
+          break;
         }
       }
     }

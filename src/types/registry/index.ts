@@ -69,6 +69,8 @@ export interface IRegistry {
   getFilesByType(type: 'source' | 'test'): IFileEntry[];
   getDependencies(filePath: string): Set<string>;
   getDependents(filePath: string): Set<string>;
+  getTestSelectorFrequency(value: string): number;
+  getTestFileCount(): number;
 
   // Build methods
   buildFromFileEntries(entries: IFileEntry[]): void;

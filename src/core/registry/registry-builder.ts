@@ -1,7 +1,9 @@
+import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
 import { glob } from 'glob';
+import * as ts from 'typescript';
 
 import { CypressExtractorAnalyzer } from '@/core/analyzers/cypress-extractor';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
@@ -111,20 +113,46 @@ export class RegistryBuilder {
     for (const filePath of testFiles) {
       try {
         const sourceCode = await fs.readFile(filePath, 'utf-8');
-        const result = await cypressExtractor.extract({
-          filePath,
-          sourceCode,
-          resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
-        });
-        const entry = this.convertCypressExtractionToFileEntry(result, filePath);
+
+        // Content-sniff: Cypress tests contain `cy.` calls; Jest/Vitest unit
+        // tests don't. Route unit tests through SourceExtractor so we still
+        // index their imports (the Direct/Transitive Import and Colocation
+        // scorers rely on test imports). Cypress-style tests keep the full
+        // selector + route + intercept extraction.
+        if (this.looksLikeCypressTest(sourceCode)) {
+          const result = await cypressExtractor.extract({
+            filePath,
+            sourceCode,
+            resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
+            resolveTsConstImport: (importPath) =>
+              this.resolveTsConstImport(importPath, filePath),
+          });
+          const entry = this.convertCypressExtractionToFileEntry(result, filePath);
+          fileEntries.push(entry);
+          if (this.debug) {
+            this.logExtraction('test', filePath, {
+              selectors: result.selectors.length,
+              visitedRoutes: result.visitedRoutes,
+              containsText: result.containsText,
+              customCommands: result.customCommandsUsed,
+              imports: result.imports,
+            });
+          }
+          continue;
+        }
+
+        const result = await sourceExtractor.extract({ filePath, sourceCode });
+        const entry = this.convertSourceExtractionToFileEntry(result, filePath);
+        entry.type = 'test';
+        // Unit tests have no Cypress selectors/routes; drop source-only fields
+        // that would skew the selector index for test files.
+        entry.selectors = undefined;
+        entry.routesDefined = undefined;
         fileEntries.push(entry);
         if (this.debug) {
           this.logExtraction('test', filePath, {
-            selectors: result.selectors.length,
-            visitedRoutes: result.visitedRoutes,
-            containsText: result.containsText,
-            customCommands: result.customCommandsUsed,
             imports: result.imports,
+            kind: 'unit',
           });
         }
       } catch (error) {
@@ -178,7 +206,14 @@ export class RegistryBuilder {
   private async findTestFiles(testPatterns: string[], ignoreDirs: string[]): Promise<string[]> {
     const ignorePatterns = ignoreDirs.map((d) => `**/${d}/**`);
 
-    const files = await glob(testPatterns, {
+    // Fallback: if user didn't configure any testPatterns, sweep common layouts
+    // (`**/*.cy.ts`, `**/*.spec.ts`, `**/*.test.ts`, `**/*.e2e.ts`, plus .tsx/.js/.jsx variants)
+    // so pelican isn't silently blind on default installs.
+    const effectivePatterns = testPatterns.length > 0
+      ? testPatterns
+      : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
+
+    const files = await glob(effectivePatterns, {
       cwd: this.projectRoot,
       ignore: ignorePatterns,
       absolute: false,
@@ -186,6 +221,104 @@ export class RegistryBuilder {
     });
 
     return files.map((f) => normalizePath(f, this.projectRoot));
+  }
+
+  /**
+   * Heuristic: a Cypress test contains a `cy.` call somewhere; unit tests
+   * (Jest / Vitest) don't. Comment-stripping is unnecessary — Cypress specs
+   * always have at least one `cy.visit` or `cy.get`, and false positives on
+   * the word `cy.` inside a string literal are benign (we'd still extract
+   * imports correctly either way).
+   */
+  private looksLikeCypressTest(sourceCode: string): boolean {
+    return /\bcy\s*\.\s*[a-zA-Z_]/.test(sourceCode);
+  }
+
+  /**
+   * Resolves a TS import like `import { SELECTORS } from './selectors'` to a
+   * map of the top-level `export const <name> = { key: 'value', ... }` objects
+   * in the target file. Only string-valued properties are captured (the only
+   * kind that can be used as a selector value at runtime).
+   */
+  private async resolveTsConstImport(
+    importPath: string,
+    fromFile: string,
+  ): Promise<Map<string, Record<string, string>> | null> {
+    const candidates = this.candidateFilePathsForImport(importPath, fromFile);
+
+    for (const candidate of candidates) {
+      try {
+        const content = await fs.readFile(candidate, 'utf-8');
+        const sourceFile = ts.createSourceFile(
+          candidate,
+          content,
+          ts.ScriptTarget.Latest,
+          true,
+        );
+
+        const result = new Map<string, Record<string, string>>();
+        for (const stmt of sourceFile.statements) {
+          if (!ts.isVariableStatement(stmt)) continue;
+          const isExported = ts
+            .getModifiers(stmt)
+            ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+          if (!isExported) continue;
+
+          for (const decl of stmt.declarationList.declarations) {
+            if (!ts.isIdentifier(decl.name)) continue;
+            if (!decl.initializer || !ts.isObjectLiteralExpression(decl.initializer)) continue;
+
+            const obj: Record<string, string> = {};
+            for (const prop of decl.initializer.properties) {
+              if (!ts.isPropertyAssignment(prop)) continue;
+              const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
+              if (ts.isStringLiteral(prop.initializer)) {
+                obj[key] = prop.initializer.text;
+              } else if (ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+                obj[key] = prop.initializer.text;
+              }
+            }
+            if (Object.keys(obj).length > 0) result.set(decl.name.text, obj);
+          }
+        }
+
+        if (result.size > 0) {
+          if (this.debug) {
+            this.log(`resolveTsConstImport: ${candidate} exports [${[...result.keys()].join(', ')}]`);
+          }
+          return result;
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+
+    return null;
+  }
+
+  private candidateFilePathsForImport(importPath: string, fromFile: string): string[] {
+    const candidates: string[] = [];
+    const extensions = ['.ts', '.tsx', '.js', '.jsx'];
+
+    const baseDirectory = path.dirname(fromFile);
+
+    const roots: string[] = [];
+    if (importPath.startsWith('.')) {
+      roots.push(path.resolve(this.projectRoot, baseDirectory, importPath));
+    } else {
+      for (const [alias, target] of Object.entries(this.pathAliases)) {
+        if (importPath.startsWith(alias)) {
+          const rest = importPath.slice(alias.length).replace(/^\/+/, '');
+          roots.push(path.resolve(this.projectRoot, target, rest));
+        }
+      }
+    }
+
+    for (const root of roots) {
+      for (const ext of extensions) candidates.push(root + ext);
+      for (const ext of extensions) candidates.push(path.join(root, `index${ext}`));
+    }
+    return candidates;
   }
 
   /**
@@ -255,6 +388,53 @@ export class RegistryBuilder {
     }
   }
 
+  /**
+   * Resolves an import specifier (`./utils`, `@dashboard/foo`) to a normalized
+   * workspace-relative path (`src/auth/utils.ts`). External npm packages and
+   * unresolvable paths are dropped.
+   */
+  private resolveImports(imports: string[], fromFile: string): string[] {
+    const out: string[] = [];
+    const fromDir = path.dirname(fromFile);
+    const exts = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'];
+
+    for (const raw of imports) {
+      let baseAbs: string | null = null;
+
+      if (raw.startsWith('.')) {
+        baseAbs = path.resolve(this.projectRoot, fromDir, raw);
+      } else {
+        for (const [alias, target] of Object.entries(this.pathAliases)) {
+          if (raw.startsWith(alias)) {
+            const rest = raw.slice(alias.length).replace(/^\/+/, '');
+            baseAbs = path.resolve(this.projectRoot, target, rest);
+            break;
+          }
+        }
+      }
+      if (!baseAbs) continue;
+
+      const candidates = [
+        baseAbs,
+        ...exts.map((e) => baseAbs + e),
+        ...exts.map((e) => path.join(baseAbs!, `index${e}`)),
+      ];
+      let resolved: string | undefined;
+      for (const c of candidates) {
+        try {
+          if (fsSync.existsSync(c) && fsSync.statSync(c).isFile()) {
+            resolved = c;
+            break;
+          }
+        } catch { /* ignore */ }
+      }
+      if (!resolved) continue;
+
+      out.push(normalizePath(resolved, this.projectRoot));
+    }
+    return out;
+  }
+
   private convertSourceExtractionToFileEntry(
     result: ISourceExtractionResult,
     filePath: string,
@@ -264,7 +444,7 @@ export class RegistryBuilder {
       type: 'source',
       path: normalizePath(filePath, this.projectRoot),
       exports: result.exports ?? [],
-      imports: (result.imports ?? []).map((p: string) => normalizePath(p, this.projectRoot)),
+      imports: this.resolveImports(result.imports ?? [], filePath),
       classes: result.classes ?? [],
       functions: result.functions ?? [],
       interfaces: result.interfaces ?? [],
@@ -288,7 +468,7 @@ export class RegistryBuilder {
       exports: [],
       // Cypress spec files import page objects, helpers, fixtures, and custom command modules.
       // These imports are needed so the import graph knows what shared helpers a test depends on.
-      imports: (result.imports ?? []).map((p: string) => normalizePath(p, this.projectRoot)),
+      imports: this.resolveImports(result.imports ?? [], filePath),
       classes: [],
       functions: [],
       interfaces: [],

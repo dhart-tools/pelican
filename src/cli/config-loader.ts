@@ -29,6 +29,8 @@ const DEFAULT_CONFIG: IProjectConfig = {
       'route-match',
       'filename-match',
       'transitive-import',
+      'colocation',
+      'describe-block',
     ],
     ubiquityThreshold: 0.7,
     minConfidence: 0.4,

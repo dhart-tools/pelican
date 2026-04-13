@@ -12,6 +12,8 @@ import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
+import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
+import { DescribeBlockScorer } from '@/core/scoring/scorers/describe-block-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
 import { ReduxChainScorer } from '@/core/scoring/scorers/redux-chain-scorer';
@@ -45,6 +47,8 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new TranslationMatchScorer(),
     new SelectorIdMatchScorer(),
     new APIInterceptScorer(),
+    new ColocationScorer(),
+    new DescribeBlockScorer(),
   ];
 
   for (const scorer of allScorers) {

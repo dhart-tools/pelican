@@ -72,6 +72,20 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'api-intercept',
     weight: 0.55,
   },
+  [EScorerType.COLOCATION]: {
+    name: EScorerType.COLOCATION,
+    version: '1.0.0',
+    description: 'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
+    type: 'colocation',
+    weight: 0.75,
+  },
+  [EScorerType.DESCRIBE_BLOCK]: {
+    name: EScorerType.DESCRIBE_BLOCK,
+    version: '1.0.0',
+    description: 'Scores based on describe()/it() block text matching source filename tokens',
+    type: 'describe-block',
+    weight: 0.7,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {

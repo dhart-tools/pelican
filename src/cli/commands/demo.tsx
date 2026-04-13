@@ -15,6 +15,8 @@ import { loadTheme } from '@/cli/user-config';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
+import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
+import { DescribeBlockScorer } from '@/core/scoring/scorers/describe-block-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
 import { ReduxChainScorer } from '@/core/scoring/scorers/redux-chain-scorer';
@@ -442,6 +444,8 @@ function DemoApp() {
         new TranslationMatchScorer(),
         new SelectorIdMatchScorer(),
         new APIInterceptScorer(),
+        new ColocationScorer(),
+        new DescribeBlockScorer(),
       ]) {
         if (config.scoring.enabledScorers.includes(scorer.name)) engine.register(scorer);
       }

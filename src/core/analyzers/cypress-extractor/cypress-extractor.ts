@@ -4,8 +4,10 @@ import { BaseAnalyzer } from '@/core/analyzers/base';
 import { ICypressExtractionResult, ICypressSelector } from '@/types/analyzers';
 import {
   BUILTIN_CYPRESS_COMMANDS,
+  CUSTOM_SELECTOR_COMMAND_REGEX,
   REGEX_TEST_ID,
   REGEX_DATA_CY,
+  REGEX_GENERIC_TEST_ATTR,
   REGEX_SELECTOR_SPLIT,
 } from '@/utils/constants';
 import {
@@ -26,6 +28,15 @@ export interface CypressExtractorInput {
    * This allows the extractor to resolve `cy.get(dataTestIds.facilityName)` to actual selector strings.
    */
   resolveJsonImport?: (importPath: string) => Promise<Record<string, unknown> | null>;
+  /**
+   * Optional callback to resolve TypeScript constant-object imports.
+   * Given an import path (e.g. "./selectors"), returns a map of top-level
+   * `export const X = { key: 'value', ... }` objects.
+   * Supports `cy.get(SELECTORS.FOO)` where `SELECTORS` is a TS const, not JSON.
+   */
+  resolveTsConstImport?: (
+    importPath: string,
+  ) => Promise<Map<string, Record<string, string>> | null>;
 }
 
 /**
@@ -51,6 +62,13 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
   private importBindings: Map<string, Record<string, unknown>> = new Map();
 
   /**
+   * Resolved TS const-object imports: binding name → { property → value }.
+   * Populated for `import { X } from './selectors'` where X is a top-level
+   * `export const X = { ... }` object literal.
+   */
+  private tsConstBindings: Map<string, Record<string, string>> = new Map();
+
+  /**
    * Placeholder implementation for indexing.
    * @param output The result of the extraction
    */
@@ -65,7 +83,7 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
    * @returns A promise resolving to the Cypress extraction result.
    */
   async extract(input: CypressExtractorInput): Promise<ICypressExtractionResult> {
-    const { filePath, sourceCode, resolveJsonImport } = input;
+    const { filePath, sourceCode, resolveJsonImport, resolveTsConstImport } = input;
 
     const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
@@ -87,13 +105,57 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       await this.resolveNamespaceImports(sourceFile, resolveJsonImport);
     }
 
+    // Phase 1b: Resolve TS const-object imports (e.g. `import { SELECTORS } from './selectors'`).
+    if (resolveTsConstImport) {
+      await this.resolveTsConstImports(sourceFile, resolveTsConstImport);
+    }
+
     // Phase 2: Extract imports + cypress commands
     this.visitNode(sourceFile, result);
 
     // Cleanup instance state
     this.importBindings.clear();
+    this.tsConstBindings.clear();
 
     return result;
+  }
+
+  /**
+   * Scans top-level `import { X, Y } from './selectors'` patterns and populates
+   * `this.tsConstBindings` for any of those bindings that resolve to a TS const
+   * object literal via the provided callback.
+   */
+  private async resolveTsConstImports(
+    sourceFile: ts.SourceFile,
+    resolveTsConstImport: (
+      importPath: string,
+    ) => Promise<Map<string, Record<string, string>> | null>,
+  ): Promise<void> {
+    const pending: Array<{ names: string[]; modulePath: string }> = [];
+
+    ts.forEachChild(sourceFile, (node) => {
+      if (!ts.isImportDeclaration(node)) return;
+      const moduleSpecifier = node.moduleSpecifier;
+      if (!ts.isStringLiteral(moduleSpecifier)) return;
+      // Only non-JSON imports flow here; JSON handled separately.
+      if (moduleSpecifier.text.endsWith('.json')) return;
+
+      const bindings = node.importClause?.namedBindings;
+      if (!bindings || !ts.isNamedImports(bindings)) return;
+
+      const names = bindings.elements.map((el) => el.name.text);
+      if (names.length === 0) return;
+      pending.push({ names, modulePath: moduleSpecifier.text });
+    });
+
+    for (const { names, modulePath } of pending) {
+      const resolved = await resolveTsConstImport(modulePath);
+      if (!resolved) continue;
+      for (const name of names) {
+        const obj = resolved.get(name);
+        if (obj) this.tsConstBindings.set(name, obj);
+      }
+    }
   }
 
   /**
@@ -230,9 +292,62 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       default:
         if (!BUILTIN_CYPRESS_COMMANDS.has(commandName)) {
           result.customCommandsUsed.push(commandName);
+          // Custom Testing-Library-style wrappers (cy.getByTestId, cy.findByDataCy, etc.)
+          // take the selector *value* as their first string argument.
+          if (CUSTOM_SELECTOR_COMMAND_REGEX.test(commandName)) {
+            this.extractCustomSelectorCommand(node, commandName, result);
+          }
           this.extractCustomCommandHints(node, commandName, result);
         }
     }
+  }
+
+  /**
+   * Extracts the selector value from a Testing-Library-style custom command.
+   *
+   *   cy.getByTestId('save-button')    → { type: TEST_ID, value: 'save-button' }
+   *   cy.findByDataCy(SELECTORS.FOO)   → resolves via tsConstBindings
+   */
+  private extractCustomSelectorCommand(
+    node: ts.CallExpression,
+    commandName: string,
+    result: ICypressExtractionResult,
+  ): void {
+    if (node.arguments.length === 0) return;
+    const arg = node.arguments[0];
+
+    let value: string | null = null;
+    if (ts.isStringLiteral(arg)) {
+      value = arg.text;
+    } else if (ts.isPropertyAccessExpression(arg)) {
+      value = this.resolvePropertyAccess(arg);
+    } else if (ts.isTemplateExpression(arg)) {
+      // Static prefix of a template literal: `user-${id}` → 'user-'
+      value = arg.head.text;
+      if (!value) return;
+    }
+
+    if (!value) return;
+
+    // Map command name → selector attr type so downstream scorers can compare
+    // against the correct source attribute.
+    const attrType = this.inferSelectorTypeFromCommandName(commandName);
+    result.selectors.push({
+      type: attrType,
+      value,
+      raw: `${commandName}(${JSON.stringify(value)})`,
+    });
+  }
+
+  private inferSelectorTypeFromCommandName(name: string): ESelectorAttr {
+    const lower = name.toLowerCase();
+    if (lower.includes('datacy') || lower.endsWith('cy')) return ESelectorAttr.DATA_CY;
+    if (lower.endsWith('id') && !lower.includes('testid') && !lower.includes('dataid')) {
+      return ESelectorAttr.ID;
+    }
+    // Default: treat all test-id style custom commands as TEST_ID so the
+    // selector-match scorer can compare them against `data-testid` attrs.
+    return ESelectorAttr.TEST_ID;
   }
 
   /**
@@ -274,6 +389,18 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       selectorString = selectorArg.text;
     } else if (ts.isPropertyAccessExpression(selectorArg)) {
       selectorString = this.resolvePropertyAccess(selectorArg);
+    } else if (ts.isTemplateExpression(selectorArg)) {
+      // `[data-testid="prefix-${id}"]` → static head is `[data-testid="prefix-`.
+      // Try to close the pattern so parseCSSSelector can recover a usable prefix
+      // value — we synthesize `[data-testid="prefix-"]` and emit whatever value
+      // the regex captures. Downstream scorer does exact compare against
+      // source attrs, so partial prefixes still work when source uses the same
+      // literal root.
+      const head = selectorArg.head.text;
+      if (head && head.includes('data-')) {
+        const synthetic = head.replace(/(["'])$/, '') + '"]';
+        selectorString = synthetic;
+      }
     }
 
     if (selectorString) {
@@ -296,6 +423,10 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       const binding = this.importBindings.get(obj.text);
       if (binding && typeof binding[prop] === 'string') {
         return binding[prop] as string;
+      }
+      const tsBinding = this.tsConstBindings.get(obj.text);
+      if (tsBinding && typeof tsBinding[prop] === 'string') {
+        return tsBinding[prop];
       }
     }
 
@@ -323,6 +454,18 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       return {
         type: ESelectorAttr.DATA_CY,
         value: dataCyMatch[2],
+        raw: cssSelector,
+      };
+    }
+
+    // Generic test attributes (data-test, data-qa, data-e2e, data-test-id, ...).
+    const genericMatch = cssSelector.match(REGEX_GENERIC_TEST_ATTR);
+    if (genericMatch) {
+      // Normalize all generic "test" family attrs to TEST_ID so selector-match
+      // scorer compares against the value set regardless of attribute spelling.
+      return {
+        type: ESelectorAttr.TEST_ID,
+        value: genericMatch[3],
         raw: cssSelector,
       };
     }

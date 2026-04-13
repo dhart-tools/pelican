@@ -92,6 +92,8 @@ export enum EScorerType {
   SELECTOR_ID_MATCH = 'selector-id-match',
   FILENAME_MATCH = 'filename-match',
   API_INTERCEPT = 'api-intercept',
+  COLOCATION = 'colocation',
+  DESCRIBE_BLOCK = 'describe-block',
 }
 
 export enum EImportExportType {
