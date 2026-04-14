@@ -7,13 +7,21 @@ import { Ollama } from 'ollama';
 import { IFileEntry, IRegistry } from '@/types/registry';
 
 import { extractDiffPayload } from './diff-extractor';
-import { buildTestPayload } from './test-payload';
+import { buildSourcePayload, buildTestPayload } from './test-payload';
 
 export interface IRerankerConfig {
   enabled: boolean;
   model: string;
-  /** Minimum cosine similarity to keep a test. */
+  /** Hard floor — drop anything below this absolute cosine sim. */
   threshold: number;
+  /**
+   * Adaptive cutoff: drop candidates whose similarity falls more than
+   * `gapFromTop` below the top score. Combined with `minKeep` so we never
+   * over-prune small candidate sets.
+   */
+  gapFromTop: number;
+  /** Always keep at least this many results, even if all fall in the gap. */
+  minKeep: number;
   /** If true, log per-candidate scores to stderr. */
   debug?: boolean;
   /** Ollama host, defaults to http://127.0.0.1:11434 */
@@ -25,7 +33,9 @@ export interface IRerankerConfig {
 export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   enabled: true,
   model: 'nomic-embed-text',
-  threshold: 0.45,
+  threshold: 0.4,
+  gapFromTop: 0.05,
+  minKeep: 2,
   cachePath: '.suggestor/embeddings.json',
 };
 
@@ -85,37 +95,100 @@ export class SemanticReranker {
 
     await this.loadCache();
 
+    // Symmetric source payload — distilled labels (exports/selectors/routes/imports),
+    // same shape as test payload. Avoids lexical noise from raw file content.
+    const sourceEntry = registry.getFile(changedFile);
+    const sourcePayload = sourceEntry
+      ? buildSourcePayload(sourceEntry)
+      : `path: ${changedFile}`;
+
+    // Real git diff (changed lines only) layered on top when available — gives
+    // the embedder a hint about WHAT specifically changed, not just what file is.
     const diff = await extractDiffPayload(changedFile, options.base, options.target);
-    const diffText = `source: ${changedFile}\n${diff.text}`;
-    const diffEmbedding = await this.embed(diffText);
+    const diffSnippet = diff.fallback ? '' : `\nchanged lines:\n${diff.text}`;
+    const queryText = sourcePayload + diffSnippet;
 
-    const results: IRerankResult[] = [];
+    if (this.config.debug) {
+      process.stderr.write(
+        `\n[rerank:dump] === SOURCE QUERY (diff ${diff.fallback ? 'unavailable' : 'attached'}) ${queryText.length} chars ===\n`,
+      );
+      process.stderr.write(
+        queryText.slice(0, 600) + (queryText.length > 600 ? '\n...[TRUNC]\n' : '\n'),
+      );
+    }
+    const diffEmbedding = await this.embed(queryText);
+    if (this.config.debug) {
+      process.stderr.write(
+        `[rerank:dump] query vector dim=${diffEmbedding.length} norm=${Math.sqrt(diffEmbedding.reduce((a, b) => a + b * b, 0)).toFixed(3)}\n`,
+      );
+    }
 
+    // Pass 1: score every candidate.
+    const scored: { testFile: string; similarity: number }[] = [];
     for (const testFile of candidates) {
       const entry = registry.getFile(testFile);
       if (!entry) {
-        results.push({ testFile, similarity: 0, kept: false });
+        scored.push({ testFile, similarity: 0 });
         continue;
       }
 
       const payload = buildTestPayload(entry);
+      if (this.config.debug) {
+        process.stderr.write(
+          `\n[rerank:dump] --- TEST PAYLOAD for ${testFile} (${payload.length} chars) ---\n`,
+        );
+        process.stderr.write(
+          payload.slice(0, 500) + (payload.length > 500 ? '\n...[TRUNC]\n' : '\n'),
+        );
+      }
       const testEmbedding = await this.embedCached(testFile, payload);
       const sim = cosine(diffEmbedding, testEmbedding);
 
       if (this.config.debug) {
         process.stderr.write(
-          `[rerank] ${sim.toFixed(3)} ${testFile}${sim < this.config.threshold ? ' (drop)' : ''}\n`,
+          `[rerank:dump] test vector dim=${testEmbedding.length} norm=${Math.sqrt(testEmbedding.reduce((a, b) => a + b * b, 0)).toFixed(3)} cos=${sim.toFixed(4)}\n`,
         );
       }
 
-      results.push({
-        testFile,
-        similarity: sim,
-        kept: sim >= this.config.threshold,
-      });
+      scored.push({ testFile, similarity: sim });
     }
 
     await this.flushCache();
+
+    // Pass 2: adaptive filter — gap from top, with minKeep floor.
+    const sorted = [...scored].sort((a, b) => b.similarity - a.similarity);
+    const topSim = sorted[0]?.similarity ?? 0;
+    const gapCutoff = topSim - this.config.gapFromTop;
+    const minKeep = this.config.minKeep;
+
+    const keptSet = new Set<string>();
+    for (let i = 0; i < sorted.length; i++) {
+      const r = sorted[i];
+      const passesAbsolute = r.similarity >= this.config.threshold;
+      const passesGap = r.similarity >= gapCutoff;
+      const withinMinKeep = i < minKeep;
+      if (passesAbsolute && (passesGap || withinMinKeep)) {
+        keptSet.add(r.testFile);
+      }
+    }
+
+    const results: IRerankResult[] = scored.map((s) => {
+      const kept = keptSet.has(s.testFile);
+      if (this.config.debug) {
+        process.stderr.write(
+          `[rerank] ${s.similarity.toFixed(3)} ${s.testFile}${kept ? '' : ' (drop)'}\n`,
+        );
+      }
+      return { ...s, kept };
+    });
+
+    if (this.config.debug) {
+      const dropped = scored.length - keptSet.size;
+      process.stderr.write(
+        `[rerank:summary] kept ${keptSet.size}/${scored.length} (top=${topSim.toFixed(3)} cutoff=${gapCutoff.toFixed(3)} dropped=${dropped})\n`,
+      );
+    }
+
     return results;
   }
 
