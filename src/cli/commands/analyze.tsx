@@ -192,6 +192,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+          const preRerankCount = relevant.length;
 
           const rerankedRelevant = await applyReranker(
             reranker,
@@ -205,6 +206,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             changedFile,
             suggestedTests: rerankedRelevant.slice(0, maxResults),
             totalCandidates: rerankedRelevant.length,
+            preRerankCount,
+            postRerankCount: rerankedRelevant.length,
           });
         }
 
@@ -345,6 +348,8 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
       changedFile,
       suggestedTests: reranked.slice(0, maxResults),
       totalCandidates: reranked.length,
+      preRerankCount,
+      postRerankCount: reranked.length,
     });
   }
 

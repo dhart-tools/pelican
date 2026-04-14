@@ -12,6 +12,8 @@ interface ResultsTableProps {
     changedFile: string;
     suggestedTests: IScoreResult[];
     totalCandidates?: number;
+    preRerankCount?: number;
+    postRerankCount?: number;
   }>;
   maxResults?: number;
 }
@@ -118,25 +120,47 @@ export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
   }
 
   const totalCandidates = results.reduce((n, r) => n + (r.totalCandidates ?? r.suggestedTests.length), 0);
+  const totalPreRerank = results.reduce((n, r) => n + (r.preRerankCount ?? 0), 0);
+  const totalPostRerank = results.reduce((n, r) => n + (r.postRerankCount ?? 0), 0);
+  const rerankActive = totalPreRerank > 0 && totalPreRerank !== totalPostRerank;
 
   return (
     <>
-      {Array.from(grouped.entries()).map(([changedFile, tests]) => (
-        <Box key={changedFile} flexDirection="column">
-          <SectionDivider label={changedFile} />
-          <Box flexDirection="column" marginTop={1}>
-            {tests.map((t) => (
-              <ResultRow
-                key={t.testFile}
-                testFile={t.testFile}
-                score={t.score}
-                confidence={t.confidence}
-                signals={t.signals}
-              />
-            ))}
+      {Array.from(grouped.entries()).map(([changedFile, tests]) => {
+        const meta = results.find((r) => r.changedFile === changedFile);
+        const showRerank =
+          meta?.preRerankCount != null &&
+          meta.postRerankCount != null &&
+          meta.preRerankCount !== meta.postRerankCount;
+        return (
+          <Box key={changedFile} flexDirection="column">
+            <SectionDivider label={changedFile} />
+            {showRerank && (
+              <Box marginTop={1}>
+                <Text color={palette.dim}>  semantic filter: </Text>
+                <Text color={palette.text} bold>
+                  {meta!.preRerankCount} → {meta!.postRerankCount}
+                </Text>
+                <Text color={palette.dim}>
+                  {' '}
+                  ({Math.round(((meta!.preRerankCount! - meta!.postRerankCount!) / meta!.preRerankCount!) * 100)}% noise cut)
+                </Text>
+              </Box>
+            )}
+            <Box flexDirection="column" marginTop={1}>
+              {tests.map((t) => (
+                <ResultRow
+                  key={t.testFile}
+                  testFile={t.testFile}
+                  score={t.score}
+                  confidence={t.confidence}
+                  signals={t.signals}
+                />
+              ))}
+            </Box>
           </Box>
-        </Box>
-      ))}
+        );
+      })}
 
       <SectionDivider />
       <Box marginTop={0}>
@@ -150,6 +174,14 @@ export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
         )}
         <Text color={palette.muted}> · </Text>
         <Text color={palette.dim}>sorted by confidence</Text>
+        {rerankActive && (
+          <>
+            <Text color={palette.muted}> · </Text>
+            <Text color={palette.dim}>
+              reranker {totalPreRerank} → {totalPostRerank}
+            </Text>
+          </>
+        )}
       </Box>
     </>
   );

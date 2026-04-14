@@ -60,6 +60,10 @@ export interface IAnalyzeResult {
   changedFile: string;
   suggestedTests: IScoreResult[];
   totalCandidates?: number;
+  /** Number of candidates pelican scorers produced, before reranker filter. */
+  preRerankCount?: number;
+  /** Number of candidates after reranker filter. */
+  postRerankCount?: number;
 }
 
 export interface IRegistryStats {
