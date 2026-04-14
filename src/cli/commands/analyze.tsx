@@ -74,7 +74,7 @@ async function applyReranker(
   options: { base?: string; target?: string },
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
-  const candidatePaths = scored.map((r) => r.testFile);
+  const candidatePaths = scored.map((r) => ({ testFile: r.testFile, pelicanScore: r.score }));
   const rerankResults = await reranker.rerank(
     changedFile,
     candidatePaths,
