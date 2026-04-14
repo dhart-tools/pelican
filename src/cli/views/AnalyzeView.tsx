@@ -106,7 +106,7 @@ export function AnalyzeView(state: IAnalyzeState) {
         </>
       )}
 
-      {hasResults && <ResultsTable results={state.results} />}
+      {hasResults && <ResultsTable results={state.results} maxResults={state.maxResults} />}
 
       {state.phase === 'error' && state.error && (
         <>

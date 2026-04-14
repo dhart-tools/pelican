@@ -52,6 +52,8 @@ export interface IAnalyzeState {
   currentFile?: string;
   /** 0–100 progress percentage */
   progress: number;
+  /** Maximum number of results to display */
+  maxResults?: number;
 }
 
 export interface IAnalyzeResult {

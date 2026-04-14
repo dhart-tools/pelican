@@ -102,6 +102,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
     changedFiles: [],
     results: [],
     progress: 0,
+    maxResults: options.maxResults ? Number.parseInt(options.maxResults) : undefined,
   });
 
   useEffect(() => {
