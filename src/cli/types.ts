@@ -148,6 +148,7 @@ export interface IProjectConfig {
     minConfidence: number;
     highConfidence: number;
     scorerWeights?: Record<string, number>;
+    maxResults?: number;
   };
 }
 

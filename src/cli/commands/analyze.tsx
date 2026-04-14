@@ -149,7 +149,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         registerScorers(engine, config.scoring.enabledScorers);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
-        const maxResults = parseInt(options.maxResults) || 10;
+        const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
         const results: Array<{
           changedFile: string;
           suggestedTests: ReturnType<typeof engine.evaluateTests>;
@@ -261,7 +261,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   registerScorers(engine, config.scoring.enabledScorers);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
-  const maxResults = parseInt(options.maxResults) || 10;
+  const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
 
   if (debug) {
     debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);

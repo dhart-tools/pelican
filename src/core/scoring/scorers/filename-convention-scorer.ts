@@ -110,12 +110,12 @@ export class FilenameConventionScorer extends BaseScorer {
     // just because both live under `auth/`.
     const exactBaseIntersection = changedBase.filter((t) => testBase.includes(t));
 
-    // Fuzzy substring fallback: human-written test names often fail to honor
+    // Containment fallback: human-written test names often fail to honor
     // camelCase boundaries (e.g. `addFacilityandDeviceGroup…`). Without caps
     // between `y` and `a`, the tokenizer sees `facilityand` as one token, so
-    // exact intersection with source token `facility` fails. Substring check
-    // recovers that: a source token of length ≥5 that appears inside any test
-    // token (or vice versa) counts as a "fuzzy" match at 0.6× weight of exact.
+    // exact intersection with source token `facility` fails. When one token
+    // fully contains the other (both ≥5 chars), it's a compound-word collision
+    // — semantically the same identifier — so count it as a (near-)exact match.
     const fuzzyMatches: string[] = [];
     for (const src of changedBase) {
       if (src.length < 5) continue;
@@ -130,8 +130,11 @@ export class FilenameConventionScorer extends BaseScorer {
       }
     }
 
+    // Containment counts 0.9× of exact (tiny hedge for ambiguity like
+    // `user` inside `userprofile`) rather than the old 0.6× which buried
+    // legit compound-word matches behind cleaner-tokenized competitors.
     const baseIntersection = [...exactBaseIntersection, ...fuzzyMatches];
-    const effectiveIntersectionCount = exactBaseIntersection.length + fuzzyMatches.length * 0.6;
+    const effectiveIntersectionCount = exactBaseIntersection.length + fuzzyMatches.length * 0.9;
     const baseOverlapRatio =
       effectiveIntersectionCount /
       Math.min(new Set(changedBase).size, new Set(testBase).size);

@@ -35,6 +35,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     ubiquityThreshold: 0.7,
     minConfidence: 0.4,
     highConfidence: 0.8,
+    maxResults: 10,
   },
 };
 

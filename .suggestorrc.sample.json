@@ -1,0 +1,49 @@
+{
+  "sourceDirs": ["src"],
+  "testPatterns": ["**/*.cy.ts", "**/*.cy.tsx"],
+  "ignorePatterns": ["node_modules", "dist", ".git", "coverage"],
+  "analyzers": {
+    "enabled": ["source-extractor", "cypress-extractor", "import-graph-analyzer"],
+    "sourceExtractor": {
+      "enabled": true,
+      "selectorStrategy": ["data-testid", "data-cy"]
+    },
+    "cypressExtractor": {
+      "enabled": true,
+      "pathAliases": {
+        "@fixtures/": "cypress/fixtures/"
+      }
+    },
+    "reduxChain": {
+      "enabled": false,
+      "storeDirs": []
+    },
+    "i18n": {
+      "enabled": false,
+      "library": "react-i18next",
+      "localesPath": ""
+    },
+    "routeAnalyzer": {
+      "enabled": false,
+      "routerFile": ""
+    },
+    "importGraph": {
+      "enabled": true
+    }
+  },
+  "scoring": {
+    "enabledScorers": [
+      "direct-import",
+      "selector-match",
+      "route-match",
+      "filename-match",
+      "transitive-import",
+      "colocation",
+      "describe-block"
+    ],
+    "ubiquityThreshold": 0.7,
+    "minConfidence": 0.4,
+    "highConfidence": 0.8,
+    "maxResults": 10
+  }
+}
