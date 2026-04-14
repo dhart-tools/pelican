@@ -6,7 +6,7 @@ import { render } from 'ink';
 import React, { useState, useEffect } from 'react';
 
 import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
-import { IAnalyzeState, IAnalyzeOptions } from '@/cli/types';
+import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { Registry } from '@/core/registry/registry';
@@ -150,10 +150,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
         const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
-        const results: Array<{
-          changedFile: string;
-          suggestedTests: ReturnType<typeof engine.evaluateTests>;
-        }> = [];
+        const results: IAnalyzeResult[] = [];
 
         for (let i = 0; i < changedFiles.length; i++) {
           const changedFile = changedFiles[i];
@@ -169,6 +166,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           results.push({
             changedFile,
             suggestedTests: relevant.slice(0, maxResults),
+            totalCandidates: relevant.length,
           });
         }
 
@@ -294,10 +292,12 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
       }
     }
 
-    const relevant = scoreResults
-      .filter((r) => r.score >= config.scoring.minConfidence)
-      .slice(0, maxResults);
-    return { changedFile, suggestedTests: relevant };
+    const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+    return {
+      changedFile,
+      suggestedTests: relevant.slice(0, maxResults),
+      totalCandidates: relevant.length,
+    };
   });
 
   console.log(JSON.stringify({ results }, null, 2));

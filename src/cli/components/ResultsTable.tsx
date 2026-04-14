@@ -11,6 +11,7 @@ interface ResultsTableProps {
   results: Array<{
     changedFile: string;
     suggestedTests: IScoreResult[];
+    totalCandidates?: number;
   }>;
   maxResults?: number;
 }
@@ -116,7 +117,7 @@ export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
     grouped.set(item.changedFile, group);
   }
 
-  const totalCandidates = results.reduce((n, r) => n + r.suggestedTests.length, 0);
+  const totalCandidates = results.reduce((n, r) => n + (r.totalCandidates ?? r.suggestedTests.length), 0);
 
   return (
     <>

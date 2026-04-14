@@ -57,6 +57,7 @@ export interface IAnalyzeState {
 export interface IAnalyzeResult {
   changedFile: string;
   suggestedTests: IScoreResult[];
+  totalCandidates?: number;
 }
 
 export interface IRegistryStats {
