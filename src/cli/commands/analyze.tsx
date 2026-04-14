@@ -23,6 +23,7 @@ import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { SemanticReranker } from '@/core/rerank/semantic-reranker';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 
 const REGISTRY_CACHE_PATH = '.suggestor/registry.json';
@@ -56,6 +57,32 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
       engine.register(scorer);
     }
   }
+}
+
+/**
+ * Runs the semantic reranker against a set of score results and returns only
+ * the ones whose cosine similarity to the diff is above threshold. Order is
+ * preserved from the input (which is already sorted by scorer score) — we
+ * only filter, we do not resort, because the scorer ranking already encodes
+ * strong evidence signals that should dominate embedding wiggle.
+ */
+async function applyReranker(
+  reranker: SemanticReranker,
+  changedFile: string,
+  scored: IAnalyzeResult['suggestedTests'],
+  registry: Registry,
+  options: { base?: string; target?: string },
+): Promise<IAnalyzeResult['suggestedTests']> {
+  if (scored.length === 0) return scored;
+  const candidatePaths = scored.map((r) => r.testFile);
+  const rerankResults = await reranker.rerank(
+    changedFile,
+    candidatePaths,
+    registry,
+    options,
+  );
+  const keepSet = new Set(rerankResults.filter((r) => r.kept).map((r) => r.testFile));
+  return scored.filter((r) => keepSet.has(r.testFile));
 }
 
 /**
@@ -153,6 +180,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
         const results: IAnalyzeResult[] = [];
 
+        const reranker = new SemanticReranker({ debug: options.debug });
+
         for (let i = 0; i < changedFiles.length; i++) {
           const changedFile = changedFiles[i];
           setState((s) => ({
@@ -164,10 +193,18 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
 
+          const rerankedRelevant = await applyReranker(
+            reranker,
+            changedFile,
+            relevant,
+            registry,
+            { base: options.base, target: options.target },
+          );
+
           results.push({
             changedFile,
-            suggestedTests: relevant.slice(0, maxResults),
-            totalCandidates: relevant.length,
+            suggestedTests: rerankedRelevant.slice(0, maxResults),
+            totalCandidates: rerankedRelevant.length,
           });
         }
 
@@ -266,7 +303,10 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
   }
 
-  const results = changedFiles.map((changedFile) => {
+  const reranker = new SemanticReranker({ debug });
+
+  const results: IAnalyzeResult[] = [];
+  for (const changedFile of changedFiles) {
     if (debug) {
       const entry = registry.getFile(changedFile);
       debugLog(`\n─── scoring: ${changedFile} ───`);
@@ -282,7 +322,6 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const scoreResults = engine.evaluateTests(changedFile, testFiles);
 
     if (debug) {
-      // Show top 5 results regardless of threshold
       const top = scoreResults.slice(0, 5);
       for (const r of top) {
         debugLog(`  → ${r.testFile}`);
@@ -294,12 +333,20 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }
 
     const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
-    return {
+    const preRerankCount = relevant.length;
+    const reranked = await applyReranker(reranker, changedFile, relevant, registry, {
+      base: options.base,
+      target: options.target,
+    });
+    if (debug) {
+      debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
+    }
+    results.push({
       changedFile,
-      suggestedTests: relevant.slice(0, maxResults),
-      totalCandidates: relevant.length,
-    };
-  });
+      suggestedTests: reranked.slice(0, maxResults),
+      totalCandidates: reranked.length,
+    });
+  }
 
   console.log(JSON.stringify({ results }, null, 2));
 }
