@@ -23,11 +23,15 @@ import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
-import { SemanticReranker } from '@/core/rerank/semantic-reranker';
+import {
+  IModelProgress,
+  ModelUnavailableError,
+  SemanticReranker,
+} from '@/core/rerank/semantic-reranker';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 import { EConfidenceLevel } from '@/utils/enums';
 
-const REGISTRY_CACHE_PATH = '.suggestor/registry.json';
+const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 
 /**
  * Registers all scorer instances that are enabled in config.
@@ -58,6 +62,15 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
       engine.register(scorer);
     }
   }
+}
+
+function bandFor(
+  score: number,
+  thresholds: { high: number; min: number },
+): EConfidenceLevel {
+  if (score >= thresholds.high) return EConfidenceLevel.HIGH;
+  if (score >= thresholds.min) return EConfidenceLevel.MEDIUM;
+  return EConfidenceLevel.LOW;
 }
 
 /**
@@ -100,18 +113,33 @@ async function applyReranker(
       reason: `cross-encoder relevance ${rr.similarity.toFixed(2)}`,
     });
     result.score = rr.combined;
-    result.confidence =
-      rr.combined >= thresholds.high
-        ? EConfidenceLevel.HIGH
-        : rr.combined >= thresholds.min
-          ? EConfidenceLevel.MEDIUM
-          : EConfidenceLevel.LOW;
+    result.confidence = bandFor(rr.combined, thresholds);
 
     mutated.push(result);
   }
 
   mutated.sort((a, b) => b.score - a.score);
   return mutated;
+}
+
+/**
+ * Pelican-only fallback when the cross-encoder model is unavailable. Applies
+ * the same min-confidence cutoff and MUST/SHOULD/MAY thresholds that the
+ * reranker path uses, but skips the semantic layer entirely. Keeps the rest
+ * of the UI identical so users can still ship a suggestion list.
+ */
+function pelicanOnly(
+  scored: IAnalyzeResult['suggestedTests'],
+  thresholds: { high: number; min: number },
+): IAnalyzeResult['suggestedTests'] {
+  const kept = scored
+    .filter((r) => r.score >= thresholds.min)
+    .map((r) => {
+      r.confidence = bandFor(r.score, thresholds);
+      return r;
+    });
+  kept.sort((a, b) => b.score - a.score);
+  return kept;
 }
 
 /**
@@ -198,7 +226,56 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           return;
         }
 
-        // Phase 4: Score
+        // Phase 4: Warm up reranker model.
+        //
+        // We deliberately trigger model load BEFORE scoring so the UI can
+        // show a proper progress bar instead of hiding a silent ~600MB
+        // download behind the first file. If load fails (offline, HF down,
+        // airgap without staged model) we set rerankerUnavailable and the
+        // scoring loop falls back to pelican-only results — a crashed
+        // rerank must never block the user from getting suggestions.
+        setState((s) => ({ ...s, phase: 'downloading-model' }));
+
+        const reranker = new SemanticReranker({
+          debug: options.debug,
+          onProgress: (info: IModelProgress) => {
+            if (info.status === 'progress' && info.file) {
+              setState((s) => ({
+                ...s,
+                modelDownload: {
+                  file: info.file!,
+                  pct: info.pct ?? 0,
+                  loaded: info.loaded,
+                  total: info.total,
+                },
+              }));
+            } else if (info.status === 'ready') {
+              setState((s) => ({ ...s, modelDownload: undefined }));
+            }
+          },
+        });
+
+        let rerankerUnavailable = false;
+        let rerankerError: string | undefined;
+        try {
+          await reranker.warmUp();
+        } catch (err) {
+          rerankerUnavailable = true;
+          rerankerError =
+            err instanceof ModelUnavailableError
+              ? err.message
+              : err instanceof Error
+                ? err.message
+                : String(err);
+          setState((s) => ({
+            ...s,
+            rerankerUnavailable: true,
+            rerankerError,
+            modelDownload: undefined,
+          }));
+        }
+
+        // Phase 5: Score
         setState((s) => ({ ...s, phase: 'scoring' }));
 
         const scoringConfig = toScoringConfig(config);
@@ -207,9 +284,11 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
         const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
+        const thresholds = {
+          high: config.scoring.highConfidence ?? 0.8,
+          min: config.scoring.minConfidence ?? 0.4,
+        };
         const results: IAnalyzeResult[] = [];
-
-        const reranker = new SemanticReranker({ debug: options.debug });
 
         for (let i = 0; i < changedFiles.length; i++) {
           const changedFile = changedFiles[i];
@@ -223,24 +302,39 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
           const preRerankCount = relevant.length;
 
-          const rerankedRelevant = await applyReranker(
-            reranker,
-            changedFile,
-            relevant,
-            registry,
-            { base: options.base, target: options.target },
-            {
-              high: config.scoring.highConfidence ?? 0.8,
-              min: config.scoring.minConfidence ?? 0.4,
-            },
-          );
+          let finalResults: IAnalyzeResult['suggestedTests'];
+          if (rerankerUnavailable) {
+            finalResults = pelicanOnly(relevant, thresholds);
+          } else {
+            try {
+              finalResults = await applyReranker(
+                reranker,
+                changedFile,
+                relevant,
+                registry,
+                { base: options.base, target: options.target },
+                thresholds,
+              );
+            } catch (err) {
+              // Late failure (model loaded but inference crashed). Disable
+              // rerank for remaining files and fall back for this one too.
+              rerankerUnavailable = true;
+              rerankerError = err instanceof Error ? err.message : String(err);
+              setState((s) => ({
+                ...s,
+                rerankerUnavailable: true,
+                rerankerError,
+              }));
+              finalResults = pelicanOnly(relevant, thresholds);
+            }
+          }
 
           results.push({
             changedFile,
-            suggestedTests: rerankedRelevant.slice(0, maxResults),
-            totalCandidates: rerankedRelevant.length,
+            suggestedTests: finalResults.slice(0, maxResults),
+            totalCandidates: finalResults.length,
             preRerankCount,
-            postRerankCount: rerankedRelevant.length,
+            postRerankCount: finalResults.length,
           });
         }
 
@@ -339,7 +433,46 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
   }
 
-  const reranker = new SemanticReranker({ debug });
+  // Headless progress: write to stderr with a throttled once-per-5%-per-file
+  // line so JSON on stdout stays clean. CI logs capture stderr; users don't
+  // see Ink TUI in this mode.
+  const headlessProgressState = new Map<string, number>();
+  const reranker = new SemanticReranker({
+    debug,
+    onProgress: (info) => {
+      if (info.status === 'progress' && info.file && typeof info.pct === 'number') {
+        const prev = headlessProgressState.get(info.file) ?? -1;
+        if (info.pct < prev + 5) return;
+        headlessProgressState.set(info.file, info.pct);
+        const mb =
+          info.loaded && info.total
+            ? ` ${(info.loaded / 1e6).toFixed(0)}/${(info.total / 1e6).toFixed(0)} MB`
+            : '';
+        process.stderr.write(
+          `[pelican] downloading reranker · ${info.file} ${info.pct}%${mb}\n`,
+        );
+      } else if (info.status === 'ready') {
+        process.stderr.write('[pelican] reranker ready\n');
+      }
+    },
+  });
+
+  let rerankerUnavailable = false;
+  try {
+    await reranker.warmUp();
+  } catch (err) {
+    rerankerUnavailable = true;
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `[pelican] WARNING: semantic reranker unavailable: ${msg}\n` +
+        `[pelican] showing pelican-only results. run 'pelican model:download' to set it up.\n`,
+    );
+  }
+
+  const thresholds = {
+    high: config.scoring.highConfidence ?? 0.8,
+    min: config.scoring.minConfidence ?? 0.4,
+  };
 
   const results: IAnalyzeResult[] = [];
   for (const changedFile of changedFiles) {
@@ -370,17 +503,26 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
 
     const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
     const preRerankCount = relevant.length;
-    const reranked = await applyReranker(
-      reranker,
-      changedFile,
-      relevant,
-      registry,
-      { base: options.base, target: options.target },
-      {
-        high: config.scoring.highConfidence ?? 0.8,
-        min: config.scoring.minConfidence ?? 0.4,
-      },
-    );
+    let reranked: IAnalyzeResult['suggestedTests'];
+    if (rerankerUnavailable) {
+      reranked = pelicanOnly(relevant, thresholds);
+    } else {
+      try {
+        reranked = await applyReranker(
+          reranker,
+          changedFile,
+          relevant,
+          registry,
+          { base: options.base, target: options.target },
+          thresholds,
+        );
+      } catch (err) {
+        rerankerUnavailable = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[pelican] rerank failed mid-run: ${msg}\n`);
+        reranked = pelicanOnly(relevant, thresholds);
+      }
+    }
     if (debug) {
       debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
     }

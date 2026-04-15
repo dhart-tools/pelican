@@ -2,6 +2,7 @@ import { Box, Text } from 'ink';
 import React from 'react';
 
 import { Header } from '@/cli/components/Header';
+import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
 import { Panel } from '@/cli/components/Panel';
 import { ResultsTable } from '@/cli/components/ResultsTable';
 import { SectionDivider } from '@/cli/components/SectionDivider';
@@ -14,6 +15,7 @@ const PHASE_LABELS: Record<AnalyzePhase, string> = {
   'loading-registry': 'loading registry',
   'building-registry': 'building registry',
   'detecting-changes': 'detecting changes',
+  'downloading-model': 'downloading reranker',
   analyzing: 'running analyzers',
   scoring: 'scoring relevance',
   done: 'analysis complete',
@@ -25,6 +27,7 @@ export function AnalyzeView(state: IAnalyzeState) {
     'loading-config',
     state.phase === 'building-registry' ? 'building-registry' : 'loading-registry',
     'detecting-changes',
+    'downloading-model',
     'scoring',
   ];
 
@@ -89,7 +92,34 @@ export function AnalyzeView(state: IAnalyzeState) {
             <Text color={palette.cyan}>{state.currentFile}</Text>
           </Box>
         )}
+        {state.phase === 'downloading-model' && (
+          <ModelDownloadProgress progress={state.modelDownload} />
+        )}
       </Box>
+
+      {state.rerankerUnavailable && (
+        <Box marginTop={1} paddingX={2} flexDirection="column">
+          <Box>
+            <Text color={palette.amber} bold>
+              ⚠  semantic reranker unavailable
+            </Text>
+          </Box>
+          <Box paddingLeft={4}>
+            <Text color={palette.dim}>
+              showing pelican-only results. run{' '}
+              <Text color={palette.brand} bold>
+                pelican model:download
+              </Text>{' '}
+              to retry setup.
+            </Text>
+          </Box>
+          {state.rerankerError && (
+            <Box paddingLeft={4}>
+              <Text color={palette.muted}>{state.rerankerError}</Text>
+            </Box>
+          )}
+        </Box>
+      )}
 
       {noChanges && (
         <>

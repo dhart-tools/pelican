@@ -48,7 +48,7 @@ function RegistryBuildApp({ options }: { options: IRegistryBuildOptions }) {
     async function run() {
       try {
         const config = await loadProjectConfig(options.config);
-        const cachePath = options.output || '.suggestor/registry.json';
+        const cachePath = options.output || '.pelican/registry.json';
 
         // If cache exists and --force is not set, load it and report real stats
         if (!options.force) {
@@ -121,7 +121,7 @@ export const registryBuildCommand = new Command('registry')
     new Command('build')
       .description('Build registry from source and test files')
       .option('-f, --force', 'Force rebuild even if cache exists')
-      .option('-o, --output <path>', 'Output path for registry', '.suggestor/registry.json')
+      .option('-o, --output <path>', 'Output path for registry', '.pelican/registry.json')
       .option('--debug', 'Print detailed extraction info to stderr')
       .option('-c, --config <path>', 'Path to config file')
       .action(async (opts: IRegistryBuildOptions) => {

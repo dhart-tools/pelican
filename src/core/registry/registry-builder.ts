@@ -85,7 +85,7 @@ export class RegistryBuilder {
 
     // --- Process source files ---
     const sourceFiles = await this.findSourceFiles(config.sourceDirs, extensions, ignoreDirs);
-    console.log(`[RegistryBuilder] Found ${sourceFiles.length} source files.`);
+    if (this.debug) this.log(`Found ${sourceFiles.length} source files.`);
 
     for (const filePath of sourceFiles) {
       try {
@@ -102,13 +102,13 @@ export class RegistryBuilder {
           });
         }
       } catch (error) {
-        console.warn(`[RegistryBuilder] Failed to process source file ${filePath}:`, error);
+        if (this.debug) this.log(`Failed to process source file ${filePath}: ${error}`);
       }
     }
 
     // --- Process test files ---
     const testFiles = await this.findTestFiles(config.testPatterns, ignoreDirs);
-    console.log(`[RegistryBuilder] Found ${testFiles.length} test files.`);
+    if (this.debug) this.log(`Found ${testFiles.length} test files.`);
 
     for (const filePath of testFiles) {
       try {
@@ -156,7 +156,7 @@ export class RegistryBuilder {
           });
         }
       } catch (error) {
-        console.warn(`[RegistryBuilder] Failed to process test file ${filePath}:`, error);
+        if (this.debug) this.log(`Failed to process test file ${filePath}: ${error}`);
       }
     }
 
@@ -366,7 +366,7 @@ export class RegistryBuilder {
     }
 
     if (this.debug && candidates.length === 0) {
-      this.log(`  ⚠ no alias matched for "${importPath}". Configure pathAliases in .suggestorrc.json`);
+      this.log(`  ⚠ no alias matched for "${importPath}". Configure pathAliases in .pelicanrc.json`);
     }
 
     return null;

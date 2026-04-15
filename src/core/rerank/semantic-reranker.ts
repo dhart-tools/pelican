@@ -1,6 +1,10 @@
 import { IFileEntry, IRegistry } from '@/types/registry';
 
-import { CrossEncoderReranker, ICrossEncoderConfig } from './cross-encoder-reranker';
+import {
+  CrossEncoderReranker,
+  ICrossEncoderConfig,
+  IModelProgress,
+} from './cross-encoder-reranker';
 import { extractDiffPayload } from './diff-extractor';
 import { buildItBlockPayloads, buildSourcePayload, buildTestPayload } from './test-payload';
 
@@ -37,6 +41,8 @@ export interface IRerankerConfig {
   cachePath?: string;
   /** Where to cache downloaded model weights. */
   modelCacheDir?: string;
+  /** Forwarded to the cross-encoder so callers can render a progress bar. */
+  onProgress?: (info: IModelProgress) => void;
 }
 
 export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
@@ -59,8 +65,8 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   // which is correct: a borderline sim shouldn't overpromise confidence.
   boostFloor: 0.2,
   boostFactor: 0.5,
-  cachePath: '.suggestor/rerank-cache.json',
-  modelCacheDir: '.suggestor/models',
+  cachePath: '.pelican/rerank-cache.json',
+  modelCacheDir: '.pelican/models',
 };
 
 export interface IRerankCandidate {
@@ -109,8 +115,24 @@ export class SemanticReranker {
       cachePath: this.config.cachePath,
       modelCacheDir: this.config.modelCacheDir,
       debug: this.config.debug,
+      onProgress: this.config.onProgress,
     };
     this.crossEncoder = new CrossEncoderReranker(xencConfig);
+  }
+
+  /**
+   * Trigger the model download/load without actually scoring anything.
+   * Analyze calls this up-front so the download phase is visible in the UI
+   * instead of surfacing as a mysterious pause on the first candidate pair.
+   * Throws `ModelUnavailableError` if the model cannot be loaded.
+   */
+  async warmUp(): Promise<void> {
+    if (!this.config.enabled) return;
+    await this.crossEncoder.ensureModel();
+  }
+
+  isAvailable(): boolean {
+    return this.config.enabled && this.crossEncoder.isAvailable();
   }
 
   async rerank(
@@ -293,3 +315,5 @@ export class SemanticReranker {
 }
 
 export type { IFileEntry };
+export { ModelUnavailableError } from './cross-encoder-reranker';
+export type { IModelProgress };

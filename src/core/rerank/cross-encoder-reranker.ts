@@ -17,6 +17,23 @@ interface IRerankerHandles {
   sigmoid: (x: number) => number;
 }
 
+export interface IModelProgress {
+  /** raw transformers.js status: download | progress | done | ready */
+  status: 'download' | 'progress' | 'done' | 'ready';
+  file?: string;
+  /** 0–100 */
+  pct?: number;
+  loaded?: number;
+  total?: number;
+}
+
+export class ModelUnavailableError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'ModelUnavailableError';
+  }
+}
+
 export interface ICrossEncoderConfig {
   /** HF model id. Default bge-reranker-v2-m3 (SOTA open reranker, XLM-R large). */
   model: string;
@@ -29,6 +46,12 @@ export interface ICrossEncoderConfig {
   /** Inference batch size (pairs per forward pass). */
   batchSize: number;
   debug?: boolean;
+  /**
+   * Called during first-run model load. Receives download progress events
+   * so the UI can render a themed bar. No-op when the model is already
+   * cached locally (transformers.js skips straight to `ready`).
+   */
+  onProgress?: (info: IModelProgress) => void;
 }
 
 export const DEFAULT_CROSS_ENCODER_CONFIG: ICrossEncoderConfig = {
@@ -36,8 +59,8 @@ export const DEFAULT_CROSS_ENCODER_CONFIG: ICrossEncoderConfig = {
   // `onnx-community/` org is the current home for newer ONNX model exports.
   model: 'onnx-community/bge-reranker-v2-m3-ONNX',
   quantized: true,
-  cachePath: '.suggestor/rerank-cache.json',
-  modelCacheDir: '.suggestor/models',
+  cachePath: '.pelican/rerank-cache.json',
+  modelCacheDir: '.pelican/models',
   batchSize: 8,
 };
 
@@ -57,12 +80,26 @@ interface ICacheEntry {
 export class CrossEncoderReranker {
   private config: ICrossEncoderConfig;
   private pipelinePromise: Promise<IRerankerHandles> | null = null;
+  private loadFailed = false;
   private cache = new Map<string, ICacheEntry>();
   private cacheDirty = false;
   private cacheLoaded = false;
 
   constructor(config: Partial<ICrossEncoderConfig> = {}) {
     this.config = { ...DEFAULT_CROSS_ENCODER_CONFIG, ...config };
+  }
+
+  /**
+   * Warm up the model without scoring anything. Used by `pelican model:download`
+   * and by the analyze command during its `downloading-model` phase so the
+   * download is explicit instead of a side effect of the first rerank call.
+   */
+  async ensureModel(): Promise<void> {
+    await this.getPipeline();
+  }
+
+  isAvailable(): boolean {
+    return !this.loadFailed;
   }
 
   /**
@@ -133,78 +170,108 @@ export class CrossEncoderReranker {
    * returns 1.0 for single-output-class rerankers like bge-reranker.
    */
   private async getPipeline(): Promise<IRerankerHandles> {
+    if (this.loadFailed) {
+      throw new ModelUnavailableError(
+        'cross-encoder model previously failed to load; skipping retry',
+      );
+    }
     if (!this.pipelinePromise) {
       this.pipelinePromise = (async () => {
-        const mod = await import('@huggingface/transformers');
-        // Tell transformers.js where to cache model weights so we stay
-        // inside the project-local .suggestor dir (CI can restore this).
-        const absCache = path.resolve(this.config.modelCacheDir);
-        await fs.mkdir(absCache, { recursive: true });
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const env = (mod as any).env;
-        if (env) {
-          env.cacheDir = absCache;
-          env.localModelPath = absCache;
-          env.allowRemoteModels = true;
-        }
-
-        // Only log to stderr when debug is on. Ink's TUI owns the terminal
-        // during interactive mode; writing to stderr mid-render shreds the
-        // frame into ghosted panels. Debug/JSON/headless flows run without
-        // Ink, so stderr is safe there.
-        const log = (msg: string) => {
-          if (this.config.debug) process.stderr.write(msg);
-        };
-        log(
-          `[pelican] loading cross-encoder ${this.config.model} (first run will download ~600MB to ${absCache})\n`,
-        );
-        const progressState = new Map<string, number>();
-        const progressCallback = (data: {
-          status: string;
-          file?: string;
-          progress?: number;
-          loaded?: number;
-          total?: number;
-        }) => {
-          if (data.status === 'download' && data.file) {
-            log(`[pelican] download start: ${data.file}\n`);
-          } else if (data.status === 'progress' && data.file && typeof data.progress === 'number') {
-            const pct = Math.floor(data.progress);
-            const prev = progressState.get(data.file) ?? -1;
-            if (pct >= prev + 10) {
-              progressState.set(data.file, pct);
-              const mb =
-                data.loaded && data.total
-                  ? ` (${(data.loaded / 1e6).toFixed(0)}/${(data.total / 1e6).toFixed(0)} MB)`
-                  : '';
-              log(`[pelican] ${data.file} ${pct}%${mb}\n`);
-            }
-          } else if (data.status === 'done' && data.file) {
-            log(`[pelican] done: ${data.file}\n`);
-          } else if (data.status === 'ready') {
-            log(`[pelican] cross-encoder ready\n`);
+        try {
+          const mod = await import('@huggingface/transformers');
+          // Tell transformers.js where to cache model weights so we stay
+          // inside the project-local .pelican dir (CI can restore this).
+          const absCache = path.resolve(this.config.modelCacheDir);
+          await fs.mkdir(absCache, { recursive: true });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const env = (mod as any).env;
+          if (env) {
+            env.cacheDir = absCache;
+            env.localModelPath = absCache;
+            env.allowRemoteModels = true;
           }
-        };
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const AutoTokenizer = (mod as any).AutoTokenizer;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const AutoModelForSequenceClassification = (mod as any)
-          .AutoModelForSequenceClassification;
+          const debugLog = (msg: string) => {
+            if (this.config.debug) process.stderr.write(msg);
+          };
+          debugLog(
+            `[pelican] loading cross-encoder ${this.config.model} (first run will download ~600MB to ${absCache})\n`,
+          );
 
-        const loadOpts = {
-          dtype: this.config.quantized ? 'q8' : 'fp32',
-          progress_callback: progressCallback,
-        };
-        const tokenizer = await AutoTokenizer.from_pretrained(this.config.model, loadOpts);
-        const model = await AutoModelForSequenceClassification.from_pretrained(
-          this.config.model,
-          loadOpts,
-        );
-        log(`[pelican] cross-encoder ready\n`);
+          const progressState = new Map<string, number>();
+          const progressCallback = (data: {
+            status: string;
+            file?: string;
+            progress?: number;
+            loaded?: number;
+            total?: number;
+          }) => {
+            // Transformers.js sometimes fires `progress` events for files it
+            // already has cached — throttle to once per 5% per file so the UI
+            // doesn't get hammered and stderr stays readable.
+            if (data.status === 'progress' && data.file && typeof data.progress === 'number') {
+              const pct = Math.floor(data.progress);
+              const prev = progressState.get(data.file) ?? -1;
+              if (pct < prev + 5) return;
+              progressState.set(data.file, pct);
+            }
+            this.config.onProgress?.({
+              status: data.status as IModelProgress['status'],
+              file: data.file,
+              pct:
+                typeof data.progress === 'number' ? Math.floor(data.progress) : undefined,
+              loaded: data.loaded,
+              total: data.total,
+            });
+            if (this.config.debug) {
+              if (data.status === 'download' && data.file) {
+                debugLog(`[pelican] download start: ${data.file}\n`);
+              } else if (
+                data.status === 'progress' &&
+                data.file &&
+                typeof data.progress === 'number'
+              ) {
+                const mb =
+                  data.loaded && data.total
+                    ? ` (${(data.loaded / 1e6).toFixed(0)}/${(data.total / 1e6).toFixed(0)} MB)`
+                    : '';
+                debugLog(`[pelican] ${data.file} ${Math.floor(data.progress)}%${mb}\n`);
+              } else if (data.status === 'done' && data.file) {
+                debugLog(`[pelican] done: ${data.file}\n`);
+              } else if (data.status === 'ready') {
+                debugLog(`[pelican] cross-encoder ready\n`);
+              }
+            }
+          };
 
-        const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
-        return { tokenizer, model, sigmoid };
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const AutoTokenizer = (mod as any).AutoTokenizer;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const AutoModelForSequenceClassification = (mod as any)
+            .AutoModelForSequenceClassification;
+
+          const loadOpts = {
+            dtype: this.config.quantized ? 'q8' : 'fp32',
+            progress_callback: progressCallback,
+          };
+          const tokenizer = await AutoTokenizer.from_pretrained(this.config.model, loadOpts);
+          const model = await AutoModelForSequenceClassification.from_pretrained(
+            this.config.model,
+            loadOpts,
+          );
+          debugLog(`[pelican] cross-encoder ready\n`);
+          this.config.onProgress?.({ status: 'ready' });
+
+          const sigmoid = (x: number) => 1 / (1 + Math.exp(-x));
+          return { tokenizer, model, sigmoid };
+        } catch (err) {
+          this.loadFailed = true;
+          this.pipelinePromise = null;
+          throw new ModelUnavailableError(
+            `failed to load cross-encoder ${this.config.model}: ${err instanceof Error ? err.message : String(err)}`,
+            err,
+          );
+        }
       })();
     }
     return this.pipelinePromise;

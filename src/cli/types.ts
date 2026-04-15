@@ -37,10 +37,18 @@ export type AnalyzePhase =
   | 'loading-registry'
   | 'building-registry'
   | 'detecting-changes'
+  | 'downloading-model'
   | 'analyzing'
   | 'scoring'
   | 'done'
   | 'error';
+
+export interface IModelDownloadProgress {
+  file: string;
+  pct: number;
+  loaded?: number;
+  total?: number;
+}
 
 export interface IAnalyzeState {
   phase: AnalyzePhase;
@@ -54,6 +62,11 @@ export interface IAnalyzeState {
   progress: number;
   /** Maximum number of results to display */
   maxResults?: number;
+  /** Active when phase === 'downloading-model'. Null when model already cached. */
+  modelDownload?: IModelDownloadProgress;
+  /** Set when the cross-encoder failed to load — UI shows a warning banner and falls back to pelican-only scoring. */
+  rerankerUnavailable?: boolean;
+  rerankerError?: string;
 }
 
 export interface IAnalyzeResult {
@@ -110,6 +123,10 @@ export interface ISetupStep {
   name: string;
   status: 'idle' | 'loading' | 'success' | 'error';
   detail?: string;
+  /** Groups the step under a section header in SetupView. */
+  section?: 'detected' | 'installed';
+  /** Identity tag used by SetupView to attach the model-download progress bar. */
+  kind?: 'model';
 }
 
 export interface ISetupState {
@@ -117,12 +134,16 @@ export interface ISetupState {
   steps: ISetupStep[];
   detectedConfig: IProjectConfig | null;
   error?: string;
+  /** Populated while the reranker model is downloading. */
+  modelProgress?: IModelDownloadProgress;
+  /** Project root basename shown in the panel subtitle. */
+  projectName?: string;
 }
 
 // ─── Config ──────────────────────────────────────────────────────
 
 /**
- * Full project config — superset of what lives in .suggestorrc.json.
+ * Full project config — superset of what lives in .pelicanrc.json.
  * This is NOT the same as ISuggestorConfig from @/types/config
  * which only contains the `scoring` block.
  *

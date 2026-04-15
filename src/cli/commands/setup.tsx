@@ -4,9 +4,15 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import React, { useState, useEffect } from 'react';
 
+import * as path from 'path';
+
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
+import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { CrossEncoderReranker } from '@/core/rerank/cross-encoder-reranker';
+
+const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -51,21 +57,18 @@ export async function detectProjectConfig(): Promise<{
   try {
     const pkg = JSON.parse(await fs.readFile('package.json', 'utf-8'));
 
-    // Detect Cypress
     if (pkg.devDependencies?.cypress || pkg.dependencies?.cypress) {
       steps.push({
-        name: 'Cypress detected',
+        name: 'cypress',
         status: 'success',
-        detail: 'cypress-extractor enabled',
+        detail: 'cypress-extractor',
+        section: 'detected',
       });
       if (!config.scoring.enabledScorers.includes('selector-match')) {
         config.scoring.enabledScorers.push('selector-match');
       }
-    } else {
-      steps.push({ name: 'Cypress', status: 'idle', detail: 'not found' });
     }
 
-    // Detect Redux Toolkit
     if (pkg.dependencies?.['@reduxjs/toolkit'] || pkg.dependencies?.redux) {
       config.analyzers.reduxChain.enabled = true;
       config.analyzers.enabled.push('redux-chain-analyzer');
@@ -83,18 +86,13 @@ export async function detectProjectConfig(): Promise<{
       }
       config.analyzers.reduxChain.storeDirs = existingDirs;
       steps.push({
-        name: 'Redux Toolkit detected',
+        name: 'redux toolkit',
         status: 'success',
-        detail:
-          existingDirs.length > 0
-            ? `store dirs: ${existingDirs.join(', ')}`
-            : 'no store dirs found',
+        detail: existingDirs.length > 0 ? existingDirs.join(', ') : 'no store dirs',
+        section: 'detected',
       });
-    } else {
-      steps.push({ name: 'Redux', status: 'idle', detail: 'not found' });
     }
 
-    // Detect React Router
     if (pkg.dependencies?.['react-router-dom'] || pkg.dependencies?.['react-router']) {
       config.analyzers.routeAnalyzer.enabled = true;
       config.analyzers.enabled.push('route-analyzer');
@@ -111,15 +109,13 @@ export async function detectProjectConfig(): Promise<{
         }
       }
       steps.push({
-        name: 'React Router detected',
+        name: 'react router',
         status: 'success',
         detail: config.analyzers.routeAnalyzer.routerFile || 'router file not found',
+        section: 'detected',
       });
-    } else {
-      steps.push({ name: 'React Router', status: 'idle', detail: 'not found' });
     }
 
-    // Detect i18n
     if (pkg.dependencies?.['react-i18next'] || pkg.dependencies?.['i18next']) {
       config.analyzers.i18n.enabled = true;
       config.analyzers.i18n.library = 'react-i18next';
@@ -141,15 +137,19 @@ export async function detectProjectConfig(): Promise<{
         }
       }
       steps.push({
-        name: 'react-i18next detected',
+        name: 'react-i18next',
         status: 'success',
         detail: config.analyzers.i18n.localesPath || 'locales path not found',
+        section: 'detected',
       });
-    } else {
-      steps.push({ name: 'i18n', status: 'idle', detail: 'not found' });
     }
   } catch {
-    steps.push({ name: 'package.json', status: 'error', detail: 'could not read package.json' });
+    steps.push({
+      name: 'package.json',
+      status: 'error',
+      detail: 'could not read package.json',
+      section: 'detected',
+    });
   }
 
   return { config, steps };
@@ -158,8 +158,9 @@ export async function detectProjectConfig(): Promise<{
 function SetupApp({ options }: { options: ISetupOptions }) {
   const [state, setState] = useState<ISetupState>({
     phase: 'detecting',
-    steps: [{ name: 'Scanning project...', status: 'loading' }],
+    steps: [],
     detectedConfig: null,
+    projectName: path.basename(process.cwd()),
   });
 
   useEffect(() => {
@@ -175,37 +176,131 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         }));
 
         // Phase 2: Save config
-        const configPath = options.config || '.suggestorrc.json';
+        const configPath = options.config || '.pelicanrc.json';
         await fs.writeFile(configPath, JSON.stringify(config, null, 2));
         setState((s) => ({
           ...s,
           steps: [
             ...s.steps,
-            { name: `Config saved to ${configPath}`, status: 'success' as const },
+            {
+              name: 'config',
+              status: 'success' as const,
+              detail: configPath,
+              section: 'installed' as const,
+            },
           ],
         }));
 
-        // Phase 3: Prompt user to build registry
+        // Phase 3: Build registry
         setState((s) => ({
           ...s,
           phase: 'building-registry',
-          steps: [...s.steps, { name: 'Building registry...', status: 'loading' as const }],
+          steps: [
+            ...s.steps,
+            {
+              name: 'registry',
+              status: 'loading' as const,
+              detail: 'scanning sources & tests',
+              section: 'installed' as const,
+            },
+          ],
         }));
 
-        // Mark as done — user can run `suggestor registry build` separately
+        const builder = new RegistryBuilder();
+        const registry = await builder.buildFromDirectories({
+          sourceDirs: config.sourceDirs,
+          testPatterns: config.testPatterns,
+          projectRoot: process.cwd(),
+          pathAliases: config.analyzers.cypressExtractor.pathAliases,
+        });
+        const registryDir = path.dirname(REGISTRY_CACHE_PATH);
+        await fs.mkdir(registryDir, { recursive: true });
+        await fs.writeFile(REGISTRY_CACHE_PATH, registry.serialize(), 'utf-8');
+
+        const sourceCount = registry.getFilesByType('source').length;
+        const testCount = registry.getFilesByType('test').length;
         setState((s) => ({
           ...s,
-          phase: 'done',
           steps: s.steps.map((step) =>
-            step.status === 'loading'
+            step.name === 'registry'
               ? {
                   ...step,
                   status: 'success' as const,
-                  detail: 'run `suggestor registry build` to build',
+                  detail: `${sourceCount} source · ${testCount} tests`,
                 }
               : step,
           ),
         }));
+
+        // Phase 4: Download reranker model.
+        //
+        // Non-fatal: if download fails (offline, HF unreachable) setup still
+        // finishes successfully. Analyze will fall back to pelican-only
+        // scoring and the user can retry via `pelican model:download`.
+        setState((s) => ({
+          ...s,
+          steps: [
+            ...s.steps,
+            {
+              name: 'reranker',
+              status: 'loading' as const,
+              detail: 'first run · ~600 MB',
+              section: 'installed' as const,
+              kind: 'model' as const,
+            },
+          ],
+        }));
+
+        try {
+          const reranker = new CrossEncoderReranker({
+            onProgress: (info) => {
+              if (info.status === 'progress' && info.file && typeof info.pct === 'number') {
+                setState((s) => ({
+                  ...s,
+                  modelProgress: {
+                    file: info.file!,
+                    pct: info.pct ?? 0,
+                    loaded: info.loaded,
+                    total: info.total,
+                  },
+                }));
+              }
+            },
+          });
+          await reranker.ensureModel();
+          setState((s) => ({
+            ...s,
+            modelProgress: undefined,
+            steps: s.steps.map((step) =>
+              step.kind === 'model'
+                ? {
+                    ...step,
+                    status: 'success' as const,
+                    detail: '.pelican/models',
+                  }
+                : step,
+            ),
+          }));
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          setState((s) => ({
+            ...s,
+            modelProgress: undefined,
+            steps: s.steps.map((step) =>
+              step.kind === 'model'
+                ? {
+                    ...step,
+                    status: 'error' as const,
+                    detail: `skipped — retry with 'pelican model:download'`,
+                  }
+                : step,
+            ),
+          }));
+          // Swallow for telemetry-only paths; msg is shown in detail.
+          void msg;
+        }
+
+        setState((s) => ({ ...s, phase: 'done' }));
       } catch (err: unknown) {
         setState((s) => ({
           ...s,

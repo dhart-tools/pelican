@@ -40,7 +40,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
 };
 
 /**
- * Loads config from .suggestorrc.json and merges with defaults.
+ * Loads config from .pelicanrc.json and merges with defaults.
  * CLI option overrides are applied by the command action, not here.
  *
  * @example
@@ -51,7 +51,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
  *   // config loaded from specified path
  */
 export async function loadProjectConfig(configPath?: string): Promise<IProjectConfig> {
-  const path = configPath || '.suggestorrc.json';
+  const path = configPath || '.pelicanrc.json';
 
   try {
     const content = await fs.readFile(path, 'utf-8');
