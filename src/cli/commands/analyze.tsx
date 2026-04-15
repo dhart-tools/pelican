@@ -25,6 +25,7 @@ import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import { SemanticReranker } from '@/core/rerank/semantic-reranker';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
+import { EConfidenceLevel } from '@/utils/enums';
 
 const REGISTRY_CACHE_PATH = '.suggestor/registry.json';
 
@@ -60,11 +61,15 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
 }
 
 /**
- * Runs the semantic reranker against a set of score results and returns only
- * the ones whose cosine similarity to the diff is above threshold. Order is
- * preserved from the input (which is already sorted by scorer score) — we
- * only filter, we do not resort, because the scorer ranking already encodes
- * strong evidence signals that should dominate embedding wiggle.
+ * Runs the cross-encoder reranker, filters out low-relevance candidates, and
+ * folds the reranker's score back into each surviving `IScoreResult` so the
+ * UI reflects the model's contribution:
+ *
+ *   1. Pushes a synthetic `semantic-rerank` signal onto `signals[]` — the
+ *      existing ResultsTable renders it uniformly with structural signals.
+ *   2. Replaces `score` with the reranker's hybrid combined score.
+ *   3. Recomputes `confidence` from the new score using ScoringEngine's
+ *      same thresholds, so bands stay consistent end-to-end.
  */
 async function applyReranker(
   reranker: SemanticReranker,
@@ -72,17 +77,41 @@ async function applyReranker(
   scored: IAnalyzeResult['suggestedTests'],
   registry: Registry,
   options: { base?: string; target?: string },
+  thresholds: { high: number; min: number },
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
-  const candidatePaths = scored.map((r) => ({ testFile: r.testFile, pelicanScore: r.score }));
-  const rerankResults = await reranker.rerank(
-    changedFile,
-    candidatePaths,
-    registry,
-    options,
-  );
-  const keepSet = new Set(rerankResults.filter((r) => r.kept).map((r) => r.testFile));
-  return scored.filter((r) => keepSet.has(r.testFile));
+  const candidates = scored.map((r) => ({
+    testFile: r.testFile,
+    pelicanScore: r.score,
+  }));
+  const rerankResults = await reranker.rerank(changedFile, candidates, registry, options);
+  const byFile = new Map(rerankResults.map((r) => [r.testFile, r]));
+
+  const mutated: IAnalyzeResult['suggestedTests'] = [];
+  for (const result of scored) {
+    const rr = byFile.get(result.testFile);
+    if (!rr || !rr.kept) continue;
+
+    result.signals.push({
+      source: 'semantic-rerank',
+      type: 'cross-encoder',
+      weight: rr.similarity,
+      matched: rr.similarity >= 0.25,
+      reason: `cross-encoder relevance ${rr.similarity.toFixed(2)}`,
+    });
+    result.score = rr.combined;
+    result.confidence =
+      rr.combined >= thresholds.high
+        ? EConfidenceLevel.HIGH
+        : rr.combined >= thresholds.min
+          ? EConfidenceLevel.MEDIUM
+          : EConfidenceLevel.LOW;
+
+    mutated.push(result);
+  }
+
+  mutated.sort((a, b) => b.score - a.score);
+  return mutated;
 }
 
 /**
@@ -200,6 +229,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             relevant,
             registry,
             { base: options.base, target: options.target },
+            {
+              high: config.scoring.highConfidence ?? 0.8,
+              min: config.scoring.minConfidence ?? 0.4,
+            },
           );
 
           results.push({
@@ -337,10 +370,17 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
 
     const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
     const preRerankCount = relevant.length;
-    const reranked = await applyReranker(reranker, changedFile, relevant, registry, {
-      base: options.base,
-      target: options.target,
-    });
+    const reranked = await applyReranker(
+      reranker,
+      changedFile,
+      relevant,
+      registry,
+      { base: options.base, target: options.target },
+      {
+        high: config.scoring.highConfidence ?? 0.8,
+        min: config.scoring.minConfidence ?? 0.4,
+      },
+    );
     if (debug) {
       debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
     }

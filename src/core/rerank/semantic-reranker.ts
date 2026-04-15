@@ -1,54 +1,67 @@
-import { createHash } from 'crypto';
-import * as fs from 'fs/promises';
-import * as path from 'path';
-
-import { Ollama } from 'ollama';
-
 import { IFileEntry, IRegistry } from '@/types/registry';
 
+import { CrossEncoderReranker, ICrossEncoderConfig } from './cross-encoder-reranker';
 import { extractDiffPayload } from './diff-extractor';
 import { buildItBlockPayloads, buildSourcePayload, buildTestPayload } from './test-payload';
 
 export interface IRerankerConfig {
   enabled: boolean;
+  /** HF model id for the cross-encoder. */
   model: string;
-  /** Hard floor — drop anything below this absolute combined score. */
+  /** Use int8 quantized weights (default true). */
+  quantized: boolean;
+  /** Absolute relevance threshold — candidates below this are dropped. */
   threshold: number;
-  /**
-   * Adaptive cutoff: drop candidates whose combined score falls more than
-   * `gapFromTop` below the top score. Combined with `minKeep` so we never
-   * over-prune small candidate sets.
-   */
-  gapFromTop: number;
-  /** Always keep at least this many results, even if all fall in the gap. */
+  /** Always keep at least this many results even if all fall below threshold. */
   minKeep: number;
   /**
-   * Hybrid blend weight: `combined = pelicanWeight * pelicanScore + (1 - pelicanWeight) * rerankSim`.
-   * Higher = trust pelican's structural scorers more. 0.5 = equal weight.
+   * Additive-boost blend: `combined = pelicanScore + max(0, sim - boostFloor) * boostFactor`.
+   *
+   * Pelican's structural score is treated as ground truth; the reranker only
+   * contributes upward when its similarity is meaningfully high. Sims below
+   * `boostFloor` contribute nothing (but candidates below `threshold` are
+   * already filtered out upstream). Sims above the floor scale linearly by
+   * `boostFactor`.
+   *
+   * Why not a linear blend? A linear `w*pel + (1-w)*sim` formula actively
+   * *drags down* correct matches when the reranker is conservative — which
+   * is common for code→test pairs since bge-reranker was trained on natural
+   * language, not symbols like `TransactionCreateStepOne`. With additive
+   * boost, a modest sim neither hurts nor helps, and a strong sim genuinely
+   * lifts confidence. Predictable, never demotes a real match.
    */
-  pelicanWeight: number;
-  /** If true, log per-candidate scores to stderr. */
+  boostFloor: number;
+  boostFactor: number;
   debug?: boolean;
-  /** Ollama host, defaults to http://127.0.0.1:11434 */
-  host?: string;
-  /** Relative path for embedding cache, under cwd. */
+  /** Disk path for rerank pair-score cache. */
   cachePath?: string;
+  /** Where to cache downloaded model weights. */
+  modelCacheDir?: string;
 }
 
 export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   enabled: true,
-  model: 'nomic-embed-text',
-  threshold: 0.3,
-  gapFromTop: 0.05,
-  minKeep: 2,
-  pelicanWeight: 0.5,
-  cachePath: '.suggestor/embeddings.json',
+  model: 'onnx-community/bge-reranker-v2-m3-ONNX',
+  quantized: true,
+  // Lowered from 0.25 — jest test payloads are nearly empty (`buildTestPayload`
+  // only populates describe/it/selectors for cypress entries today), which
+  // deflates absolute sims even for real matches. 0.15 keeps real matches in
+  // while still cutting obvious noise. Raise once jest extraction lands.
+  threshold: 0.15,
+  // Dropped from 2 — minKeep=2 was force-keeping garbage when only one real
+  // match exists (e.g. saleor case: data.test.ts was alone, productVariantCache
+  // got pulled in purely by colocation). If cross-encoder is confident, trust
+  // it; if nothing matches, return nothing.
+  minKeep: 1,
+  // Additive boost: only sims above 0.2 lift the score. 0.5 factor scales the
+  // excess: a sim of 0.9 adds 0.35 to pelican's score, enough to push a
+  // MEDIUM result to HIGH. A sim of 0.25 adds 0.025 — barely moves the needle,
+  // which is correct: a borderline sim shouldn't overpromise confidence.
+  boostFloor: 0.2,
+  boostFactor: 0.5,
+  cachePath: '.suggestor/rerank-cache.json',
+  modelCacheDir: '.suggestor/models',
 };
-
-interface ICacheEntry {
-  hash: string;
-  embedding: number[];
-}
 
 export interface IRerankCandidate {
   testFile: string;
@@ -57,51 +70,49 @@ export interface IRerankCandidate {
 
 export interface IRerankResult {
   testFile: string;
-  /** Raw cosine similarity from the embedder (0–1). */
+  /** Raw cross-encoder relevance score for this pair (0–1, sigmoid). */
   similarity: number;
-  /** Hybrid combined score = pelicanWeight*pelican + (1-pelicanWeight)*sim. */
+  /** Pelican score lifted by the additive rerank boost. */
   combined: number;
   kept: boolean;
 }
 
 /**
- * Bi-encoder semantic reranker built on top of Ollama's embedding API.
+ * Cross-encoder-based semantic reranker.
  *
  * Pipeline:
- *   1. Embed source semantic payload (distilled exports/selectors/routes/imports).
- *   2. For each candidate test, embed both:
- *      a) The test-level payload (concat of all describe/it/selectors).
- *      b) Each `it` block separately — take the MAX sim across them.
- *      Final test sim = max(test-level, per-it max). Per-it max-pool is more
- *      discriminating: catches `it("creates new transaction")` matching
- *      `TransactionCreateStepOne` even when the concat blob is generic.
- *   3. Hybrid blend with pelican's structural scorer score so the embedder
- *      can boost or demote, but cannot single-handedly drop a strong
- *      structural signal (direct-import, selector-match).
- *   4. Adaptive filter: gap-from-top in the combined-score space.
+ *   1. Build a distilled query payload from the changed source file + diff.
+ *   2. For each candidate test, score both its full payload and each `it`-block
+ *      payload against the query via the cross-encoder. Final sim =
+ *      max(test-level, per-it max). The per-it max-pool catches narrow
+ *      matches an aggregate test blob would wash out.
+ *   3. Blend with pelican's structural scorer score so strong structural
+ *      signals (direct-import, selector-match) are not single-handedly
+ *      overridden by the model.
+ *   4. Absolute-threshold filter on the cross-encoder score, with `minKeep`
+ *      as a safety net.
  *
- * All embeddings are cached on disk keyed by content hash. Test-level and
- * per-it embeddings share the same cache file.
+ * Unlike the previous bi-encoder, there is no per-file embedding cache — the
+ * cross-encoder scores PAIRS, so caching is keyed on sha1(query+payload). When
+ * the diff changes the query changes, so the whole row is a miss. Acceptable:
+ * scoring 20–30 pairs via the ONNX model takes a few seconds.
  */
 export class SemanticReranker {
-  private client: Ollama;
   private config: IRerankerConfig;
-  private cache = new Map<string, ICacheEntry>();
-  private cacheDirty = false;
-  private cacheLoaded = false;
+  private crossEncoder: CrossEncoderReranker;
 
   constructor(config: Partial<IRerankerConfig> = {}) {
     this.config = { ...DEFAULT_RERANKER_CONFIG, ...config };
-    this.client = new Ollama({
-      host: this.config.host ?? 'http://127.0.0.1:11434',
-    });
+    const xencConfig: Partial<ICrossEncoderConfig> = {
+      model: this.config.model,
+      quantized: this.config.quantized,
+      cachePath: this.config.cachePath,
+      modelCacheDir: this.config.modelCacheDir,
+      debug: this.config.debug,
+    };
+    this.crossEncoder = new CrossEncoderReranker(xencConfig);
   }
 
-  /**
-   * Core entry point. Candidates carry their pelican scorer score so the
-   * reranker can blend, not just override. Returns combined ranking with
-   * a `kept` flag for the gap-from-top filter.
-   */
   async rerank(
     changedFile: string,
     candidates: IRerankCandidate[],
@@ -117,15 +128,11 @@ export class SemanticReranker {
       }));
     }
 
-    await this.loadCache();
-
-    // Symmetric source payload — distilled labels, no raw JSX.
+    // Build the query: source payload + optional diff snippet.
     const sourceEntry = registry.getFile(changedFile);
     const sourcePayload = sourceEntry
       ? buildSourcePayload(sourceEntry)
       : `path: ${changedFile}`;
-
-    // Real diff layered on top when available.
     const diff = await extractDiffPayload(changedFile, options.base, options.target);
     const diffSnippet = diff.fallback ? '' : `\nchanged lines:\n${diff.text}`;
     const queryText = sourcePayload + diffSnippet;
@@ -138,69 +145,123 @@ export class SemanticReranker {
         queryText.slice(0, 600) + (queryText.length > 600 ? '\n...[TRUNC]\n' : '\n'),
       );
     }
-    const queryEmbedding = await this.embed(queryText);
 
-    // Pass 1: score every candidate (test-level + per-it max-pool).
-    const scored: { testFile: string; similarity: number; pelicanScore: number }[] = [];
-    for (const cand of candidates) {
+    // Flatten all (query, payload) pairs into one list so the cross-encoder
+    // can batch-infer. We remember which slot belongs to which candidate so
+    // we can collapse back to per-candidate max at the end.
+    const payloads: string[] = [];
+    const perCand: {
+      testFile: string;
+      pelicanScore: number;
+      testLevelSlot: number;
+      itSlotStart: number;
+      itSlotEnd: number;
+      itTexts: string[];
+    }[] = [];
+
+    for (let ci = 0; ci < candidates.length; ci++) {
+      const cand = candidates[ci];
       const entry = registry.getFile(cand.testFile);
       if (!entry) {
-        scored.push({ testFile: cand.testFile, similarity: 0, pelicanScore: cand.pelicanScore });
+        perCand.push({
+          testFile: cand.testFile,
+          pelicanScore: cand.pelicanScore,
+          testLevelSlot: -1,
+          itSlotStart: 0,
+          itSlotEnd: 0,
+          itTexts: [],
+        });
         continue;
       }
 
       const testLevelPayload = buildTestPayload(entry);
-      const testLevelEmbedding = await this.embedCached(cand.testFile, testLevelPayload);
-      const testLevelSim = cosine(queryEmbedding, testLevelEmbedding);
+      const testLevelSlot = payloads.length;
+      payloads.push(testLevelPayload);
 
-      // Per-it max-pool: embed each it block separately, take max sim.
+      const itPayloads = buildItBlockPayloads(entry);
+      const itStart = payloads.length;
+      for (const p of itPayloads) payloads.push(p);
+      const itEnd = payloads.length;
+
+      perCand.push({
+        testFile: cand.testFile,
+        pelicanScore: cand.pelicanScore,
+        testLevelSlot,
+        itSlotStart: itStart,
+        itSlotEnd: itEnd,
+        itTexts: itPayloads.map((p) => p.split('\n').pop() ?? ''),
+      });
+    }
+
+    if (this.config.debug) {
+      process.stderr.write(
+        `[rerank:xenc] scoring ${payloads.length} pairs for ${candidates.length} candidates\n`,
+      );
+    }
+
+    const rawScores = await this.crossEncoder.scorePairs(queryText, payloads);
+
+    // Collapse pair scores back to per-candidate final sim.
+    const scored: {
+      testFile: string;
+      similarity: number;
+      pelicanScore: number;
+    }[] = [];
+    for (const pc of perCand) {
+      if (pc.testLevelSlot === -1) {
+        scored.push({ testFile: pc.testFile, similarity: 0, pelicanScore: pc.pelicanScore });
+        continue;
+      }
+      const testLevelSim = rawScores[pc.testLevelSlot] ?? 0;
       let perItMax = 0;
       let perItBest = '';
-      const itPayloads = buildItBlockPayloads(entry);
-      for (let i = 0; i < itPayloads.length; i++) {
-        const cacheKey = `${cand.testFile}#it${i}`;
-        const itEmbedding = await this.embedCached(cacheKey, itPayloads[i]);
-        const itSim = cosine(queryEmbedding, itEmbedding);
-        if (itSim > perItMax) {
-          perItMax = itSim;
-          perItBest = itPayloads[i].split('\n').pop() ?? '';
+      for (let k = pc.itSlotStart; k < pc.itSlotEnd; k++) {
+        const s = rawScores[k] ?? 0;
+        if (s > perItMax) {
+          perItMax = s;
+          perItBest = pc.itTexts[k - pc.itSlotStart] ?? '';
         }
       }
-
       const finalSim = Math.max(testLevelSim, perItMax);
 
       if (this.config.debug) {
         process.stderr.write(
-          `[rerank:dump] ${cand.testFile} testLevel=${testLevelSim.toFixed(3)} perItMax=${perItMax.toFixed(3)} (best: ${perItBest.slice(0, 60)}) → final=${finalSim.toFixed(3)}\n`,
+          `[rerank:dump] ${pc.testFile} testLevel=${testLevelSim.toFixed(3)} perItMax=${perItMax.toFixed(3)} (best: ${perItBest.slice(0, 60)}) → final=${finalSim.toFixed(3)}\n`,
         );
       }
 
       scored.push({
-        testFile: cand.testFile,
+        testFile: pc.testFile,
         similarity: finalSim,
-        pelicanScore: cand.pelicanScore,
+        pelicanScore: pc.pelicanScore,
       });
     }
 
-    await this.flushCache();
-
-    // Pass 2: hybrid blend + adaptive filter on COMBINED score.
-    const w = this.config.pelicanWeight;
-    const withCombined = scored.map((s) => ({
-      ...s,
-      combined: w * s.pelicanScore + (1 - w) * s.similarity,
-    }));
+    // Hybrid blend + absolute-threshold filter. Threshold is on raw
+    // cross-encoder similarity (calibrated via sigmoid), not combined, so
+    // pelican's colocation/weak signals cannot float garbage above the line.
+    //
+    // minKeep is a safety net, but only when at least one candidate actually
+    // passes the reranker threshold. If every candidate is below threshold we
+    // trust the model and return nothing — that's the honest answer for a
+    // file with no real test coverage (e.g. saleor's LanguageSwitch).
+    const floor = this.config.boostFloor;
+    const factor = this.config.boostFactor;
+    const withCombined = scored.map((s) => {
+      const boost = Math.max(0, s.similarity - floor) * factor;
+      return {
+        ...s,
+        combined: Math.min(1, s.pelicanScore + boost),
+      };
+    });
     const sorted = [...withCombined].sort((a, b) => b.combined - a.combined);
-    const topCombined = sorted[0]?.combined ?? 0;
-    const gapCutoff = topCombined - this.config.gapFromTop;
-
+    const anyPasses = sorted.some((r) => r.similarity >= this.config.threshold);
     const keptSet = new Set<string>();
     for (let i = 0; i < sorted.length; i++) {
       const r = sorted[i];
-      const passesAbsolute = r.combined >= this.config.threshold;
-      const passesGap = r.combined >= gapCutoff;
-      const withinMinKeep = i < this.config.minKeep;
-      if (passesAbsolute && (passesGap || withinMinKeep)) {
+      const passesThreshold = r.similarity >= this.config.threshold;
+      const withinMinKeep = anyPasses && i < this.config.minKeep;
+      if (passesThreshold || withinMinKeep) {
         keptSet.add(r.testFile);
       }
     }
@@ -223,85 +284,12 @@ export class SemanticReranker {
     if (this.config.debug) {
       const dropped = scored.length - keptSet.size;
       process.stderr.write(
-        `[rerank:summary] kept ${keptSet.size}/${scored.length} (top=${topCombined.toFixed(3)} cutoff=${gapCutoff.toFixed(3)} dropped=${dropped}, pelicanWeight=${w})\n`,
+        `[rerank:summary] kept ${keptSet.size}/${scored.length} (threshold=${this.config.threshold}, dropped=${dropped}, boost floor=${floor} factor=${factor})\n`,
       );
     }
 
     return results;
   }
-
-  private async embed(text: string): Promise<number[]> {
-    const res = await this.client.embeddings({
-      model: this.config.model,
-      prompt: text,
-    });
-    return res.embedding;
-  }
-
-  /**
-   * Disk-backed embedding cache. Key is an arbitrary string (test path, or
-   * `${testPath}#itN`). Value is (payload hash, embedding). Re-embeds when
-   * the payload hash changes — i.e. when the registry re-extracted the test
-   * and its content changed.
-   */
-  private async embedCached(key: string, payload: string): Promise<number[]> {
-    const hash = sha1(payload);
-    const existing = this.cache.get(key);
-    if (existing && existing.hash === hash) {
-      return existing.embedding;
-    }
-    const embedding = await this.embed(payload);
-    this.cache.set(key, { hash, embedding });
-    this.cacheDirty = true;
-    return embedding;
-  }
-
-  private async loadCache(): Promise<void> {
-    if (this.cacheLoaded) return;
-    this.cacheLoaded = true;
-    const cachePath = this.config.cachePath ?? DEFAULT_RERANKER_CONFIG.cachePath!;
-    try {
-      const raw = await fs.readFile(cachePath, 'utf-8');
-      const data = JSON.parse(raw) as Record<string, ICacheEntry>;
-      for (const [k, v] of Object.entries(data)) {
-        this.cache.set(k, v);
-      }
-    } catch {
-      // missing / malformed — start empty
-    }
-  }
-
-  private async flushCache(): Promise<void> {
-    if (!this.cacheDirty) return;
-    const cachePath = this.config.cachePath ?? DEFAULT_RERANKER_CONFIG.cachePath!;
-    try {
-      await fs.mkdir(path.dirname(cachePath), { recursive: true });
-      const obj: Record<string, ICacheEntry> = {};
-      for (const [k, v] of this.cache) obj[k] = v;
-      await fs.writeFile(cachePath, JSON.stringify(obj), 'utf-8');
-      this.cacheDirty = false;
-    } catch {
-      // non-fatal — rerunning will just re-embed
-    }
-  }
-}
-
-function sha1(s: string): string {
-  return createHash('sha1').update(s).digest('hex');
-}
-
-function cosine(a: number[], b: number[]): number {
-  if (a.length !== b.length || a.length === 0) return 0;
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  const denom = Math.sqrt(na) * Math.sqrt(nb);
-  return denom === 0 ? 0 : dot / denom;
 }
 
 export type { IFileEntry };
