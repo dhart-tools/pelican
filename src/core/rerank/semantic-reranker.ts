@@ -37,6 +37,12 @@ export interface IRerankerConfig {
   cePrefilter?: boolean;
   /** Sigmoid score below which CE will drop a pair. Default 0.08. */
   cePrefilterThreshold?: number;
+  /**
+   * When true, the reranker asks the LLM for a short explanation per test.
+   * When false (default), only the boolean verdict is requested — much faster,
+   * result list contains files only, no reasons.
+   */
+  explanations?: boolean;
 }
 
 export interface IRerankerProgress {
@@ -58,6 +64,7 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   lockPath: '.pelican/pelican.lock',
   cePrefilter: false,
   cePrefilterThreshold: 0.08,
+  explanations: false,
 };
 
 export interface IRerankCandidate {
@@ -116,6 +123,7 @@ export class SemanticReranker {
       fileContent: this.config.fileContent,
       base: this.config.base,
       target: this.config.target,
+      explanations: this.config.explanations === true,
     });
     this.lock = new PelicanLock(this.config.lockPath);
     if (this.config.cePrefilter) {

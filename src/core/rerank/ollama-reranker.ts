@@ -103,12 +103,19 @@ export interface IOllamaRerankerConfig {
   base?: string;
   /** Target git ref for diff extraction. Default: HEAD */
   target?: string;
+  /**
+   * When true, the LLM also returns a short explanation per test. When false
+   * (default), only the boolean verdict is returned — much faster since decode
+   * shrinks from ~25 tokens to ~3. The verdict itself is unchanged either way.
+   */
+  explanations?: boolean;
 }
 
 export const DEFAULT_OLLAMA_CONFIG: IOllamaRerankerConfig = {
   model: "qwen3.5:latest",
   host: "http://localhost:11434",
   concurrency: 2,
+  explanations: false,
 };
 
 export interface IOllamaRerankResult {
@@ -194,27 +201,39 @@ CANDIDATE TEST:
 `;
 }
 
-function buildKVSuffix(testBlock: string): string {
+function buildKVSuffix(testBlock: string, withExplanation: boolean): string {
+  const trailer = withExplanation
+    ? `Reply in JSON only — no markdown, no text outside the JSON object.
+Keep "reason" to ONE short sentence, max 80 characters:
+{"relevant": true|false, "reason": "one short sentence"}`
+    : `Reply in JSON only — no markdown, no text outside the JSON object:
+{"relevant": true|false}`;
+
   return `${testBlock}
 
 A test is relevant if its assertions have any behavioral dependency on the source file, even indirectly (through a parent component, a shared hook, a util, or an API layer). A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
 
-Reply in JSON only — no markdown, no text outside the JSON object.
-Keep "reason" to ONE short sentence, max 80 characters:
-{"relevant": true|false, "reason": "one short sentence"}`;
+${trailer}`;
 }
 
-// JSON schema enforced by Ollama's structured-output mode. The llama.cpp
-// grammar backing this respects `maxLength`, so the model is forced to stop
-// well before the current ~250-char reason outputs. Verdict bit emits first,
-// so truncating the prose doesn't change the decision.
-const VERDICT_SCHEMA = {
+// JSON schemas enforced by Ollama's structured-output mode. llama.cpp grammar
+// forces the model to stop at `maxLength`. Verdict bit emits first, so cutting
+// the prose can only change latency, not the decision.
+const VERDICT_SCHEMA_WITH_REASON = {
   type: "object",
   properties: {
     relevant: { type: "boolean" },
     reason: { type: "string", maxLength: 80 },
   },
   required: ["relevant", "reason"],
+} as const;
+
+const VERDICT_SCHEMA_BOOL_ONLY = {
+  type: "object",
+  properties: {
+    relevant: { type: "boolean" },
+  },
+  required: ["relevant"],
 } as const;
 
 /**
@@ -465,9 +484,13 @@ export class OllamaReranker {
       );
     }
 
+    const withExplanation = this.config.explanations === true;
+    const schema = withExplanation ? VERDICT_SCHEMA_WITH_REASON : VERDICT_SCHEMA_BOOL_ONLY;
+    const numPredict = withExplanation ? 96 : 16;
+
     for (let i = 0; i < total; i++) {
       const tb = testBlocks[i];
-      const prompt = prefix + buildKVSuffix(tb.block);
+      const prompt = prefix + buildKVSuffix(tb.block, withExplanation);
       const callStart = Date.now();
 
       if (this.config.debug) {
@@ -492,8 +515,8 @@ export class OllamaReranker {
           stream: false,
           think: false,
           keep_alive: -1,
-          format: VERDICT_SCHEMA,
-          options: { temperature: 0, num_predict: 96 },
+          format: schema,
+          options: { temperature: 0, num_predict: numPredict },
         });
         const callMs = Date.now() - callStart;
         // `response` carries perf counters from Ollama in ns — convert to ms
