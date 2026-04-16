@@ -3,7 +3,8 @@ import * as fs from "fs/promises";
 import { promisify } from "util";
 
 import { Ollama } from "ollama";
-import pLimit from "p-limit";
+// pLimit retained as dependency for potential single-pair fallback
+// import pLimit from "p-limit";
 
 import { IFileEntry } from "@/types/registry";
 
@@ -197,6 +198,47 @@ Explain in 2-3 sentences what the test verifies and how it connects to the sourc
 
 Reply in JSON only — no markdown, no text outside the JSON object:
 {"relevant": true|false, "reason": "2-3 sentence explanation"}`;
+}
+
+/**
+ * Batch prompt: one source file, multiple candidate tests in a single LLM call.
+ * Saves N-1 inference startups per source file vs one-at-a-time scoring.
+ */
+function buildBatchPrompt(
+  sourceBlock: string,
+  testBlocks: Array<{ id: number; testFile: string; block: string }>,
+): string {
+  const allBlocks = [sourceBlock, ...testBlocks.map((t) => t.block)];
+  const { compressedBlocks, legend } = compressSymbols(allBlocks);
+  const [compSource, ...compTests] = compressedBlocks;
+
+  const legendSection = legend ? `\nSymbol legend — ${legend}\n` : "";
+
+  const testSection = testBlocks
+    .map((t, i) => `--- TEST #${t.id} (${t.testFile}) ---\n${compTests[i]}`)
+    .join("\n\n");
+
+  return `You are a senior developer deciding which tests could break after a code change.
+
+Read the source file carefully. Understand what it does — its logic, state management, data transformations, side effects, UI behavior, and the contract it exposes to consumers.
+
+Then read each candidate test. For each one, decide: if a bug were introduced in the source file, would this test have any chance of catching it?
+${legendSection}
+SOURCE FILE (changed):
+${compSource}
+
+CANDIDATE TESTS:
+${testSection}
+
+Think about each test independently:
+- What logic, behavior, or data flow does the source file own?
+- What does the test actually assert on — what would fail if the source file had a regression?
+- Is there a causal chain from the source file's behavior to the test's assertions, even if indirect (through a parent component, a shared hook, a util, or an API layer)?
+
+A test is relevant even if the connection is indirect. A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
+
+Reply with a JSON array — one entry per test, in order. No markdown, no text outside the array:
+[{"id": 1, "relevant": true|false, "reason": "2-3 sentence explanation"}, ...]`;
 }
 
 /**
@@ -415,26 +457,103 @@ export class OllamaReranker {
       );
     }
 
-    const limit = pLimit(this.config.concurrency);
-    const total = testEntries.length;
+    // Build all test blocks upfront
+    const testBlocks: Array<{ id: number; testFile: string; block: string }> = [];
+    for (let i = 0; i < testEntries.length; i++) {
+      const { testFile, entry } = testEntries[i];
+      const block = await this.buildTestBlock(testFile, entry, fileContentConfig);
+      testBlocks.push({ id: i + 1, testFile, block });
+      if (this.config.debug) {
+        process.stderr.write(
+          `[ollama] test block for ${testFile} (${block.length} chars):\n${block.slice(0, 200)}\n...\n`,
+        );
+      }
+    }
+
+    // Chunk into batches of BATCH_SIZE, one LLM call per batch.
+    // Keeps prompts manageable while still cutting total calls significantly.
+    const BATCH_SIZE = 3;
+    const total = testBlocks.length;
+    const allResults: IOllamaRerankResult[] = [];
     let scored = 0;
 
-    return Promise.all(
-      testEntries.map(({ testFile, entry }) =>
-        limit(async () => {
-          const testBlock = await this.buildTestBlock(testFile, entry, fileContentConfig);
-          if (this.config.debug) {
-            process.stderr.write(
-              `[ollama] test block for ${testFile} (${testBlock.length} chars):\n${testBlock.slice(0, 200)}\n...\n`,
-            );
+    for (let batchStart = 0; batchStart < total; batchStart += BATCH_SIZE) {
+      const batch = testBlocks.slice(batchStart, batchStart + BATCH_SIZE);
+      const prompt = buildBatchPrompt(sourceBlock, batch);
+
+      if (this.config.debug) {
+        const debugFile = ".pelican/debug-rerank.log";
+        const sep = "=".repeat(80);
+        const logEntry = [
+          `\n${sep}`,
+          `[ollama] BATCH SCORING: ${changedFile} (batch ${Math.floor(batchStart / BATCH_SIZE) + 1}, ${batch.length} candidates)`,
+          `${sep}`,
+          `── PROMPT (${prompt.length} chars) ──`,
+          prompt.slice(0, 2000),
+          prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : "",
+          `── END PROMPT ──\n`,
+        ].join("\n");
+        await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+      }
+
+      try {
+        // No `format: "json"` — that constrains to a single JSON object.
+        // Batch response is an array; prompt instructions + temperature=0 suffice.
+        const response = await this.ollama.generate({
+          model: this.config.model,
+          prompt,
+          stream: false,
+          think: false,
+          keep_alive: -1,
+          options: { temperature: 0, num_predict: 256 * batch.length },
+        });
+
+        if (this.config.debug) {
+          const debugFile = ".pelican/debug-rerank.log";
+          const logEntry = [`── RAW RESPONSE ──`, response.response, `── END RESPONSE ──`, ``].join(
+            "\n",
+          );
+          await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+        }
+
+        const expectedIds = batch.map((t) => t.id);
+        const parsed = parseBatchResponse(response.response, expectedIds);
+
+        for (const tb of batch) {
+          const verdict = parsed.get(tb.id);
+          if (verdict) {
+            allResults.push({ testFile: tb.testFile, ...verdict });
+            if (this.config.debug) {
+              const summary = `[ollama] ${tb.testFile}: relevant=${verdict.relevant} — ${verdict.reason}\n`;
+              await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
+              process.stderr.write(summary);
+            }
+          } else {
+            allResults.push({
+              testFile: tb.testFile,
+              relevant: true,
+              reason: "Not returned in batch response; included as precaution.",
+            });
           }
-          const result = await this.scoreOne(testFile, sourceBlock, testBlock);
-          scored++;
-          onPairScored?.(scored, total);
-          return result;
-        }),
-      ),
-    );
+        }
+      } catch (err) {
+        if (this.config.debug) {
+          process.stderr.write(`[ollama] batch scoring error for ${changedFile}: ${err}\n`);
+        }
+        for (const tb of batch) {
+          allResults.push({
+            testFile: tb.testFile,
+            relevant: true,
+            reason: "LLM unavailable; included as precaution.",
+          });
+        }
+      }
+
+      scored += batch.length;
+      onPairScored?.(scored, total);
+    }
+
+    return allResults;
   }
 
   /**
@@ -568,4 +687,60 @@ function parseResponse(text: string): { relevant: boolean; reason: string } {
     relevant: !looksFalse,
     reason: "Model response could not be parsed; included as precaution.",
   };
+}
+
+/**
+ * Parse a batch response — expects a JSON array of {id, relevant, reason}.
+ * Falls back to extracting individual objects if the array parse fails.
+ */
+function parseBatchResponse(
+  text: string,
+  expectedIds: number[],
+): Map<number, { relevant: boolean; reason: string }> {
+  const results = new Map<number, { relevant: boolean; reason: string }>();
+  const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+
+  // Try parsing as JSON array first
+  try {
+    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (arrMatch) {
+      const arr = JSON.parse(arrMatch[0]);
+      if (Array.isArray(arr)) {
+        for (const item of arr) {
+          const id = typeof item.id === "number" ? item.id : parseInt(item.id, 10);
+          if (!expectedIds.includes(id)) continue;
+          const reason = typeof item.reason === "string" ? item.reason.trim() : "No reason provided.";
+          let relevant: boolean;
+          if (typeof item.relevant === "boolean") {
+            relevant = item.relevant;
+          } else if (typeof item.relevant === "string") {
+            relevant = /^(true|yes|1)$/i.test(item.relevant.trim());
+          } else {
+            relevant = true;
+          }
+          results.set(id, { relevant, reason });
+        }
+      }
+    }
+  } catch {
+    // fall through to object-by-object extraction
+  }
+
+  // Fallback: extract individual JSON objects for any missing IDs
+  if (results.size < expectedIds.length) {
+    const objPattern = /\{[^{}]*"id"\s*:\s*(\d+)[^{}]*\}/g;
+    let match;
+    while ((match = objPattern.exec(cleaned)) !== null) {
+      try {
+        const obj = JSON.parse(match[0]);
+        const id = typeof obj.id === "number" ? obj.id : parseInt(obj.id, 10);
+        if (!expectedIds.includes(id) || results.has(id)) continue;
+        results.set(id, parseResponse(match[0]));
+      } catch {
+        // skip malformed object
+      }
+    }
+  }
+
+  return results;
 }
