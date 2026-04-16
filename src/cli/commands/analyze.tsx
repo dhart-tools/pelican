@@ -295,7 +295,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // that evict each other's cache.
         setState((s) => ({ ...s, activeFiles: [...changedFiles] }));
 
-        const rerankThreshold = Math.max(config.scoring.minConfidence, 0.6);
+        const rerankThreshold = config.scoring.minConfidence;
 
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
@@ -524,7 +524,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }
 
     const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
-    const rerankThreshold = Math.max(config.scoring.minConfidence, 0.6);
+    const rerankThreshold = config.scoring.minConfidence;
     const preRerankCount = relevant.length;
     let reranked: IAnalyzeResult['suggestedTests'];
     if (rerankerUnavailable) {
