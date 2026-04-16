@@ -459,9 +459,11 @@ export class OllamaReranker {
     const allResults: IOllamaRerankResult[] = [];
     let scored = 0;
     const fileStart = Date.now();
-    process.stderr.write(
-      `[ollama-timing] file=${changedFile} tests=${total} prefix=${prefix.length}ch source=${sourceBlock.length}ch\n`,
-    );
+    if (this.config.debug) {
+      process.stderr.write(
+        `[ollama-timing] file=${changedFile} tests=${total} prefix=${prefix.length}ch source=${sourceBlock.length}ch\n`,
+      );
+    }
 
     for (let i = 0; i < total; i++) {
       const tb = testBlocks[i];
@@ -502,9 +504,11 @@ export class OllamaReranker {
         const evalMs = r.eval_duration ? Math.round(r.eval_duration / 1e6) : -1;
         const promptTokens = r.prompt_eval_count ?? -1;
         const outputTokens = r.eval_count ?? -1;
-        process.stderr.write(
-          `[ollama-timing] ${i + 1}/${total} ${tb.testFile} total=${callMs}ms prefill=${promptEvalMs}ms(${promptTokens}tok) decode=${evalMs}ms(${outputTokens}tok)\n`,
-        );
+        if (this.config.debug) {
+          process.stderr.write(
+            `[ollama-timing] ${i + 1}/${total} ${tb.testFile} total=${callMs}ms prefill=${promptEvalMs}ms(${promptTokens}tok) decode=${evalMs}ms(${outputTokens}tok)\n`,
+          );
+        }
 
         if (this.config.debug) {
           const debugFile = ".pelican/debug-rerank.log";
@@ -537,9 +541,11 @@ export class OllamaReranker {
       onPairScored?.(scored, total);
     }
 
-    process.stderr.write(
-      `[ollama-timing] file=${changedFile} done total=${Date.now() - fileStart}ms tests=${total}\n`,
-    );
+    if (this.config.debug) {
+      process.stderr.write(
+        `[ollama-timing] file=${changedFile} done total=${Date.now() - fileStart}ms tests=${total}\n`,
+      );
+    }
 
     return allResults;
   }
