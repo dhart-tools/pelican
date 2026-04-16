@@ -149,6 +149,7 @@ function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): I
           fileContent: user.rerank.fileContent
             ? { ...user.rerank.fileContent }
             : undefined,
+          explanations: user.rerank.explanations,
         }
       : undefined,
   };

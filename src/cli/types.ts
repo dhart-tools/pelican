@@ -222,6 +222,12 @@ export interface IProjectConfig {
        */
       stripKeywords?: string[];
     };
+    /**
+     * Ask the LLM for a short explanation per test. Default: false.
+     * When false, results show files only, reranker runs much faster since
+     * decode shrinks from ~25 tokens to ~3 per call.
+     */
+    explanations?: boolean;
   };
 }
 

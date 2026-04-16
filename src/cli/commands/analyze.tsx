@@ -236,6 +236,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
           ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
           ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+          ...(config.rerank?.explanations !== undefined && {
+            explanations: config.rerank.explanations,
+          }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
           onProgress: (info) => {
@@ -461,6 +464,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
     ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
     ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+    ...(config.rerank?.explanations !== undefined && {
+      explanations: config.rerank.explanations,
+    }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
     onProgress: (info) => {
