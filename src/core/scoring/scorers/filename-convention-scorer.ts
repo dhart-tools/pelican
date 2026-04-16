@@ -188,8 +188,15 @@ export class FilenameConventionScorer extends BaseScorer {
       base = path.basename(filePath).replace(SOURCE_EXT_RE, '');
     }
 
-    // `fileManager/index.ts` → use parent dir as the effective basename.
-    if (INDEX_BASENAMES.has(base.toLowerCase())) {
+    // Dotted index variant: `index.cognito.tsx` → extract "cognito" as basename.
+    // Split on dots, check if first segment is an index name. If remaining
+    // segments exist, use them as the effective basename (they carry the real
+    // identity). Falls through to plain parent-dir logic for bare `index.ts`.
+    const dotParts = base.split('.');
+    if (dotParts.length > 1 && INDEX_BASENAMES.has(dotParts[0].toLowerCase())) {
+      base = dotParts.slice(1).join('.');
+    } else if (INDEX_BASENAMES.has(base.toLowerCase())) {
+      // `fileManager/index.ts` → use parent dir as the effective basename.
       base = path.basename(path.dirname(filePath));
     }
 
@@ -197,11 +204,20 @@ export class FilenameConventionScorer extends BaseScorer {
   }
 
   private parentDirTokens(filePath: string, isTest: boolean): string[] {
-    // When basename is `index`, parent dir already became the basename.
+    // When basename is plain `index` (no dotted variant), parent dir already
+    // became the basename — step up one more level for the parent-dir context.
     const baseLower = path.basename(filePath).replace(isTest ? TEST_SUFFIX_RE : SOURCE_EXT_RE, '').toLowerCase();
-    const dir = INDEX_BASENAMES.has(baseLower)
-      ? path.dirname(path.dirname(filePath))
-      : path.dirname(filePath);
+    const dotParts = baseLower.split('.');
+    const isPlainIndex =
+      INDEX_BASENAMES.has(baseLower) ||
+      (dotParts.length === 1 && INDEX_BASENAMES.has(dotParts[0]));
+    // Dotted index variants (index.cognito.tsx) extract their basename from the
+    // dot segments, so parent dir is still the immediate directory — no skip.
+    const isDottedIndex = dotParts.length > 1 && INDEX_BASENAMES.has(dotParts[0]);
+    const dir =
+      isPlainIndex && !isDottedIndex
+        ? path.dirname(path.dirname(filePath))
+        : path.dirname(filePath);
     const name = path.basename(dir);
     if (!name || name === '.' || name === '/') return [];
     return this.splitTokens(name).filter((t) => t.length >= MIN_TOKEN_LEN && !STOPWORDS.has(t));

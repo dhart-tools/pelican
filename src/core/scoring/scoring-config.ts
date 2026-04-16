@@ -86,6 +86,13 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'describe-block',
     weight: 0.7,
   },
+  [EScorerType.DEPENDENT_SELECTOR]: {
+    name: EScorerType.DEPENDENT_SELECTOR,
+    version: '1.0.0',
+    description: 'Scores based on selectors in files that import the changed file (reverse dependency)',
+    type: 'dependent-selector',
+    weight: 0.65,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {

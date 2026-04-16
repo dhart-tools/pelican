@@ -94,6 +94,7 @@ export enum EScorerType {
   API_INTERCEPT = 'api-intercept',
   COLOCATION = 'colocation',
   DESCRIBE_BLOCK = 'describe-block',
+  DEPENDENT_SELECTOR = 'dependent-selector',
 }
 
 export enum EImportExportType {

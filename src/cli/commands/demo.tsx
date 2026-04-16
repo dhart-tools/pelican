@@ -16,6 +16,7 @@ import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
+import { DependentSelectorScorer } from '@/core/scoring/scorers/dependent-selector-scorer';
 import { DescribeBlockScorer } from '@/core/scoring/scorers/describe-block-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
@@ -446,6 +447,7 @@ function DemoApp() {
         new APIInterceptScorer(),
         new ColocationScorer(),
         new DescribeBlockScorer(),
+        new DependentSelectorScorer(),
       ]) {
         if (config.scoring.enabledScorers.includes(scorer.name)) engine.register(scorer);
       }

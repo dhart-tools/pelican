@@ -13,6 +13,7 @@ import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
+import { DependentSelectorScorer } from '@/core/scoring/scorers/dependent-selector-scorer';
 import { DescribeBlockScorer } from '@/core/scoring/scorers/describe-block-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
@@ -27,6 +28,7 @@ import {
   ModelUnavailableError,
   SemanticReranker,
 } from '@/core/rerank/semantic-reranker';
+import { getChangedFiles } from '@/core/rerank/diff-extractor';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -54,6 +56,7 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new APIInterceptScorer(),
     new ColocationScorer(),
     new DescribeBlockScorer(),
+    new DependentSelectorScorer(),
   ];
 
   for (const scorer of allScorers) {
@@ -208,7 +211,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           const raw = Array.isArray(options.files) ? options.files : [options.files];
           changedFiles = raw.flatMap((f) => f.split(',')).map((f) => f.trim()).filter(Boolean);
         } else {
-          throw new Error('No --files specified. Git auto-detection not yet implemented.');
+          changedFiles = await getChangedFiles(options.base, options.target);
+          if (changedFiles.length === 0) {
+            throw new Error('No changed files detected. Specify --files or make changes in git.');
+          }
         }
 
         setState((s) => ({ ...s, changedFiles }));
@@ -230,6 +236,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
           ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
           ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+          ...(options.base && { base: options.base }),
+          ...(options.target && { target: options.target }),
           onProgress: (info) => {
             if (info.status === 'scoring') {
               setState((s) => ({
@@ -281,6 +289,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // reranking is async/GPU-bound but already concurrency-limited internally.
         setState((s) => ({ ...s, activeFiles: [...changedFiles] }));
 
+        const rerankThreshold = Math.max(config.scoring.minConfidence, 0.6);
+
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
@@ -290,11 +300,12 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           if (rerankerUnavailable) {
             finalResults = pelicanOnly(relevant, thresholds);
           } else {
+            const rerankCandidates = relevant.filter((r) => r.score >= rerankThreshold);
             try {
               finalResults = await applyReranker(
                 reranker,
                 changedFile,
-                relevant,
+                rerankCandidates,
                 registry,
                 thresholds,
               );
@@ -407,12 +418,23 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     registry.deserialize(builtRegistry.serialize());
   }
 
-  const changedFiles = options.files
-    ? (Array.isArray(options.files) ? options.files : [options.files])
-        .flatMap((f: string) => f.split(','))
-        .map((f: string) => f.trim())
-        .filter(Boolean)
-    : [];
+  let changedFiles: string[];
+  if (options.files) {
+    changedFiles = (Array.isArray(options.files) ? options.files : [options.files])
+      .flatMap((f: string) => f.split(','))
+      .map((f: string) => f.trim())
+      .filter(Boolean);
+  } else {
+    changedFiles = await getChangedFiles(options.base, options.target);
+    if (changedFiles.length === 0) {
+      process.stderr.write('[pelican] No changed files detected. Specify --files or make changes in git.\n');
+      console.log(JSON.stringify({ results: [] }, null, 2));
+      return;
+    }
+    if (debug) {
+      debugLog(`auto-detected ${changedFiles.length} changed file(s): ${changedFiles.join(', ')}`);
+    }
+  }
 
   const scoringConfig = toScoringConfig(config);
   const engine = new ScoringEngine(scoringConfig, registry);
@@ -433,6 +455,8 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
     ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
     ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+    ...(options.base && { base: options.base }),
+    ...(options.target && { target: options.target }),
     onProgress: (info) => {
       if (info.status === 'scoring' && info.scored != null && info.total != null) {
         process.stderr.write(`[pelican] reranking ${info.scored}/${info.total}\n`);
@@ -488,16 +512,18 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }
 
     const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+    const rerankThreshold = Math.max(config.scoring.minConfidence, 0.6);
     const preRerankCount = relevant.length;
     let reranked: IAnalyzeResult['suggestedTests'];
     if (rerankerUnavailable) {
       reranked = pelicanOnly(relevant, thresholds);
     } else {
+      const rerankCandidates = relevant.filter((r) => r.score >= rerankThreshold);
       try {
         reranked = await applyReranker(
           reranker,
           changedFile,
-          relevant,
+          rerankCandidates,
           registry,
           thresholds,
         );

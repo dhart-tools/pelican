@@ -98,6 +98,10 @@ export interface IOllamaRerankerConfig {
   concurrency: number;
   debug?: boolean;
   fileContent?: Partial<IFileContentConfig>;
+  /** Base git ref for diff extraction. Default: HEAD~1 */
+  base?: string;
+  /** Target git ref for diff extraction. Default: HEAD */
+  target?: string;
 }
 
 export const DEFAULT_OLLAMA_CONFIG: IOllamaRerankerConfig = {
@@ -302,15 +306,19 @@ async function buildAdaptiveSourcePayload(
   entry: IFileEntry,
   changedFile: string,
   fileContentConfig: IFileContentConfig,
+  base?: string,
+  target?: string,
 ): Promise<string> {
   const identity = buildCompactIdentity(entry);
+  const baseRef = base ?? "HEAD~1";
+  const targetRef = target ?? "HEAD";
 
   // 1. Try git diff with generous unified context.
   //    Diff is already targeted — no keyword stripping needed (LLMs read code natively).
   try {
     const { stdout } = await execFileP(
       "git",
-      ["diff", "--unified=8", "HEAD~1..HEAD", "--", changedFile],
+      ["diff", "--unified=8", `${baseRef}..${targetRef}`, "--", changedFile],
       { cwd: process.cwd(), maxBuffer: 1024 * 1024 },
     );
     if (stdout.trim().length > 30) {
@@ -385,6 +393,7 @@ export class OllamaReranker {
     sourceEntry: IFileEntry,
     changedFile: string,
     testEntries: Array<{ testFile: string; entry: IFileEntry | undefined }>,
+    onPairScored?: (scored: number, total: number) => void,
   ): Promise<IOllamaRerankResult[]> {
     const fileContentConfig: IFileContentConfig = {
       ...DEFAULT_FILE_CONTENT_CONFIG,
@@ -396,6 +405,8 @@ export class OllamaReranker {
       sourceEntry,
       changedFile,
       fileContentConfig,
+      this.config.base,
+      this.config.target,
     );
 
     if (this.config.debug) {
@@ -405,6 +416,8 @@ export class OllamaReranker {
     }
 
     const limit = pLimit(this.config.concurrency);
+    const total = testEntries.length;
+    let scored = 0;
 
     return Promise.all(
       testEntries.map(({ testFile, entry }) =>
@@ -415,7 +428,10 @@ export class OllamaReranker {
               `[ollama] test block for ${testFile} (${testBlock.length} chars):\n${testBlock.slice(0, 200)}\n...\n`,
             );
           }
-          return this.scoreOne(testFile, sourceBlock, testBlock);
+          const result = await this.scoreOne(testFile, sourceBlock, testBlock);
+          scored++;
+          onPairScored?.(scored, total);
+          return result;
         }),
       ),
     );

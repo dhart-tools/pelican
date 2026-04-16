@@ -22,6 +22,10 @@ export interface IRerankerConfig {
   debug?: boolean;
   lockPath?: string;
   onProgress?: (info: IRerankerProgress) => void;
+  /** Base git ref for diff extraction. Flows through to OllamaReranker. */
+  base?: string;
+  /** Target git ref for diff extraction. Flows through to OllamaReranker. */
+  target?: string;
 }
 
 export interface IRerankerProgress {
@@ -95,6 +99,8 @@ export class SemanticReranker {
       concurrency: this.config.concurrency,
       debug: this.config.debug,
       fileContent: this.config.fileContent,
+      base: this.config.base,
+      target: this.config.target,
     });
     this.lock = new PelicanLock(this.config.lockPath);
   }
@@ -192,8 +198,14 @@ export class SemanticReranker {
         }));
 
         this.config.onProgress?.({ status: 'scoring', scored: 0, total: toScore.length });
-        const llmResults = await this.ollama.rerankPairs(sourceEntry, changedFile, testEntries);
-        let scored = 0;
+        const llmResults = await this.ollama.rerankPairs(
+          sourceEntry,
+          changedFile,
+          testEntries,
+          (scored, total) => {
+            this.config.onProgress?.({ status: 'scoring', scored, total });
+          },
+        );
 
         for (const llm of llmResults) {
           const cand = toScore.find((c) => c.testFile === llm.testFile)!;
@@ -216,8 +228,6 @@ export class SemanticReranker {
               fromCache: false,
             });
           }
-          scored++;
-          this.config.onProgress?.({ status: 'scoring', scored, total: toScore.length });
         }
       } else {
         // Source file not in registry — can't build LLM prompt, pass through with pelican scores

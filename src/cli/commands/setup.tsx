@@ -63,18 +63,35 @@ export async function detectProjectConfig(): Promise<{
     ],
     ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
     analyzers: {
-      enabled: ['source-extractor', 'cypress-extractor', 'import-graph-analyzer'],
+      enabled: [
+        'source-extractor',
+        'cypress-extractor',
+        'import-graph-analyzer',
+        'route-analyzer',
+        'i18n-analyzer',
+      ],
       sourceExtractor: { enabled: true, selectorStrategy: ['data-testid', 'data-cy'] },
       cypressExtractor: { enabled: true },
       reduxChain: { enabled: false, storeDirs: [] },
-      i18n: { enabled: false, library: 'react-i18next', localesPath: '' },
-      routeAnalyzer: { enabled: false, routerFile: '' },
+      i18n: { enabled: true, library: 'react-i18next', localesPath: '' },
+      routeAnalyzer: { enabled: true, routerFile: '' },
       importGraph: { enabled: true },
     },
     scoring: {
-      enabledScorers: ['direct-import', 'selector-match', 'filename-match', 'transitive-import'],
+      enabledScorers: [
+        'direct-import',
+        'selector-match',
+        'selector-id-match',
+        'filename-match',
+        'transitive-import',
+        'api-intercept',
+        'colocation',
+        'describe-block',
+        'translation-match',
+        'dependent-selector',
+      ],
       ubiquityThreshold: 0.7,
-      minConfidence: 0.4,
+      minConfidence: 0.6,
       highConfidence: 0.8,
     },
   };
@@ -96,8 +113,15 @@ export async function detectProjectConfig(): Promise<{
 
     if (pkg.dependencies?.['@reduxjs/toolkit'] || pkg.dependencies?.redux) {
       config.analyzers.reduxChain.enabled = true;
-      config.analyzers.enabled.push('redux-chain-analyzer');
-      config.scoring.enabledScorers.push('redux-chain');
+      if (!config.analyzers.enabled.includes('redux-chain-analyzer')) {
+        config.analyzers.enabled.push('redux-chain-analyzer');
+      }
+      if (!config.scoring.enabledScorers.includes('redux-chain')) {
+        config.scoring.enabledScorers.push('redux-chain');
+      }
+      if (!config.scoring.enabledScorers.includes('redux-consumer')) {
+        config.scoring.enabledScorers.push('redux-consumer');
+      }
 
       const possibleDirs = ['src/store', 'src/redux', 'src/state'];
       const existingDirs: string[] = [];
@@ -120,8 +144,6 @@ export async function detectProjectConfig(): Promise<{
 
     if (pkg.dependencies?.['react-router-dom'] || pkg.dependencies?.['react-router']) {
       config.analyzers.routeAnalyzer.enabled = true;
-      config.analyzers.enabled.push('route-analyzer');
-      config.scoring.enabledScorers.push('route-match');
 
       const possibleFiles = ['src/App.tsx', 'src/router.tsx', 'src/routes.tsx', 'src/Router.tsx'];
       for (const file of possibleFiles) {
@@ -144,8 +166,6 @@ export async function detectProjectConfig(): Promise<{
     if (pkg.dependencies?.['react-i18next'] || pkg.dependencies?.['i18next']) {
       config.analyzers.i18n.enabled = true;
       config.analyzers.i18n.library = 'react-i18next';
-      config.analyzers.enabled.push('i18n-analyzer');
-      config.scoring.enabledScorers.push('translation-match');
 
       const possiblePaths = [
         'public/locales/en/translation.json',
