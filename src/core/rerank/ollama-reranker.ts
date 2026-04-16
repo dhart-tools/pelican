@@ -165,81 +165,57 @@ function compressSymbols(blocks: string[]): ISymbolTable {
 
 // ─── Prompt ──────────────────────────────────────────────────────
 
-function buildPrompt(sourceBlock: string, testBlock: string): string {
-  const { compressedBlocks, legend } = compressSymbols([sourceBlock, testBlock]);
-  const [compSource, compTest] = compressedBlocks;
-
+/**
+ * Build a stable byte-identical prefix shared across every test call for a
+ * given source file. Ollama reuses the KV cache when a new prompt starts with
+ * the same bytes as a prior one, so this prefix is prefilled ONCE per file —
+ * subsequent test calls skip straight to the test-specific portion.
+ *
+ * NOTE: symbol compression is applied to the source alone. Compressing source
+ * + test together would leak test-specific selectors into the prefix legend
+ * and break KV reuse. Token savings from cross-block dedup are minor; prefix
+ * stability matters more.
+ */
+function buildKVPrefix(sourceBlock: string): string {
+  const { compressedBlocks, legend } = compressSymbols([sourceBlock]);
+  const compSource = compressedBlocks[0];
   const legendSection = legend ? `\nSymbol legend — ${legend}\n` : "";
 
   return `You are a senior developer deciding which tests could break after a code change.
 
 Read the source file carefully. Understand what it does — its logic, state management, data transformations, side effects, UI behavior, and the contract it exposes to consumers.
 
-Then read the test file. Understand what behavior it actually verifies.
-
-The question is: if a bug were introduced in the source file, would this test have any chance of catching it?
+Then read the candidate test. Decide: if a bug were introduced in the source file, would this test have any chance of catching it?
 ${legendSection}
 SOURCE FILE (changed):
 ${compSource}
 
 CANDIDATE TEST:
-${compTest}
-
-Think about:
-- What logic, behavior, or data flow does the source file own?
-- What does the test actually assert on — what would fail if the source file had a regression?
-- Is there a causal chain from the source file's behavior to the test's assertions, even if indirect (through a parent component, a shared hook, a util, or an API layer)?
-
-A test is relevant even if the connection is indirect — e.g. the test renders a parent that uses the changed hook, or the test hits an API endpoint whose handler calls the changed module.
-
-A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
-
-Explain in 2-3 sentences what the test verifies and how it connects to the source file.
-
-Reply in JSON only — no markdown, no text outside the JSON object:
-{"relevant": true|false, "reason": "2-3 sentence explanation"}`;
+`;
 }
 
-/**
- * Batch prompt: one source file, multiple candidate tests in a single LLM call.
- * Saves N-1 inference startups per source file vs one-at-a-time scoring.
- */
-function buildBatchPrompt(
-  sourceBlock: string,
-  testBlocks: Array<{ id: number; testFile: string; block: string }>,
-): string {
-  const allBlocks = [sourceBlock, ...testBlocks.map((t) => t.block)];
-  const { compressedBlocks, legend } = compressSymbols(allBlocks);
-  const [compSource, ...compTests] = compressedBlocks;
+function buildKVSuffix(testBlock: string): string {
+  return `${testBlock}
 
-  const legendSection = legend ? `\nSymbol legend — ${legend}\n` : "";
+A test is relevant if its assertions have any behavioral dependency on the source file, even indirectly (through a parent component, a shared hook, a util, or an API layer). A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
 
-  const testSection = testBlocks
-    .map((t, i) => `--- TEST #${t.id} (${t.testFile}) ---\n${compTests[i]}`)
-    .join("\n\n");
-
-  return `You are a senior developer deciding which tests could break after a code change.
-
-Read the source file carefully. Understand what it does — its logic, state management, data transformations, side effects, UI behavior, and the contract it exposes to consumers.
-
-Then read each candidate test. For each one, decide: if a bug were introduced in the source file, would this test have any chance of catching it?
-${legendSection}
-SOURCE FILE (changed):
-${compSource}
-
-CANDIDATE TESTS:
-${testSection}
-
-Think about each test independently:
-- What logic, behavior, or data flow does the source file own?
-- What does the test actually assert on — what would fail if the source file had a regression?
-- Is there a causal chain from the source file's behavior to the test's assertions, even if indirect (through a parent component, a shared hook, a util, or an API layer)?
-
-A test is relevant even if the connection is indirect. A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
-
-Reply with a JSON array — one entry per test, in order. No markdown, no text outside the array:
-[{"id": 1, "relevant": true|false, "reason": "2-3 sentence explanation"}, ...]`;
+Reply in JSON only — no markdown, no text outside the JSON object.
+Keep "reason" to ONE short sentence, max 80 characters:
+{"relevant": true|false, "reason": "one short sentence"}`;
 }
+
+// JSON schema enforced by Ollama's structured-output mode. The llama.cpp
+// grammar backing this respects `maxLength`, so the model is forced to stop
+// well before the current ~250-char reason outputs. Verdict bit emits first,
+// so truncating the prose doesn't change the decision.
+const VERDICT_SCHEMA = {
+  type: "object",
+  properties: {
+    relevant: { type: "boolean" },
+    reason: { type: "string", maxLength: 80 },
+  },
+  required: ["relevant", "reason"],
+} as const;
 
 /**
  * Returns a stratified line-based sample of `content`.
@@ -406,6 +382,9 @@ export class OllamaReranker {
   private ollama: Ollama;
   private config: IOllamaRerankerConfig;
   private _available: boolean | null = null;
+  // Test blocks are read + sampled once per testFile and reused across every
+  // source file that scores against them. Cache is keyed by absolute path.
+  private testBlockCache = new Map<string, string>();
 
   constructor(config: Partial<IOllamaRerankerConfig> = {}) {
     this.config = { ...DEFAULT_OLLAMA_CONFIG, ...config };
@@ -470,25 +449,33 @@ export class OllamaReranker {
       }
     }
 
-    // Chunk into batches of BATCH_SIZE, one LLM call per batch.
-    // Keeps prompts manageable while still cutting total calls significantly.
-    const BATCH_SIZE = 3;
+    // Per-test serial calls with KV prefix reuse.
+    // Every prompt begins with the same `buildKVPrefix(sourceBlock)` bytes,
+    // so Ollama prefills the source ONCE and reuses the cached attention
+    // state for each subsequent test — only the test-specific suffix is
+    // prefilled per call.
+    const prefix = buildKVPrefix(sourceBlock);
     const total = testBlocks.length;
     const allResults: IOllamaRerankResult[] = [];
     let scored = 0;
+    const fileStart = Date.now();
+    process.stderr.write(
+      `[ollama-timing] file=${changedFile} tests=${total} prefix=${prefix.length}ch source=${sourceBlock.length}ch\n`,
+    );
 
-    for (let batchStart = 0; batchStart < total; batchStart += BATCH_SIZE) {
-      const batch = testBlocks.slice(batchStart, batchStart + BATCH_SIZE);
-      const prompt = buildBatchPrompt(sourceBlock, batch);
+    for (let i = 0; i < total; i++) {
+      const tb = testBlocks[i];
+      const prompt = prefix + buildKVSuffix(tb.block);
+      const callStart = Date.now();
 
       if (this.config.debug) {
         const debugFile = ".pelican/debug-rerank.log";
         const sep = "=".repeat(80);
         const logEntry = [
           `\n${sep}`,
-          `[ollama] BATCH SCORING: ${changedFile} (batch ${Math.floor(batchStart / BATCH_SIZE) + 1}, ${batch.length} candidates)`,
+          `[ollama] SCORING: ${changedFile} → ${tb.testFile} (${i + 1}/${total})`,
           `${sep}`,
-          `── PROMPT (${prompt.length} chars) ──`,
+          `── PROMPT (${prompt.length} chars, prefix ${prefix.length}) ──`,
           prompt.slice(0, 2000),
           prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : "",
           `── END PROMPT ──\n`,
@@ -497,16 +484,27 @@ export class OllamaReranker {
       }
 
       try {
-        // No `format: "json"` — that constrains to a single JSON object.
-        // Batch response is an array; prompt instructions + temperature=0 suffice.
         const response = await this.ollama.generate({
           model: this.config.model,
           prompt,
           stream: false,
           think: false,
           keep_alive: -1,
-          options: { temperature: 0, num_predict: 256 * batch.length },
+          format: VERDICT_SCHEMA,
+          options: { temperature: 0, num_predict: 96 },
         });
+        const callMs = Date.now() - callStart;
+        // `response` carries perf counters from Ollama in ns — convert to ms
+        // so we can see prefill vs decode split per call.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = response as any;
+        const promptEvalMs = r.prompt_eval_duration ? Math.round(r.prompt_eval_duration / 1e6) : -1;
+        const evalMs = r.eval_duration ? Math.round(r.eval_duration / 1e6) : -1;
+        const promptTokens = r.prompt_eval_count ?? -1;
+        const outputTokens = r.eval_count ?? -1;
+        process.stderr.write(
+          `[ollama-timing] ${i + 1}/${total} ${tb.testFile} total=${callMs}ms prefill=${promptEvalMs}ms(${promptTokens}tok) decode=${evalMs}ms(${outputTokens}tok)\n`,
+        );
 
         if (this.config.debug) {
           const debugFile = ".pelican/debug-rerank.log";
@@ -516,42 +514,32 @@ export class OllamaReranker {
           await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
         }
 
-        const expectedIds = batch.map((t) => t.id);
-        const parsed = parseBatchResponse(response.response, expectedIds);
+        const verdict = parseResponse(response.response);
+        allResults.push({ testFile: tb.testFile, ...verdict });
 
-        for (const tb of batch) {
-          const verdict = parsed.get(tb.id);
-          if (verdict) {
-            allResults.push({ testFile: tb.testFile, ...verdict });
-            if (this.config.debug) {
-              const summary = `[ollama] ${tb.testFile}: relevant=${verdict.relevant} — ${verdict.reason}\n`;
-              await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
-              process.stderr.write(summary);
-            }
-          } else {
-            allResults.push({
-              testFile: tb.testFile,
-              relevant: true,
-              reason: "Not returned in batch response; included as precaution.",
-            });
-          }
+        if (this.config.debug) {
+          const summary = `[ollama] ${tb.testFile}: relevant=${verdict.relevant} — ${verdict.reason}\n`;
+          await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
+          process.stderr.write(summary);
         }
       } catch (err) {
         if (this.config.debug) {
-          process.stderr.write(`[ollama] batch scoring error for ${changedFile}: ${err}\n`);
+          process.stderr.write(`[ollama] scoring error for ${tb.testFile}: ${err}\n`);
         }
-        for (const tb of batch) {
-          allResults.push({
-            testFile: tb.testFile,
-            relevant: true,
-            reason: "LLM unavailable; included as precaution.",
-          });
-        }
+        allResults.push({
+          testFile: tb.testFile,
+          relevant: true,
+          reason: "LLM unavailable; included as precaution.",
+        });
       }
 
-      scored += batch.length;
+      scored += 1;
       onPairScored?.(scored, total);
     }
+
+    process.stderr.write(
+      `[ollama-timing] file=${changedFile} done total=${Date.now() - fileStart}ms tests=${total}\n`,
+    );
 
     return allResults;
   }
@@ -567,6 +555,19 @@ export class OllamaReranker {
    * needs to see the test body to understand what it covers.
    */
   private async buildTestBlock(
+    testFile: string,
+    entry: IFileEntry | undefined,
+    fileContentConfig: IFileContentConfig,
+  ): Promise<string> {
+    const cached = this.testBlockCache.get(testFile);
+    if (cached) return cached;
+
+    const block = await this.buildTestBlockUncached(testFile, entry, fileContentConfig);
+    this.testBlockCache.set(testFile, block);
+    return block;
+  }
+
+  private async buildTestBlockUncached(
     testFile: string,
     entry: IFileEntry | undefined,
     fileContentConfig: IFileContentConfig,
@@ -597,65 +598,6 @@ export class OllamaReranker {
     }
   }
 
-  private async scoreOne(
-    testFile: string,
-    sourceBlock: string,
-    testBlock: string,
-  ): Promise<IOllamaRerankResult> {
-    const prompt = buildPrompt(sourceBlock, testBlock);
-
-    if (this.config.debug) {
-      const debugFile = ".pelican/debug-rerank.log";
-      const sep = "=".repeat(80);
-      const logEntry = [
-        `\n${sep}`,
-        `[ollama] SCORING: ${testFile}`,
-        `${sep}`,
-        `── PROMPT ──`,
-        prompt,
-        `── END PROMPT ──\n`,
-      ].join("\n");
-      await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
-    }
-
-    try {
-      const response = await this.ollama.generate({
-        model: this.config.model,
-        prompt,
-        stream: false,
-        think: false,
-        // `keep_alive: -1` pins the model in VRAM across calls and subsequent
-        // CLI runs (until ollama serve restarts or another model evicts it),
-        // eliminating the cold-load penalty for every rerank pair.
-        // `format: 'json'` constrains decoding so the response is a valid
-        // JSON object — no more regex-based parse fallback in the common path.
-        keep_alive: -1,
-        format: "json",
-        options: { temperature: 0, num_predict: 256 },
-      });
-
-      if (this.config.debug) {
-        const debugFile = ".pelican/debug-rerank.log";
-        const logEntry = [`── RAW RESPONSE ──`, response.response, `── END RESPONSE ──`, ``].join(
-          "\n",
-        );
-        await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
-      }
-
-      const parsed = parseResponse(response.response);
-      if (this.config.debug) {
-        const summary = `[ollama] ${testFile}: relevant=${parsed.relevant} — ${parsed.reason}\n`;
-        await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
-        process.stderr.write(summary);
-      }
-      return { testFile, ...parsed };
-    } catch (err) {
-      if (this.config.debug) {
-        process.stderr.write(`[ollama] error scoring ${testFile}: ${err}\n`);
-      }
-      return { testFile, relevant: true, reason: "LLM unavailable; included as precaution." };
-    }
-  }
 }
 
 function parseResponse(text: string): { relevant: boolean; reason: string } {
@@ -689,58 +631,3 @@ function parseResponse(text: string): { relevant: boolean; reason: string } {
   };
 }
 
-/**
- * Parse a batch response — expects a JSON array of {id, relevant, reason}.
- * Falls back to extracting individual objects if the array parse fails.
- */
-function parseBatchResponse(
-  text: string,
-  expectedIds: number[],
-): Map<number, { relevant: boolean; reason: string }> {
-  const results = new Map<number, { relevant: boolean; reason: string }>();
-  const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
-
-  // Try parsing as JSON array first
-  try {
-    const arrMatch = cleaned.match(/\[[\s\S]*\]/);
-    if (arrMatch) {
-      const arr = JSON.parse(arrMatch[0]);
-      if (Array.isArray(arr)) {
-        for (const item of arr) {
-          const id = typeof item.id === "number" ? item.id : parseInt(item.id, 10);
-          if (!expectedIds.includes(id)) continue;
-          const reason = typeof item.reason === "string" ? item.reason.trim() : "No reason provided.";
-          let relevant: boolean;
-          if (typeof item.relevant === "boolean") {
-            relevant = item.relevant;
-          } else if (typeof item.relevant === "string") {
-            relevant = /^(true|yes|1)$/i.test(item.relevant.trim());
-          } else {
-            relevant = true;
-          }
-          results.set(id, { relevant, reason });
-        }
-      }
-    }
-  } catch {
-    // fall through to object-by-object extraction
-  }
-
-  // Fallback: extract individual JSON objects for any missing IDs
-  if (results.size < expectedIds.length) {
-    const objPattern = /\{[^{}]*"id"\s*:\s*(\d+)[^{}]*\}/g;
-    let match;
-    while ((match = objPattern.exec(cleaned)) !== null) {
-      try {
-        const obj = JSON.parse(match[0]);
-        const id = typeof obj.id === "number" ? obj.id : parseInt(obj.id, 10);
-        if (!expectedIds.includes(id) || results.has(id)) continue;
-        results.set(id, parseResponse(match[0]));
-      } catch {
-        // skip malformed object
-      }
-    }
-  }
-
-  return results;
-}

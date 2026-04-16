@@ -285,8 +285,11 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           high: config.scoring.highConfidence ?? 0.8,
           min: config.scoring.minConfidence ?? 0.4,
         };
-        // Score all files in parallel — structural scoring is sync/fast,
-        // reranking is async/GPU-bound but already concurrency-limited internally.
+        // Score files sequentially. Structural scoring is sync/fast; reranking
+        // is GPU-bound and Ollama serializes requests on single-GPU setups
+        // anyway. Sequential processing keeps Ollama's KV prefix cache hot for
+        // each source file's test batch — huge win over interleaved requests
+        // that evict each other's cache.
         setState((s) => ({ ...s, activeFiles: [...changedFiles] }));
 
         const rerankThreshold = Math.max(config.scoring.minConfidence, 0.6);
@@ -338,7 +341,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           };
         }
 
-        const results = await Promise.all(changedFiles.map(processFile));
+        const results: IAnalyzeResult[] = [];
+        for (const changedFile of changedFiles) {
+          results.push(await processFile(changedFile));
+        }
 
         // Phase 5: Done
         setState((s) => ({
@@ -546,7 +552,12 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     };
   }
 
-  const results = await Promise.all(changedFiles.map(processFileHeadless));
+  // Sequential — see comment on the interactive path. Parallel Ollama calls
+  // interleave and evict each other's KV prefix cache.
+  const results: IAnalyzeResult[] = [];
+  for (const changedFile of changedFiles) {
+    results.push(await processFileHeadless(changedFile));
+  }
 
   console.log(JSON.stringify({ results }, null, 2));
 }

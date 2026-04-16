@@ -1,5 +1,6 @@
 import { IFileEntry, IRegistry } from '@/types/registry';
 
+import { CrossEncoderReranker } from './cross-encoder-reranker';
 import { DEFAULT_OLLAMA_CONFIG, IFileContentConfig, OllamaReranker } from './ollama-reranker';
 import { PelicanLock } from './pelican-lock';
 
@@ -26,6 +27,16 @@ export interface IRerankerConfig {
   base?: string;
   /** Target git ref for diff extraction. Flows through to OllamaReranker. */
   target?: string;
+  /**
+   * When enabled, a local cross-encoder scores `(source, test)` pairs before
+   * the LLM. Pairs scoring below `cePrefilterThreshold` are marked irrelevant
+   * without an Ollama call. Set to a very low value (default 0.08) so only
+   * obvious non-matches are dropped — the LLM still decides the ambiguous
+   * middle. Disable if the CE model can't be downloaded.
+   */
+  cePrefilter?: boolean;
+  /** Sigmoid score below which CE will drop a pair. Default 0.08. */
+  cePrefilterThreshold?: number;
 }
 
 export interface IRerankerProgress {
@@ -45,6 +56,8 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   confirmedBoost: 0.15,
   cacheBoost: 0.2,
   lockPath: '.pelican/pelican.lock',
+  cePrefilter: true,
+  cePrefilterThreshold: 0.08,
 };
 
 export interface IRerankCandidate {
@@ -90,6 +103,8 @@ export class SemanticReranker {
   private config: IRerankerConfig;
   private ollama: OllamaReranker;
   private lock: PelicanLock;
+  private ce: CrossEncoderReranker | null = null;
+  private ceReady = false;
 
   constructor(config: Partial<IRerankerConfig> = {}) {
     this.config = { ...DEFAULT_RERANKER_CONFIG, ...config };
@@ -103,6 +118,9 @@ export class SemanticReranker {
       target: this.config.target,
     });
     this.lock = new PelicanLock(this.config.lockPath);
+    if (this.config.cePrefilter) {
+      this.ce = new CrossEncoderReranker({ debug: this.config.debug });
+    }
   }
 
   /**
@@ -120,6 +138,21 @@ export class SemanticReranker {
         `Ollama model "${this.config.ollamaModel}" not available at ${this.config.ollamaHost}. ` +
           `Run: ollama pull ${this.config.ollamaModel}`,
       );
+    }
+    // Warm the cross-encoder up front so the first rerank call doesn't eat a
+    // ~600MB download. Failure is non-fatal: we just skip the prefilter and
+    // fall through to LLM-only scoring.
+    if (this.ce) {
+      try {
+        await this.ce.ensureModel();
+        this.ceReady = true;
+      } catch (err) {
+        if (this.config.debug) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[rerank] CE prefilter unavailable — ${msg}\n`);
+        }
+        this.ce = null;
+      }
     }
     this.config.onProgress?.({ status: 'ready', model: this.config.ollamaModel });
   }
@@ -192,12 +225,35 @@ export class SemanticReranker {
     if (toScore.length > 0 && this.ollama.isAvailable()) {
       const sourceEntry = registry.getFile(changedFile) as IFileEntry | undefined;
       if (sourceEntry) {
-        const testEntries = toScore.map((c) => ({
+        // Cross-encoder prefilter: drop candidates with near-zero semantic
+        // overlap before they reach the expensive LLM call. Threshold is kept
+        // deliberately low (default 0.08) so we only shed the obvious misses.
+        // Pelican's structural score + LLM still decide the ambiguous middle.
+        const survivors = await this.cePrefilter(
+          changedFile,
+          sourceEntry,
+          toScore,
+          results,
+          registry,
+        );
+
+        const testEntries = survivors.map((c) => ({
           testFile: c.testFile,
           entry: registry.getFile(c.testFile) as IFileEntry | undefined,
         }));
 
-        this.config.onProgress?.({ status: 'scoring', scored: 0, total: toScore.length });
+        if (survivors.length === 0) {
+          await this.lock.flush();
+          if (this.config.debug) {
+            const keptCount = results.filter((r) => r.kept).length;
+            process.stderr.write(
+              `[rerank] kept ${keptCount}/${results.length} for ${changedFile} (CE dropped all ${toScore.length})\n`,
+            );
+          }
+          return results;
+        }
+
+        this.config.onProgress?.({ status: 'scoring', scored: 0, total: survivors.length });
         const llmResults = await this.ollama.rerankPairs(
           sourceEntry,
           changedFile,
@@ -208,7 +264,7 @@ export class SemanticReranker {
         );
 
         for (const llm of llmResults) {
-          const cand = toScore.find((c) => c.testFile === llm.testFile)!;
+          const cand = survivors.find((c) => c.testFile === llm.testFile)!;
           if (llm.relevant) {
             this.lock.confirm(changedFile, llm.testFile, llm.reason);
             results.push({
@@ -267,6 +323,98 @@ export class SemanticReranker {
 
     return results;
   }
+
+  /**
+   * Drop candidates the cross-encoder judges irrelevant before they reach the
+   * LLM. Rejected pairs are pushed into `results` as `kept:false` and recorded
+   * in the lock cache, matching the shape LLM rejections take.
+   *
+   * Returns the survivors (caller scores these with Ollama). If the CE isn't
+   * ready or errors, returns `toScore` unchanged — we never want the prefilter
+   * to silently drop work just because the local model failed to load.
+   */
+  private async cePrefilter(
+    changedFile: string,
+    sourceEntry: IFileEntry,
+    toScore: IRerankCandidate[],
+    results: IRerankResult[],
+    registry: IRegistry,
+  ): Promise<IRerankCandidate[]> {
+    if (!this.ce || !this.ceReady || toScore.length === 0) return toScore;
+    const threshold = this.config.cePrefilterThreshold ?? 0.08;
+
+    try {
+      const sourceText = buildCETextForSource(sourceEntry);
+      const candidateTexts = toScore.map((c) => {
+        const entry = registry.getFile(c.testFile) as IFileEntry | undefined;
+        return buildCETextForTest(c.testFile, entry);
+      });
+      const scores = await this.ce.scorePairs(sourceText, candidateTexts);
+
+      const survivors: IRerankCandidate[] = [];
+      for (let i = 0; i < toScore.length; i++) {
+        if (scores[i] >= threshold) {
+          survivors.push(toScore[i]);
+        } else {
+          this.lock.reject(changedFile, toScore[i].testFile);
+          results.push({
+            testFile: toScore[i].testFile,
+            combined: toScore[i].pelicanScore,
+            kept: false,
+            reason: `CE prefilter: score ${scores[i].toFixed(3)} < ${threshold}`,
+            fromCache: false,
+          });
+        }
+      }
+
+      if (this.config.debug) {
+        process.stderr.write(
+          `[rerank] ${changedFile}: CE dropped ${toScore.length - survivors.length}/${toScore.length} ` +
+            `(min=${Math.min(...scores).toFixed(3)}, max=${Math.max(...scores).toFixed(3)})\n`,
+        );
+      }
+      return survivors;
+    } catch (err) {
+      if (this.config.debug) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[rerank] CE prefilter errored, falling through: ${msg}\n`);
+      }
+      return toScore;
+    }
+  }
+
+}
+
+function buildCETextForSource(entry: IFileEntry): string {
+  const parts: string[] = [`source: ${entry.path}`];
+  if (entry.exports.length) parts.push(`exports: ${entry.exports.slice(0, 20).join(', ')}`);
+  if (entry.imports.length) parts.push(`imports: ${entry.imports.slice(0, 10).join(', ')}`);
+  if (entry.selectors?.length) {
+    const sels = entry.selectors.map((s) => s.value).filter(Boolean).slice(0, 15).join(', ');
+    if (sels) parts.push(`selectors: ${sels}`);
+  }
+  if (entry.routesDefined?.length) {
+    const routes = entry.routesDefined.map((r) => r.path).filter(Boolean).slice(0, 10).join(', ');
+    if (routes) parts.push(`routes: ${routes}`);
+  }
+  return parts.join('\n');
+}
+
+function buildCETextForTest(testFile: string, entry: IFileEntry | undefined): string {
+  if (!entry) return `test: ${testFile}`;
+  const parts: string[] = [`test: ${testFile}`];
+  if (entry.imports.length) parts.push(`imports: ${entry.imports.slice(0, 15).join(', ')}`);
+  if (entry.cypress) {
+    const describes = entry.cypress.describeBlocks.slice(0, 5).join(' > ');
+    if (describes) parts.push(`describes: ${describes}`);
+    const its = entry.cypress.itBlocks.slice(0, 8).join(' | ');
+    if (its) parts.push(`its: ${its}`);
+    const routes = entry.cypress.visitedRoutes.slice(0, 10).join(', ');
+    if (routes) parts.push(`visits: ${routes}`);
+    const selectors = entry.cypress.selectors.map((s) => s.value).filter(Boolean).slice(0, 15).join(', ');
+    if (selectors) parts.push(`selectors: ${selectors}`);
+  }
+  return parts.join('\n');
 }
 
 export type { IFileContentConfig, IFileEntry };
