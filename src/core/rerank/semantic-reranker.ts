@@ -56,7 +56,7 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   confirmedBoost: 0.15,
   cacheBoost: 0.2,
   lockPath: '.pelican/pelican.lock',
-  cePrefilter: true,
+  cePrefilter: false,
   cePrefilterThreshold: 0.08,
 };
 
