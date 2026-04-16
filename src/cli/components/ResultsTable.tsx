@@ -1,8 +1,9 @@
 import { Box, Text } from 'ink';
 import React from 'react';
 
-import { palette, scorerBarColor } from '@/cli/theme';
+import { palette } from '@/cli/theme';
 import { IScoreResult } from '@/types/scorers';
+import { EConfidenceLevel } from '@/utils/enums';
 
 import { SectionDivider } from './SectionDivider';
 import { SignalBadge } from './SignalBadge';
@@ -16,88 +17,116 @@ interface ResultsTableProps {
     postRerankCount?: number;
   }>;
   maxResults?: number;
+  elapsedMs?: number;
 }
 
-const BAR_WIDTH = 18;
-const LABEL_WIDTH = 20;
-const FILL = '█';
-const EMPTY = '░';
-
-function ScoreBar({ weight, confidence }: { weight: number; confidence: string }) {
-  const filled = Math.round(weight * BAR_WIDTH);
-  const empty = BAR_WIDTH - filled;
-  const color = scorerBarColor(confidence);
-  return (
-    <Text>
-      <Text color={color}>{FILL.repeat(filled)}</Text>
-      <Text color={palette.barEmpty}>{EMPTY.repeat(empty)}</Text>
-    </Text>
-  );
-}
+const DESC_WIDTH = 68;
 
 function shortPath(full: string): string {
   const parts = full.replace(/\\/g, '/').split('/');
   return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : full;
 }
 
-interface ResultRowProps {
-  testFile: string;
-  score: number;
-  confidence: string;
-  signals: IScoreResult['signals'];
+function wordWrap(text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) {
+      current = word;
+    } else if (current.length + 1 + word.length <= maxWidth) {
+      current += ' ' + word;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
 }
 
-function ResultRow({ testFile, score, confidence, signals }: ResultRowProps) {
-  const matched = signals.filter((s) => s.matched && s.weight > 0);
-  const dotColor =
-    confidence === 'high'
-      ? palette.emerald
-      : confidence === 'medium'
-        ? palette.amber
-        : palette.rose;
+function justifyLine(line: string, width: number, isLast: boolean): string {
+  if (isLast) return line;
+  const words = line.split(' ');
+  if (words.length === 1) return line;
+  const totalChars = words.reduce((n, w) => n + w.length, 0);
+  const totalSpaces = width - totalChars;
+  const gaps = words.length - 1;
+  const base = Math.floor(totalSpaces / gaps);
+  const extra = totalSpaces % gaps;
+  return words.map((w, i) => (i < gaps ? w + ' '.repeat(base + (i < extra ? 1 : 0)) : w)).join('');
+}
+
+const DOT_COLOR: Record<EConfidenceLevel, string> = {
+  [EConfidenceLevel.HIGH]: '#34D399',
+  [EConfidenceLevel.MEDIUM]: '#FBBF24',
+  [EConfidenceLevel.LOW]: '#6B7280',
+};
+
+const BADGE_COLOR: Record<EConfidenceLevel, string> = {
+  [EConfidenceLevel.HIGH]: '#059669',   // emerald — matches badge bg
+  [EConfidenceLevel.MEDIUM]: '#D97706', // amber
+  [EConfidenceLevel.LOW]: '#4B5563',    // gray
+};
+
+interface TestRowProps {
+  testFile: string;
+  confidence: EConfidenceLevel;
+  explanation: string;
+  fromCache?: boolean;
+  isLast: boolean;
+}
+
+function TestRow({ testFile, confidence, explanation, fromCache, isLast }: TestRowProps) {
+  const dotColor = DOT_COLOR[confidence] ?? palette.dim;
+  const lines = explanation ? wordWrap(explanation, DESC_WIDTH) : [];
+  const branch = isLast ? '╰' : '├';
+  const continuation = isLast ? ' ' : '│';
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
+    <Box flexDirection="column">
+      {/* Test file name row */}
       <Box justifyContent="space-between">
-        <Box>
-          <Text color={dotColor} bold>
-            ●{' '}
-          </Text>
-          <Text color={palette.cyan} bold>
-            {shortPath(testFile)}
-          </Text>
+        <Box flexShrink={1}>
+          <Text color={palette.muted}>{branch}{'─ '}</Text>
+          <Text color={dotColor}>● </Text>
+          <Text color={BADGE_COLOR[confidence] ?? palette.dim} bold>{shortPath(testFile)}</Text>
+          {fromCache && <Text color={palette.muted}> ↩ cached</Text>}
         </Box>
-        <Box marginLeft={2}>
-          <SignalBadge confidence={confidence as never} score={score} />
+        <Box marginLeft={2} flexShrink={0}>
+          <SignalBadge confidence={confidence} />
         </Box>
       </Box>
 
-      {matched.length > 0 && (
-        <Box flexDirection="column" paddingLeft={3}>
-          {matched.map((sig, i) => {
-            const isLast = i === matched.length - 1;
-            const tree = isLast ? '└─' : '├─';
-            const label = sig.source.padEnd(LABEL_WIDTH);
-            return (
-              <Box key={i}>
-                <Text color={palette.muted}>{tree} </Text>
-                <Text color={palette.dim}>{label} </Text>
-                <ScoreBar weight={sig.weight} confidence={confidence} />
-                <Text color={palette.dim}> {sig.weight.toFixed(2)}</Text>
-              </Box>
-            );
-          })}
+      {/* Explanation lines — connected to tree */}
+      {lines.length > 0 && (
+        <Box flexDirection="column">
+          {lines.map((line, i) => (
+            <Box key={i}>
+              <Text color={palette.muted}>{continuation}{'  '}</Text>
+              <Text color={palette.dim}>
+                {'  '}{justifyLine(line, DESC_WIDTH, i === lines.length - 1)}
+              </Text>
+            </Box>
+          ))}
         </Box>
       )}
+
+      {/* Spacing between test entries, but not after the last one */}
+      {!isLast && <Box><Text color={palette.muted}>{'│'}</Text></Box>}
     </Box>
   );
 }
 
-/**
- * Renders results as labeled sections within the parent Panel.
- * Each changed file gets a SectionDivider with its path as the label.
- */
-export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
+function formatElapsed(ms: number): string {
+  const totalSec = Math.round(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min > 0) return `${min}m ${sec}s`;
+  return `${sec}s`;
+}
+
+export function ResultsTable({ results, maxResults = 10, elapsedMs }: ResultsTableProps) {
   if (results.length === 0) {
     return (
       <>
@@ -119,68 +148,65 @@ export function ResultsTable({ results, maxResults = 10 }: ResultsTableProps) {
     grouped.set(item.changedFile, group);
   }
 
-  const totalCandidates = results.reduce((n, r) => n + (r.totalCandidates ?? r.suggestedTests.length), 0);
+  const totalSuggestions = flat.length;
+  const totalCandidates = results.reduce(
+    (n, r) => n + (r.totalCandidates ?? r.suggestedTests.length),
+    0,
+  );
   const totalPreRerank = results.reduce((n, r) => n + (r.preRerankCount ?? 0), 0);
   const totalPostRerank = results.reduce((n, r) => n + (r.postRerankCount ?? 0), 0);
   const rerankActive = totalPreRerank > 0 && totalPreRerank !== totalPostRerank;
 
   return (
     <>
-      {Array.from(grouped.entries()).map(([changedFile, tests]) => {
-        const meta = results.find((r) => r.changedFile === changedFile);
-        const showRerank =
-          meta?.preRerankCount != null &&
-          meta.postRerankCount != null &&
-          meta.preRerankCount !== meta.postRerankCount;
-        return (
-          <Box key={changedFile} flexDirection="column">
-            <SectionDivider label={changedFile} />
-            {showRerank && (
-              <Box marginTop={1}>
-                <Text color={palette.dim}>  semantic filter: </Text>
-                <Text color={palette.text} bold>
-                  {meta!.preRerankCount} → {meta!.postRerankCount}
-                </Text>
-                <Text color={palette.dim}>
-                  {' '}
-                  ({Math.round(((meta!.preRerankCount! - meta!.postRerankCount!) / meta!.preRerankCount!) * 100)}% noise cut)
-                </Text>
-              </Box>
-            )}
-            <Box flexDirection="column" marginTop={1}>
-              {tests.map((t) => (
-                <ResultRow
-                  key={t.testFile}
-                  testFile={t.testFile}
-                  score={t.score}
-                  confidence={t.confidence}
-                  signals={t.signals}
-                />
-              ))}
-            </Box>
+      {Array.from(grouped.entries()).map(([changedFile, tests]) => (
+        <Box key={changedFile} flexDirection="column">
+          <SectionDivider />
+
+          {/* Source file header */}
+          <Box marginTop={1} marginBottom={1}>
+            <Text color={palette.brand}>{'  ◆ '}</Text>
+            <Text color={palette.cyan} bold>{changedFile}</Text>
           </Box>
-        );
-      })}
+
+          {/* Test files — tree-connected below the source */}
+          <Box flexDirection="column" paddingLeft={3}>
+            {tests.map((t, i) => (
+              <TestRow
+                key={t.testFile}
+                testFile={t.testFile}
+                confidence={t.confidence}
+                explanation={t.explanation}
+                fromCache={t.fromCache}
+                isLast={i === tests.length - 1}
+              />
+            ))}
+          </Box>
+        </Box>
+      ))}
 
       <SectionDivider />
-      <Box marginTop={0}>
-        <Text color={palette.text} bold>
-          {flat.length}
-        </Text>
-        {flat.length < totalCandidates ? (
-          <Text color={palette.dim}> of {totalCandidates} suggestions</Text>
-        ) : (
-          <Text color={palette.dim}> suggestion{flat.length !== 1 ? 's' : ''}</Text>
-        )}
-        <Text color={palette.muted}> · </Text>
-        <Text color={palette.dim}>sorted by confidence</Text>
-        {rerankActive && (
-          <>
-            <Text color={palette.muted}> · </Text>
-            <Text color={palette.dim}>
-              reranker {totalPreRerank} → {totalPostRerank}
-            </Text>
-          </>
+      <Box marginTop={0} justifyContent="space-between">
+        <Box>
+          <Text color={palette.text} bold>{totalSuggestions}</Text>
+          {totalSuggestions < totalCandidates ? (
+            <Text color={palette.dim}> of {totalCandidates} suggestions</Text>
+          ) : (
+            <Text color={palette.dim}> suggestion{totalSuggestions !== 1 ? 's' : ''}</Text>
+          )}
+          {rerankActive && (
+            <>
+              <Text color={palette.muted}> · </Text>
+              <Text color={palette.dim}>
+                filtered {totalPreRerank} → {totalPostRerank}
+              </Text>
+            </>
+          )}
+        </Box>
+        {elapsedMs != null && (
+          <Text color={palette.muted}>
+            Suggested in <Text color={palette.text} bold>{formatElapsed(elapsedMs)}</Text>
+          </Text>
         )}
       </Box>
     </>

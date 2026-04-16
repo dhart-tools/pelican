@@ -37,7 +37,7 @@ export type AnalyzePhase =
   | 'loading-registry'
   | 'building-registry'
   | 'detecting-changes'
-  | 'downloading-model'
+  | 'checking-reranker'
   | 'analyzing'
   | 'scoring'
   | 'done'
@@ -56,17 +56,25 @@ export interface IAnalyzeState {
   results: IAnalyzeResult[];
   registryStats?: IRegistryStats;
   error?: string;
-  /** Current file being processed (for progress display) */
+  /** Current file being processed (for progress display — sequential mode) */
   currentFile?: string;
+  /** Files currently being scored in parallel */
+  activeFiles?: string[];
+  /** Files that have finished scoring */
+  completedFiles?: string[];
   /** 0–100 progress percentage */
   progress: number;
   /** Maximum number of results to display */
   maxResults?: number;
-  /** Active when phase === 'downloading-model'. Null when model already cached. */
-  modelDownload?: IModelDownloadProgress;
-  /** Set when the cross-encoder failed to load — UI shows a warning banner and falls back to pelican-only scoring. */
+  /** Set when Ollama reranker is unavailable — UI shows a warning, falls back to pelican-only + lock cache. */
   rerankerUnavailable?: boolean;
   rerankerError?: string;
+  /** How many pairs the LLM has scored so far (for progress display). */
+  rerankScored?: number;
+  /** Total pairs queued for LLM scoring. */
+  rerankTotal?: number;
+  /** Total wall-clock time in milliseconds (set when phase is 'done'). */
+  elapsedMs?: number;
 }
 
 export interface IAnalyzeResult {
@@ -116,6 +124,10 @@ export type SetupPhase =
   | 'confirming'
   | 'saving'
   | 'building-registry'
+  | 'checking-ollama'
+  | 'installing-ollama'
+  | 'model-select'
+  | 'pulling-model'
   | 'done'
   | 'error';
 
@@ -138,6 +150,12 @@ export interface ISetupState {
   modelProgress?: IModelDownloadProgress;
   /** Project root basename shown in the panel subtitle. */
   projectName?: string;
+  /** Currently highlighted model index during model-select phase. */
+  selectedModelIndex?: number;
+  /** Measured internet speed in bytes/sec. Used to personalise download time estimates. */
+  internetSpeedBps?: number;
+  /** Models already present in the local Ollama store. */
+  installedModels?: string[];
 }
 
 // ─── Config ──────────────────────────────────────────────────────
@@ -178,6 +196,33 @@ export interface IProjectConfig {
     scorerWeights?: Record<string, number>;
     maxResults?: number;
   };
+  rerank?: {
+    /** Enable Ollama LLM reranking. Default true. */
+    enabled: boolean;
+    /** Ollama model to use. Default: qwen3.5:latest */
+    ollamaModel: string;
+    /** Ollama host. Default: http://localhost:11434 */
+    ollamaHost: string;
+    fileContent?: {
+      /**
+       * Number of equal-width regions to sample from the file. Default: 8.
+       * Higher = more coverage, larger prompt.
+       */
+      segments?: number;
+      /**
+       * Lines captured per region. Default: 30.
+       * Higher = more context per region, larger prompt.
+       */
+      linesPerWindow?: number;
+      /**
+       * JS/TS keyword tokens stripped from each line before sending to the LLM.
+       * Reduces boilerplate noise while preserving identifiers and structure.
+       * Set to [] to disable filtering entirely.
+       * Defaults to a broad set of JS/TS syntactic and modifier keywords.
+       */
+      stripKeywords?: string[];
+    };
+  };
 }
 
 // ─── CLI Options ─────────────────────────────────────────────────
@@ -185,13 +230,15 @@ export interface IProjectConfig {
 export interface IAnalyzeOptions {
   base?: string;
   target?: string;
-  files?: string;
+  files?: string | string[];
   output: 'tui' | 'json' | 'list';
   minConfidence: string;
   maxResults: string;
   config?: string;
   ci?: boolean;
   debug?: boolean;
+  /** Set to false by --no-rerank flag. Skips Ollama reranking; still uses .pelican.lock cache. */
+  rerank?: boolean;
 }
 
 export interface IRegistryBuildOptions {

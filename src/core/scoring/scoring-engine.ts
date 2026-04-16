@@ -81,7 +81,7 @@ export class ScoringEngine {
       const confidence = this.calculateConfidence(score);
 
       // Generate explanation
-      const explanation = this.generateExplanation(dampenedSignals, score);
+      const explanation = this.generateExplanation(dampenedSignals);
 
       results.push({
         testFile: testFilePath,
@@ -127,50 +127,75 @@ export class ScoringEngine {
   }
 
   /**
-   * Builds a human-readable explanation for CLI output.
+   * Builds a developer-facing explanation of why this test is relevant.
+   * Speaks in terms of features and risk, not internal scoring details.
    */
-  private generateExplanation(signals: ISignal[], score: number): string {
+  private generateExplanation(signals: ISignal[]): string {
     const matched = signals.filter((s) => s.matched).sort((a, b) => b.weight - a.weight);
-    const unmatched = signals.filter((s) => !s.matched).sort((a, b) => b.weight - a.weight);
 
     if (matched.length === 0) {
-      const unmatchedDesc = unmatched
-        .slice(0, 3)
-        .map((s) => this.formatSignal(s))
-        .join('; ');
-      return `No strong signals detected. Checked: ${unmatchedDesc || 'none'}`;
+      return 'Weak connection — consider running manually if this area was affected.';
     }
 
-    const topMatched = matched
-      .slice(0, 3)
-      .map((s) => this.formatSignal(s, true))
-      .join(', ');
+    const reasons = matched
+      .slice(0, 2)
+      .map((s) => this.humanizeSignal(s))
+      .filter(Boolean);
 
-    const topUnmatched = unmatched
-      .slice(0, 3)
-      .map((s) => this.formatSignal(s))
-      .join('; ');
-
-    let explanation = `Matched by: ${topMatched}. Score: ${score.toFixed(2)}`;
-    if (topUnmatched) {
-      explanation += `. Not matched: ${topUnmatched}`;
-    }
-    return explanation;
+    return reasons.join('. ') + '.';
   }
 
   /**
-   * Standardizes the way signals are formatted for human readability.
+   * Translates a matched signal into a natural-language reason a developer
+   * would understand — why should they care about this test?
    */
-  private formatSignal(signal: ISignal, includeWeight: boolean = false): string {
-    const description = signal.reason || signal.type;
-    const sourcePath = signal.source ? `${signal.source} — ` : '';
-    const weightSuffix = includeWeight ? ` (${(signal.weight * 100).toFixed(0)}%)` : '';
+  private humanizeSignal(signal: ISignal): string {
+    const reason = signal.reason || '';
 
-    if (!includeWeight) {
-      return `${sourcePath}${description}`;
+    switch (signal.type) {
+      case 'direct-import':
+        return 'This test directly imports the changed file, so any breakage will surface here';
+
+      case 'transitive-import':
+        return 'This test imports a module that depends on the changed file';
+
+      case 'route-match':
+        return reason.includes('visits')
+          ? `This test navigates to a route that renders the changed component`
+          : 'This test exercises a route connected to the changed file';
+
+      case 'selector-match':
+        return 'This test interacts with UI elements defined in the changed file';
+
+      case 'selector-id-match':
+        return 'This test targets elements by ID that appear in the changed file';
+
+      case 'filename-match':
+        return 'This test file is named after the changed component — likely its dedicated spec';
+
+      case 'translation-match':
+        return 'This test asserts on text content that originates from the changed file';
+
+      case 'redux-chain':
+        return 'This test covers a feature that shares Redux state with the changed file';
+
+      case 'redux-consumer':
+        return 'This test exercises UI that reads from Redux state the changed file writes to';
+
+      case 'api-intercept':
+        return reason.includes('intercepts')
+          ? `This test mocks an API endpoint that the changed file calls`
+          : 'This test intercepts API calls related to the changed file';
+
+      case 'colocation':
+        return 'This test lives alongside the changed file — likely tests it directly';
+
+      case 'describe-block':
+        return 'This test\'s describe/it blocks reference the changed component by name';
+
+      default:
+        return reason || 'This test is connected to the changed file';
     }
-
-    return `${description}${weightSuffix}`;
   }
 
   /**

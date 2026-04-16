@@ -27,7 +27,10 @@ export interface IScoreResult {
   score: number;
   signals: ISignal[];
   confidence: EConfidenceLevel;
+  /** Human-readable reason. Populated by LLM reranker or pelican scoring engine. */
   explanation: string;
+  /** True when this result came from the .pelican.lock cache (no LLM call this run). */
+  fromCache?: boolean;
 }
 
 export interface IScorerConfig {

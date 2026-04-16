@@ -24,7 +24,6 @@ import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-score
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import {
-  IModelProgress,
   ModelUnavailableError,
   SemanticReranker,
 } from '@/core/rerank/semantic-reranker';
@@ -89,7 +88,6 @@ async function applyReranker(
   changedFile: string,
   scored: IAnalyzeResult['suggestedTests'],
   registry: Registry,
-  options: { base?: string; target?: string },
   thresholds: { high: number; min: number },
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
@@ -97,7 +95,7 @@ async function applyReranker(
     testFile: r.testFile,
     pelicanScore: r.score,
   }));
-  const rerankResults = await reranker.rerank(changedFile, candidates, registry, options);
+  const rerankResults = await reranker.rerank(changedFile, candidates, registry);
   const byFile = new Map(rerankResults.map((r) => [r.testFile, r]));
 
   const mutated: IAnalyzeResult['suggestedTests'] = [];
@@ -105,15 +103,10 @@ async function applyReranker(
     const rr = byFile.get(result.testFile);
     if (!rr || !rr.kept) continue;
 
-    result.signals.push({
-      source: 'semantic-rerank',
-      type: 'cross-encoder',
-      weight: rr.similarity,
-      matched: rr.similarity >= 0.25,
-      reason: `cross-encoder relevance ${rr.similarity.toFixed(2)}`,
-    });
     result.score = rr.combined;
     result.confidence = bandFor(rr.combined, thresholds);
+    if (rr.reason) result.explanation = rr.reason;
+    result.fromCache = rr.fromCache;
 
     mutated.push(result);
   }
@@ -190,6 +183,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
   });
 
   useEffect(() => {
+    const startTime = Date.now();
     async function run() {
       try {
         // Phase 1: Load config
@@ -211,10 +205,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let changedFiles: string[];
         if (options.files) {
-          changedFiles = options.files
-            .split(',')
-            .map((f) => f.trim())
-            .filter(Boolean);
+          const raw = Array.isArray(options.files) ? options.files : [options.files];
+          changedFiles = raw.flatMap((f) => f.split(',')).map((f) => f.trim()).filter(Boolean);
         } else {
           throw new Error('No --files specified. Git auto-detection not yet implemented.');
         }
@@ -229,50 +221,47 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // Phase 4: Warm up reranker model.
         //
         // We deliberately trigger model load BEFORE scoring so the UI can
-        // show a proper progress bar instead of hiding a silent ~600MB
-        // download behind the first file. If load fails (offline, HF down,
-        // airgap without staged model) we set rerankerUnavailable and the
-        // scoring loop falls back to pelican-only results — a crashed
-        // rerank must never block the user from getting suggestions.
-        setState((s) => ({ ...s, phase: 'downloading-model' }));
+        // Phase 4: Check Ollama reranker.
+        // Non-blocking — if unavailable, .pelican.lock cache still works.
+        setState((s) => ({ ...s, phase: 'checking-reranker' }));
 
         const reranker = new SemanticReranker({
           debug: options.debug,
-          onProgress: (info: IModelProgress) => {
-            if (info.status === 'progress' && info.file) {
+          ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
+          ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
+          ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+          onProgress: (info) => {
+            if (info.status === 'scoring') {
               setState((s) => ({
                 ...s,
-                modelDownload: {
-                  file: info.file!,
-                  pct: info.pct ?? 0,
-                  loaded: info.loaded,
-                  total: info.total,
-                },
+                rerankScored: info.scored,
+                rerankTotal: info.total,
               }));
-            } else if (info.status === 'ready') {
-              setState((s) => ({ ...s, modelDownload: undefined }));
             }
           },
         });
 
         let rerankerUnavailable = false;
         let rerankerError: string | undefined;
-        try {
-          await reranker.warmUp();
-        } catch (err) {
-          rerankerUnavailable = true;
-          rerankerError =
-            err instanceof ModelUnavailableError
-              ? err.message
-              : err instanceof Error
+        if (options.rerank !== false) {
+          try {
+            await reranker.warmUp();
+          } catch (err) {
+            rerankerUnavailable = true;
+            rerankerError =
+              err instanceof ModelUnavailableError
                 ? err.message
-                : String(err);
-          setState((s) => ({
-            ...s,
-            rerankerUnavailable: true,
-            rerankerError,
-            modelDownload: undefined,
-          }));
+                : err instanceof Error
+                  ? err.message
+                  : String(err);
+            setState((s) => ({
+              ...s,
+              rerankerUnavailable: true,
+              rerankerError,
+            }));
+          }
+        } else {
+          rerankerUnavailable = true;
         }
 
         // Phase 5: Score
@@ -288,16 +277,11 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           high: config.scoring.highConfidence ?? 0.8,
           min: config.scoring.minConfidence ?? 0.4,
         };
-        const results: IAnalyzeResult[] = [];
+        // Score all files in parallel — structural scoring is sync/fast,
+        // reranking is async/GPU-bound but already concurrency-limited internally.
+        setState((s) => ({ ...s, activeFiles: [...changedFiles] }));
 
-        for (let i = 0; i < changedFiles.length; i++) {
-          const changedFile = changedFiles[i];
-          setState((s) => ({
-            ...s,
-            currentFile: changedFile,
-            progress: ((i + 1) / changedFiles.length) * 100,
-          }));
-
+        async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
           const preRerankCount = relevant.length;
@@ -312,12 +296,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 changedFile,
                 relevant,
                 registry,
-                { base: options.base, target: options.target },
                 thresholds,
               );
             } catch (err) {
-              // Late failure (model loaded but inference crashed). Disable
-              // rerank for remaining files and fall back for this one too.
               rerankerUnavailable = true;
               rerankerError = err instanceof Error ? err.message : String(err);
               setState((s) => ({
@@ -329,20 +310,31 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             }
           }
 
-          results.push({
+          setState((s) => ({
+            ...s,
+            completedFiles: [...(s.completedFiles ?? []), changedFile],
+            activeFiles: (s.activeFiles ?? []).filter((f) => f !== changedFile),
+            progress:
+              (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
+          }));
+
+          return {
             changedFile,
             suggestedTests: finalResults.slice(0, maxResults),
             totalCandidates: finalResults.length,
             preRerankCount,
             postRerankCount: finalResults.length,
-          });
+          };
         }
+
+        const results = await Promise.all(changedFiles.map(processFile));
 
         // Phase 5: Done
         setState((s) => ({
           ...s,
           phase: 'done',
           results,
+          elapsedMs: Date.now() - startTime,
           registryStats: {
             totalFiles: registry.files.size,
             sourceFiles: registry.getFilesByType('source').length,
@@ -416,9 +408,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   }
 
   const changedFiles = options.files
-    ? options.files
-        .split(',')
-        .map((f) => f.trim())
+    ? (Array.isArray(options.files) ? options.files : [options.files])
+        .flatMap((f: string) => f.split(','))
+        .map((f: string) => f.trim())
         .filter(Boolean)
     : [];
 
@@ -436,37 +428,32 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   // Headless progress: write to stderr with a throttled once-per-5%-per-file
   // line so JSON on stdout stays clean. CI logs capture stderr; users don't
   // see Ink TUI in this mode.
-  const headlessProgressState = new Map<string, number>();
   const reranker = new SemanticReranker({
     debug,
+    ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
+    ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
+    ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
     onProgress: (info) => {
-      if (info.status === 'progress' && info.file && typeof info.pct === 'number') {
-        const prev = headlessProgressState.get(info.file) ?? -1;
-        if (info.pct < prev + 5) return;
-        headlessProgressState.set(info.file, info.pct);
-        const mb =
-          info.loaded && info.total
-            ? ` ${(info.loaded / 1e6).toFixed(0)}/${(info.total / 1e6).toFixed(0)} MB`
-            : '';
-        process.stderr.write(
-          `[pelican] downloading reranker · ${info.file} ${info.pct}%${mb}\n`,
-        );
+      if (info.status === 'scoring' && info.scored != null && info.total != null) {
+        process.stderr.write(`[pelican] reranking ${info.scored}/${info.total}\n`);
       } else if (info.status === 'ready') {
         process.stderr.write('[pelican] reranker ready\n');
       }
     },
   });
 
-  let rerankerUnavailable = false;
-  try {
-    await reranker.warmUp();
-  } catch (err) {
-    rerankerUnavailable = true;
-    const msg = err instanceof Error ? err.message : String(err);
-    process.stderr.write(
-      `[pelican] WARNING: semantic reranker unavailable: ${msg}\n` +
-        `[pelican] showing pelican-only results. run 'pelican model:download' to set it up.\n`,
-    );
+  let rerankerUnavailable = options.rerank === false;
+  if (!rerankerUnavailable) {
+    try {
+      await reranker.warmUp();
+    } catch (err) {
+      rerankerUnavailable = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[pelican] WARNING: Ollama reranker unavailable: ${msg}\n` +
+          `[pelican] using pelican structural scoring + .pelican.lock cache only.\n`,
+      );
+    }
   }
 
   const thresholds = {
@@ -474,8 +461,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     min: config.scoring.minConfidence ?? 0.4,
   };
 
-  const results: IAnalyzeResult[] = [];
-  for (const changedFile of changedFiles) {
+  async function processFileHeadless(changedFile: string): Promise<IAnalyzeResult> {
     if (debug) {
       const entry = registry.getFile(changedFile);
       debugLog(`\n─── scoring: ${changedFile} ───`);
@@ -513,7 +499,6 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
           changedFile,
           relevant,
           registry,
-          { base: options.base, target: options.target },
           thresholds,
         );
       } catch (err) {
@@ -526,14 +511,16 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     if (debug) {
       debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
     }
-    results.push({
+    return {
       changedFile,
       suggestedTests: reranked.slice(0, maxResults),
       totalCandidates: reranked.length,
       preRerankCount,
       postRerankCount: reranked.length,
-    });
+    };
   }
+
+  const results = await Promise.all(changedFiles.map(processFileHeadless));
 
   console.log(JSON.stringify({ results }, null, 2));
 }
@@ -549,11 +536,12 @@ export const analyzeCommand = new Command('analyze')
   .description('Analyze changes and suggest tests to run')
   .option('-b, --base <ref>', 'Base git reference (default: HEAD~1)')
   .option('-t, --target <ref>', 'Target git reference (default: HEAD)')
-  .option('-f, --files <paths>', 'Comma-separated list of changed files')
+  .option('-f, --files <paths...>', 'Space- or comma-separated list of changed files')
   .option('-o, --output <format>', 'Output format: tui, json, list', 'tui')
   .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
   .option('--max-results <number>', 'Maximum number of results', '10')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
+  .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
   .option('--debug', 'Print detailed extraction and scoring info to stderr')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {

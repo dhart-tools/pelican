@@ -1,18 +1,26 @@
+import { execFile, spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import { promisify } from 'util';
 
 import { Command } from 'commander';
 import { render } from 'ink';
-import React, { useState, useEffect } from 'react';
+import { useInput } from 'ink';
+import { Ollama } from 'ollama';
+import React, { useState, useEffect, useRef } from 'react';
 
 import * as path from 'path';
 
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
+import { SETUP_MODELS } from '@/cli/setup-models';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
-import { CrossEncoderReranker } from '@/core/rerank/cross-encoder-reranker';
+
+const execFileP = promisify(execFile);
 
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
+const OLLAMA_HOST = 'http://localhost:11434';
+
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -35,7 +43,24 @@ export async function detectProjectConfig(): Promise<{
 
   const config: IProjectConfig = {
     sourceDirs: ['src'],
-    testPatterns: ['**/*.cy.ts', '**/*.cy.tsx'],
+    testPatterns: [
+      '**/*.cy.ts',
+      '**/*.cy.tsx',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/*.test.js',
+      '**/*.test.jsx',
+      '**/*.spec.ts',
+      '**/*.spec.tsx',
+      '**/*.spec.js',
+      '**/*.spec.jsx',
+      '**/*.e2e.ts',
+      '**/*.e2e.tsx',
+      '**/*.integration.ts',
+      '**/*.integration.tsx',
+      '**/*.int.ts',
+      '**/*.int.tsx',
+    ],
     ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
     analyzers: {
       enabled: ['source-extractor', 'cypress-extractor', 'import-graph-analyzer'],
@@ -155,25 +180,138 @@ export async function detectProjectConfig(): Promise<{
   return { config, steps };
 }
 
+/**
+ * Downloads ~5 MB from Cloudflare's speed-test endpoint and returns
+ * the measured throughput in bytes/sec. Returns 0 on any failure so
+ * callers can fall back to a default speed.
+ */
+async function measureInternetSpeed(): Promise<number> {
+  const PROBE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const url = `https://speed.cloudflare.com/__down?bytes=${PROBE_BYTES}`;
+  try {
+    const start = Date.now();
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok || !res.body) return 0;
+
+    const reader = res.body.getReader();
+    let received = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+    }
+
+    const elapsed = (Date.now() - start) / 1000;
+    return elapsed > 0 ? received / elapsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Returns true if the ollama binary is on PATH. */
+async function isOllamaInstalled(): Promise<boolean> {
+  try {
+    await execFileP('ollama', ['--version']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Returns true if ollama service is reachable on localhost:11434. */
+async function isOllamaRunning(): Promise<boolean> {
+  try {
+    const res = await fetch(`${OLLAMA_HOST}/api/tags`, { signal: AbortSignal.timeout(2000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Install ollama. macOS: brew first, then curl. Linux: curl. */
+async function installOllama(): Promise<void> {
+  const platform = process.platform;
+
+  if (platform === 'darwin') {
+    // Try Homebrew first (faster, cleaner on macOS)
+    try {
+      await execFileP('brew', ['--version']);
+      await execFileP('brew', ['install', 'ollama'], { timeout: 300_000 });
+      return;
+    } catch {
+      // Homebrew not available or install failed — fall through to curl
+    }
+  }
+
+  // Linux or macOS without Homebrew: official install script
+  await execFileP('sh', ['-c', 'curl -fsSL https://ollama.com/install.sh | sh'], {
+    timeout: 300_000,
+  });
+}
+
+/** Start ollama serve in the background. Waits up to 5 s for it to come up. */
+async function startOllamaService(): Promise<void> {
+  const child = spawn('ollama', ['serve'], {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.unref();
+
+  // Poll until service responds or timeout
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    if (await isOllamaRunning()) return;
+  }
+}
+
 function SetupApp({ options }: { options: ISetupOptions }) {
   const [state, setState] = useState<ISetupState>({
     phase: 'detecting',
     steps: [],
     detectedConfig: null,
     projectName: path.basename(process.cwd()),
+    selectedModelIndex: 2, // default: qwen3.5:latest
   });
 
+  // Local model-select cursor — kept in sync with state.selectedModelIndex for rendering
+  const [cursorIdx, setCursorIdx] = useState(0);
+  // Set when user confirms a model; triggers the pull effect below
+  const [confirmedModel, setConfirmedModel] = useState<string | null>(null);
+  // Prevent double-confirming
+  const confirmed = useRef(false);
+
+  // ── Keyboard handling for model selection ──────────────────────
+  useInput(
+    (_, key) => {
+      if (state.phase !== 'model-select') return;
+      if (key.upArrow) {
+        setCursorIdx((i) => {
+          const next = Math.max(0, i - 1);
+          setState((s) => ({ ...s, selectedModelIndex: next }));
+          return next;
+        });
+      } else if (key.downArrow) {
+        setCursorIdx((i) => {
+          const next = Math.min(SETUP_MODELS.length - 1, i + 1);
+          setState((s) => ({ ...s, selectedModelIndex: next }));
+          return next;
+        });
+      } else if (key.return && !confirmed.current) {
+        confirmed.current = true;
+        setConfirmedModel(SETUP_MODELS[cursorIdx].name);
+      }
+    },
+    { isActive: state.phase === 'model-select' },
+  );
+
+  // ── Phase 1–4: detect → registry → ollama check/install → model-select ──
   useEffect(() => {
     async function run() {
       try {
         // Phase 1: Detect
         const { config, steps } = await detectProjectConfig();
-        setState((s) => ({
-          ...s,
-          phase: 'saving',
-          steps,
-          detectedConfig: config,
-        }));
+        setState((s) => ({ ...s, phase: 'saving', steps, detectedConfig: config }));
 
         // Phase 2: Save config
         const configPath = options.config || '.pelicanrc.json';
@@ -182,12 +320,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ...s,
           steps: [
             ...s.steps,
-            {
-              name: 'config',
-              status: 'success' as const,
-              detail: configPath,
-              section: 'installed' as const,
-            },
+            { name: 'config', status: 'success' as const, detail: configPath, section: 'installed' as const },
           ],
         }));
 
@@ -223,84 +356,78 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ...s,
           steps: s.steps.map((step) =>
             step.name === 'registry'
-              ? {
-                  ...step,
-                  status: 'success' as const,
-                  detail: `${sourceCount} source · ${testCount} tests`,
-                }
+              ? { ...step, status: 'success' as const, detail: `${sourceCount} source · ${testCount} tests` }
               : step,
           ),
         }));
 
-        // Phase 4: Download reranker model.
-        //
-        // Non-fatal: if download fails (offline, HF unreachable) setup still
-        // finishes successfully. Analyze will fall back to pelican-only
-        // scoring and the user can retry via `pelican model:download`.
-        setState((s) => ({
-          ...s,
-          steps: [
-            ...s.steps,
-            {
-              name: 'reranker',
-              status: 'loading' as const,
-              detail: 'first run · ~600 MB',
-              section: 'installed' as const,
-              kind: 'model' as const,
-            },
-          ],
-        }));
+        // Phase 4: Check/install ollama
+        setState((s) => ({ ...s, phase: 'checking-ollama' }));
 
-        try {
-          const reranker = new CrossEncoderReranker({
-            onProgress: (info) => {
-              if (info.status === 'progress' && info.file && typeof info.pct === 'number') {
-                setState((s) => ({
-                  ...s,
-                  modelProgress: {
-                    file: info.file!,
-                    pct: info.pct ?? 0,
-                    loaded: info.loaded,
-                    total: info.total,
-                  },
-                }));
-              }
-            },
-          });
-          await reranker.ensureModel();
+        const ollamaInstalled = await isOllamaInstalled();
+
+        if (!ollamaInstalled) {
           setState((s) => ({
             ...s,
-            modelProgress: undefined,
-            steps: s.steps.map((step) =>
-              step.kind === 'model'
-                ? {
-                    ...step,
-                    status: 'success' as const,
-                    detail: '.pelican/models',
-                  }
-                : step,
-            ),
+            phase: 'installing-ollama',
+            steps: [
+              ...s.steps,
+              {
+                name: 'ollama',
+                status: 'loading' as const,
+                detail: 'installing ollama…',
+                section: 'installed' as const,
+              },
+            ],
           }));
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          setState((s) => ({
-            ...s,
-            modelProgress: undefined,
-            steps: s.steps.map((step) =>
-              step.kind === 'model'
-                ? {
-                    ...step,
-                    status: 'error' as const,
-                    detail: `skipped — retry with 'pelican model:download'`,
-                  }
-                : step,
-            ),
-          }));
-          // Swallow for telemetry-only paths; msg is shown in detail.
-          void msg;
+          try {
+            await installOllama();
+            setState((s) => ({
+              ...s,
+              steps: s.steps.map((step) =>
+                step.name === 'ollama'
+                  ? { ...step, status: 'success' as const, detail: 'ollama installed' }
+                  : step,
+              ),
+            }));
+          } catch (err) {
+            setState((s) => ({
+              ...s,
+              steps: s.steps.map((step) =>
+                step.name === 'ollama'
+                  ? {
+                      ...step,
+                      status: 'error' as const,
+                      detail: `install failed: ${err instanceof Error ? err.message : String(err)}`,
+                    }
+                  : step,
+              ),
+            }));
+            // Non-fatal — user can install manually. Skip to done.
+            setState((s) => ({ ...s, phase: 'done' }));
+            return;
+          }
         }
 
-        setState((s) => ({ ...s, phase: 'done' }));
+        // Ensure service is running before model pull
+        if (!(await isOllamaRunning())) {
+          await startOllamaService();
+        }
+
+        // Phase 5: Fetch locally installed models + measure speed in parallel
+        const ollama = new Ollama({ host: OLLAMA_HOST });
+        const [installedList, speedBps] = await Promise.all([
+          ollama.list().then((r) => r.models.map((m) => m.name)).catch(() => [] as string[]),
+          measureInternetSpeed(),
+        ]);
+
+        // Phase 6: Model selection (waits for user input via useInput)
+        setState((s) => ({
+          ...s,
+          phase: 'model-select',
+          internetSpeedBps: speedBps,
+          installedModels: installedList,
+        }));
       } catch (err: unknown) {
         setState((s) => ({
           ...s,
@@ -311,7 +438,118 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     }
 
     run();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Phase 5+: pull confirmed model ──────────────────────────────
+  useEffect(() => {
+    if (!confirmedModel) return;
+
+    // Skip sentinel — user opted out of download
+    if (confirmedModel === 'skip') {
+      setState((s) => ({
+        ...s,
+        steps: [
+          ...s.steps,
+          {
+            name: 'reranker',
+            status: 'error' as const,
+            detail: `skipped · set rerank.ollamaModel in .pelicanrc.json`,
+            section: 'installed' as const,
+            kind: 'model' as const,
+          },
+        ],
+        phase: 'done',
+      }));
+      return;
+    }
+
+    // Model already present — no download needed
+    const alreadyInstalled = (state.installedModels ?? []).some(
+      (m) => m === confirmedModel || m.startsWith(confirmedModel!.split(':')[0] + ':'),
+    );
+    if (alreadyInstalled) {
+      setState((s) => ({
+        ...s,
+        steps: [
+          ...s.steps,
+          {
+            name: 'reranker',
+            status: 'success' as const,
+            detail: `${confirmedModel} already installed`,
+            section: 'installed' as const,
+            kind: 'model' as const,
+          },
+        ],
+        phase: 'done',
+      }));
+      return;
+    }
+
+    async function pull() {
+      try {
+        setState((s) => ({
+          ...s,
+          phase: 'pulling-model',
+          steps: [
+            ...s.steps,
+            {
+              name: 'reranker',
+              status: 'loading' as const,
+              detail: `pulling ${confirmedModel}…`,
+              section: 'installed' as const,
+              kind: 'model' as const,
+            },
+          ],
+        }));
+
+        const ollama = new Ollama({ host: OLLAMA_HOST });
+        const stream = await ollama.pull({ model: confirmedModel!, stream: true });
+
+        for await (const chunk of stream) {
+          if (chunk.total && chunk.completed) {
+            const pct = Math.round((chunk.completed / chunk.total) * 100);
+            setState((s) => ({
+              ...s,
+              modelProgress: {
+                file: chunk.status ?? confirmedModel!,
+                pct,
+                loaded: chunk.completed,
+                total: chunk.total,
+              },
+            }));
+          }
+        }
+
+        setState((s) => ({
+          ...s,
+          modelProgress: undefined,
+          steps: s.steps.map((step) =>
+            step.kind === 'model'
+              ? { ...step, status: 'success' as const, detail: `${confirmedModel} ready` }
+              : step,
+          ),
+          phase: 'done',
+        }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          modelProgress: undefined,
+          steps: s.steps.map((step) =>
+            step.kind === 'model'
+              ? {
+                  ...step,
+                  status: 'error' as const,
+                  detail: `pull failed: ${err instanceof Error ? err.message : String(err)}`,
+                }
+              : step,
+          ),
+          phase: 'done',
+        }));
+      }
+    }
+
+    pull();
+  }, [confirmedModel]);
 
   return <SetupView {...state} />;
 }

@@ -6,7 +6,27 @@ import { IProjectConfig } from './types';
 
 const DEFAULT_CONFIG: IProjectConfig = {
   sourceDirs: ['src'],
-  testPatterns: ['**/*.cy.ts', '**/*.cy.tsx'],
+  // Broad default — covers Cypress, Jest/Vitest, Playwright, Testing Library,
+  // and generic e2e / integration layouts. Matches the `registry-builder`
+  // fallback so empty-config and default-config behavior stay identical.
+  testPatterns: [
+    '**/*.cy.ts',
+    '**/*.cy.tsx',
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    '**/*.test.js',
+    '**/*.test.jsx',
+    '**/*.spec.ts',
+    '**/*.spec.tsx',
+    '**/*.spec.js',
+    '**/*.spec.jsx',
+    '**/*.e2e.ts',
+    '**/*.e2e.tsx',
+    '**/*.integration.ts',
+    '**/*.integration.tsx',
+    '**/*.int.ts',
+    '**/*.int.tsx',
+  ],
   ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
   analyzers: {
     enabled: ['source-extractor', 'cypress-extractor', 'import-graph-analyzer'],
@@ -113,5 +133,13 @@ function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): I
       ...defaults.scoring,
       ...user.scoring,
     },
+    rerank: user.rerank
+      ? {
+          ...user.rerank,
+          fileContent: user.rerank.fileContent
+            ? { ...user.rerank.fileContent }
+            : undefined,
+        }
+      : undefined,
   };
 }

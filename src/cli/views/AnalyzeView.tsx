@@ -2,10 +2,10 @@ import { Box, Text } from 'ink';
 import React from 'react';
 
 import { Header } from '@/cli/components/Header';
-import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
 import { Panel } from '@/cli/components/Panel';
 import { ResultsTable } from '@/cli/components/ResultsTable';
 import { SectionDivider } from '@/cli/components/SectionDivider';
+import { Shimmer } from '@/cli/components/Shimmer';
 import { StatusStep } from '@/cli/components/StatusStep';
 import { palette } from '@/cli/theme';
 import { IAnalyzeState, AnalyzePhase } from '@/cli/types';
@@ -15,7 +15,7 @@ const PHASE_LABELS: Record<AnalyzePhase, string> = {
   'loading-registry': 'loading registry',
   'building-registry': 'building registry',
   'detecting-changes': 'detecting changes',
-  'downloading-model': 'downloading reranker',
+  'checking-reranker': 'checking reranker',
   analyzing: 'running analyzers',
   scoring: 'scoring relevance',
   done: 'analysis complete',
@@ -27,7 +27,7 @@ export function AnalyzeView(state: IAnalyzeState) {
     'loading-config',
     state.phase === 'building-registry' ? 'building-registry' : 'loading-registry',
     'detecting-changes',
-    'downloading-model',
+    'checking-reranker',
     'scoring',
   ];
 
@@ -54,6 +54,8 @@ export function AnalyzeView(state: IAnalyzeState) {
         return `${state.registryStats.sourceFiles} source  ·  ${state.registryStats.testFiles} tests`;
       case 'detecting-changes':
         return `${state.changedFiles.length} file${state.changedFiles.length !== 1 ? 's' : ''}`;
+      case 'checking-reranker':
+        return state.rerankerUnavailable ? 'unavailable · using lock cache' : 'ollama ready';
       default:
         return undefined;
     }
@@ -84,33 +86,75 @@ export function AnalyzeView(state: IAnalyzeState) {
             detail={stepDetail(phase)}
           />
         ))}
-        {state.phase === 'scoring' && state.currentFile && (
-          <Box paddingLeft={7} marginTop={1}>
-            <Text color={palette.brand} bold>
-              ◆{' '}
-            </Text>
-            <Text color={palette.cyan}>{state.currentFile}</Text>
-          </Box>
-        )}
-        {state.phase === 'downloading-model' && (
-          <ModelDownloadProgress progress={state.modelDownload} />
-        )}
+        {(state.phase === 'scoring' || state.phase === 'done') &&
+          state.changedFiles.length > 0 && (
+            <Box flexDirection="column" paddingLeft={6} marginBottom={1}>
+              {state.changedFiles.map((file, i) => {
+                const isDoneFile = (state.completedFiles ?? []).includes(file);
+                const isActive = !isDoneFile && (
+                  (state.activeFiles ?? []).includes(file) || state.currentFile === file
+                );
+                const isLast = i === state.changedFiles.length - 1;
+                const branch = isLast ? '╰' : '├';
+
+                if (isDoneFile) {
+                  return (
+                    <Box key={file}>
+                      <Text color={palette.muted}>{branch}{'─ '}</Text>
+                      <Text color={palette.emerald}>✔</Text>
+                      <Text color={palette.muted}>{'  '}</Text>
+                      <Text color={palette.sub}>{file}</Text>
+                    </Box>
+                  );
+                }
+
+                if (isActive) {
+                  const rerankSuffix =
+                    state.rerankTotal != null && state.rerankTotal > 0 ? (
+                      <Text color={palette.dim}>
+                        {'  '}reranking{' '}
+                        <Text color={palette.text}>{state.rerankScored ?? 0}</Text>
+                        {'/'}
+                        <Text color={palette.text}>{state.rerankTotal}</Text>
+                      </Text>
+                    ) : null;
+
+                  return (
+                    <Box key={file}>
+                      <Text color={palette.muted}>{branch}{'─ '}</Text>
+                      <Shimmer text={file} />
+                      {rerankSuffix}
+                    </Box>
+                  );
+                }
+
+                return (
+                  <Box key={file}>
+                    <Text color={palette.muted}>{branch}{'─ '}</Text>
+                    <Text color={palette.muted}>○</Text>
+                    <Text color={palette.muted}>{'  '}</Text>
+                    <Text color={palette.dim}>{file}</Text>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
       </Box>
 
       {state.rerankerUnavailable && (
         <Box marginTop={1} paddingX={2} flexDirection="column">
           <Box>
             <Text color={palette.amber} bold>
-              ⚠  semantic reranker unavailable
+              ⚠  Ollama reranker unavailable
             </Text>
           </Box>
           <Box paddingLeft={4}>
             <Text color={palette.dim}>
-              showing pelican-only results. run{' '}
+              using pelican structural scoring + cached mappings.{' '}
               <Text color={palette.brand} bold>
-                pelican model:download
+                ollama pull qwen3:3b
               </Text>{' '}
-              to retry setup.
+              to enable.
             </Text>
           </Box>
           {state.rerankerError && (
@@ -136,7 +180,13 @@ export function AnalyzeView(state: IAnalyzeState) {
         </>
       )}
 
-      {hasResults && <ResultsTable results={state.results} maxResults={state.maxResults} />}
+      {hasResults && (
+        <ResultsTable
+          results={state.results}
+          maxResults={state.maxResults}
+          elapsedMs={state.elapsedMs}
+        />
+      )}
 
       {state.phase === 'error' && state.error && (
         <>

@@ -8,6 +8,7 @@ import { Panel } from '@/cli/components/Panel';
 import { SectionDivider } from '@/cli/components/SectionDivider';
 import { palette } from '@/cli/theme';
 import { ISetupState, ISetupStep } from '@/cli/types';
+import { SETUP_MODELS, downloadMinutes } from '@/cli/setup-models';
 
 const LABEL_WIDTH = 12;
 
@@ -84,9 +85,127 @@ function InstallingRow({
   );
 }
 
+function Stars({ count, active }: { count: number; active: boolean }) {
+  const filled = '★'.repeat(count);
+  const empty = '☆'.repeat(3 - count);
+  return (
+    <Text color={active ? palette.brand : palette.muted}>
+      {filled}
+      <Text color={palette.muted}>{empty}</Text>
+    </Text>
+  );
+}
+
+/** Format bytes/sec as "X Mbps (Y MB/s)" so bits-vs-bytes is unambiguous. */
+function formatSpeed(bps: number): string {
+  const mbps = (bps * 8) / 1e6;
+  const MBps = bps / 1e6;
+  const mbpsStr = mbps >= 1 ? `${mbps.toFixed(0)} Mbps` : `${(mbps * 1000).toFixed(0)} Kbps`;
+  return `${mbpsStr} · ${MBps.toFixed(1)} MB/s`;
+}
+
+function isInstalled(modelName: string, installedModels: string[]): boolean {
+  return installedModels.some(
+    (m) => m === modelName || m.startsWith(modelName.split(':')[0] + ':'),
+  );
+}
+
+function ModelSelectMenu({
+  selectedIndex,
+  internetSpeedBps,
+  installedModels = [],
+}: {
+  selectedIndex: number;
+  internetSpeedBps?: number;
+  installedModels?: string[];
+}) {
+  const hasSpeed = (internetSpeedBps ?? 0) > 0;
+  const speedLabel = hasSpeed
+    ? `your connection · ${formatSpeed(internetSpeedBps!)}`
+    : '50 Mbps estimate';
+
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionLabel label="Select reranker model" />
+
+      {/* Speed attribution line */}
+      <Box paddingX={7} marginTop={1}>
+        <Text color={palette.dim}>download times based on </Text>
+        <Text color={hasSpeed ? palette.cyan : palette.muted}>{speedLabel}</Text>
+      </Box>
+
+      {/* Column header */}
+      <Box paddingX={7} marginTop={1} marginBottom={0}>
+        <Text color={palette.muted}>{'model'.padEnd(24)}</Text>
+        <Text color={palette.muted}>{'size'.padEnd(10)}</Text>
+        <Text color={palette.muted}>{'precision'.padEnd(14)}</Text>
+        <Text color={palette.muted}>{'est. download'}</Text>
+      </Box>
+
+      <Box flexDirection="column" marginTop={0}>
+        {SETUP_MODELS.map((model, i) => {
+          const active = i === selectedIndex;
+          const isSkip = model.skip === true;
+          const installed = !isSkip && isInstalled(model.name, installedModels);
+          return (
+            <Box key={model.name} paddingX={5} marginTop={isSkip ? 1 : 0}>
+              <Text color={active ? palette.brand : palette.muted} bold>
+                {active ? '●' : '○'}
+              </Text>
+              <Text>{'  '}</Text>
+              {isSkip ? (
+                <>
+                  <Text color={active ? palette.amber : palette.muted} bold>
+                    {'skip for now'.padEnd(24)}
+                  </Text>
+                  <Text color={palette.dim}>{model.desc}</Text>
+                </>
+              ) : (
+                <>
+                  <Text color={active ? palette.cyan : palette.text} bold>
+                    {model.name.padEnd(24)}
+                  </Text>
+                  <Text color={active ? palette.sub : palette.dim}>{model.size.padEnd(10)}</Text>
+                  <Box width={14}>
+                    <Stars count={model.stars} active={active} />
+                    <Text color={active ? palette.sub : palette.muted}>
+                      {' '}
+                      {model.precision}
+                    </Text>
+                  </Box>
+                  {installed ? (
+                    <Text color={palette.emerald} bold>✔ already installed</Text>
+                  ) : (
+                    <Text color={active ? palette.sub : palette.muted}>
+                      {downloadMinutes(model.sizeBytes, internetSpeedBps)}
+                    </Text>
+                  )}
+                </>
+              )}
+            </Box>
+          );
+        })}
+      </Box>
+
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.muted}>↑↓ navigate · enter to confirm</Text>
+      </Box>
+
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.dim}>tip: </Text>
+        <Text color={palette.muted}>other models → set </Text>
+        <Text color={palette.cyan}>rerank.ollamaModel</Text>
+        <Text color={palette.muted}> in </Text>
+        <Text color={palette.cyan}>.pelicanrc.json</Text>
+      </Box>
+    </Box>
+  );
+}
+
 export function SetupView(state: ISetupState) {
   const isDone = state.phase === 'done';
   const isError = state.phase === 'error';
+  const isModelSelect = state.phase === 'model-select';
 
   const borderColor = isError ? palette.rose : isDone ? palette.emerald : palette.border;
 
@@ -141,6 +260,14 @@ export function SetupView(state: ISetupState) {
             })}
           </Box>
         </>
+      )}
+
+      {isModelSelect && (
+        <ModelSelectMenu
+          selectedIndex={state.selectedModelIndex ?? 1}
+          internetSpeedBps={state.internetSpeedBps}
+          installedModels={state.installedModels}
+        />
       )}
 
       {isDone && (
