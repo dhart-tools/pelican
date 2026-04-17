@@ -252,6 +252,7 @@ export class SemanticReranker {
     changedFile: string,
     candidates: IRerankCandidate[],
     registry: IRegistry,
+    onProgress?: (info: IRerankerProgress) => void,
   ): Promise<IRerankResult[]> {
     if (!this.config.enabled || candidates.length === 0) {
       return candidates.map((c) => ({
@@ -348,13 +349,17 @@ export class SemanticReranker {
           return results;
         }
 
-        this.config.onProgress?.({ status: 'scoring', scored: 0, total: survivors.length });
+        const emit = (info: IRerankerProgress): void => {
+          this.config.onProgress?.(info);
+          onProgress?.(info);
+        };
+        emit({ status: 'scoring', scored: 0, total: survivors.length });
         const llmResults = await this.ollama.rerankPairs(
           sourceEntry,
           changedFile,
           testEntries,
           (scored, total) => {
-            this.config.onProgress?.({ status: 'scoring', scored, total });
+            emit({ status: 'scoring', scored, total });
           },
         );
 

@@ -21,6 +21,24 @@ const execFileP = promisify(execFile);
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 const OLLAMA_HOST = 'http://localhost:11434';
 
+/**
+ * Persist the selected model into the project's .pelicanrc.json under
+ * `rerank.ollamaModel`. Without this, setup would download the model but
+ * analyze would still read DEFAULT_OLLAMA_CONFIG.model at runtime — the
+ * user's choice would be silently ignored.
+ */
+async function persistModelChoice(configPath: string, model: string): Promise<void> {
+  try {
+    const content = await fs.readFile(configPath, 'utf-8');
+    const cfg = JSON.parse(content);
+    cfg.rerank = { ...(cfg.rerank ?? {}), enabled: true, ollamaModel: model };
+    await fs.writeFile(configPath, JSON.stringify(cfg, null, 2));
+  } catch {
+    // Config missing or unreadable — skip silently. analyze will fall back
+    // to the built-in default, which is still functional.
+  }
+}
+
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -488,6 +506,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
       (m) => m === confirmedModel || m.startsWith(confirmedModel!.split(':')[0] + ':'),
     );
     if (alreadyInstalled) {
+      void persistModelChoice(options.config || '.pelicanrc.json', confirmedModel!);
       setState((s) => ({
         ...s,
         steps: [
@@ -540,6 +559,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           }
         }
 
+        await persistModelChoice(options.config || '.pelicanrc.json', confirmedModel!);
         setState((s) => ({
           ...s,
           modelProgress: undefined,

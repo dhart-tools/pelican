@@ -109,21 +109,33 @@ export function AnalyzeView(state: IAnalyzeState) {
                 }
 
                 if (isActive) {
-                  const rerankSuffix =
-                    state.rerankTotal != null && state.rerankTotal > 0 ? (
-                      <Text color={palette.dim}>
-                        {'  '}reranking{' '}
-                        <Text color={palette.text}>{state.rerankScored ?? 0}</Text>
-                        {'/'}
-                        <Text color={palette.text}>{state.rerankTotal}</Text>
-                      </Text>
-                    ) : null;
+                  const prog = state.rerankProgress?.[file];
+                  const BAR_W = 12;
+                  let bar: React.ReactNode = null;
+                  if (prog && prog.total > 0) {
+                    const filled = Math.max(
+                      0,
+                      Math.min(BAR_W, Math.round((prog.scored / prog.total) * BAR_W)),
+                    );
+                    const bars = '█'.repeat(filled) + '░'.repeat(BAR_W - filled);
+                    bar = (
+                      <Box>
+                        <Text color={palette.brand}>{bars}</Text>
+                        <Text color={palette.dim}>
+                          {'  '}
+                          {prog.scored}/{prog.total}
+                        </Text>
+                      </Box>
+                    );
+                  }
 
                   return (
-                    <Box key={file}>
-                      <Text color={palette.muted}>{branch}{'─ '}</Text>
-                      <Shimmer text={file} />
-                      {rerankSuffix}
+                    <Box key={file} justifyContent="space-between" paddingRight={2}>
+                      <Box>
+                        <Text color={palette.muted}>{branch}{'─ '}</Text>
+                        <Shimmer text={file} />
+                      </Box>
+                      {bar && <Box flexShrink={0}>{bar}</Box>}
                     </Box>
                   );
                 }
@@ -185,6 +197,7 @@ export function AnalyzeView(state: IAnalyzeState) {
           results={state.results}
           maxResults={state.maxResults}
           elapsedMs={state.elapsedMs}
+          expanded={state.expanded}
         />
       )}
 

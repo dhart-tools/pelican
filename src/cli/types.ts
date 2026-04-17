@@ -73,8 +73,14 @@ export interface IAnalyzeState {
   rerankScored?: number;
   /** Total pairs queued for LLM scoring. */
   rerankTotal?: number;
+  /** Per-file rerank progress. Needed because multiple files can rerank
+   * concurrently (cross-file pLimit=2) and the global scored/total fields
+   * would stomp on each other otherwise. */
+  rerankProgress?: Record<string, { scored: number; total: number }>;
   /** Total wall-clock time in milliseconds (set when phase is 'done'). */
   elapsedMs?: number;
+  /** When true, render the per-source-file breakdown; otherwise show dedup'd combined list. */
+  expanded?: boolean;
 }
 
 export interface IAnalyzeResult {
@@ -249,6 +255,8 @@ export interface IAnalyzeOptions {
   cache?: boolean;
   /** Set by --all flag. Removes the result cap; every kept suggestion is shown. */
   all?: boolean;
+  /** Set by --expanded flag. Shows the per-source-file breakdown instead of the dedup'd combined list. */
+  expanded?: boolean;
 }
 
 export interface IRegistryBuildOptions {

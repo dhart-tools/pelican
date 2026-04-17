@@ -814,7 +814,7 @@ export class OllamaReranker {
               think: false,
               keep_alive: -1,
               format: schema,
-              options: { temperature: 0, num_predict: numPredict },
+              options: { temperature: 0, num_predict: numPredict, num_ctx: 8192 },
             });
             const callMs = Date.now() - callStart;
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -931,7 +931,7 @@ export class OllamaReranker {
           think: false,
           keep_alive: -1,
           format: schema,
-          options: { temperature: 0, num_predict: numPredict },
+          options: { temperature: 0, num_predict: numPredict, num_ctx: 8192 },
         });
         const callMs = Date.now() - callStart;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -103,6 +103,7 @@ async function applyReranker(
   registry: Registry,
   thresholds: { high: number; min: number },
   explanationsEnabled: boolean,
+  onProgress?: (info: { status: string; scored?: number; total?: number }) => void,
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
 
@@ -122,7 +123,7 @@ async function applyReranker(
   }));
   const rerankResults =
     candidates.length > 0
-      ? await reranker.rerank(changedFile, candidates, registry)
+      ? await reranker.rerank(changedFile, candidates, registry, onProgress)
       : [];
   const byFile = new Map(rerankResults.map((r) => [r.testFile, r]));
 
@@ -223,6 +224,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
       : options.maxResults
         ? Number.parseInt(options.maxResults)
         : undefined,
+    expanded: options.expanded,
   });
 
   useEffect(() => {
@@ -341,13 +343,22 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           setState((s) => ({
             ...s,
-            activeFiles: [changedFile],
-            rerankScored: undefined,
-            rerankTotal: undefined,
+            activeFiles: [...(s.activeFiles ?? []), changedFile],
           }));
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
           const preRerankCount = relevant.length;
+
+          const onFileProgress = (info: { status: string; scored?: number; total?: number }): void => {
+            if (info.status !== 'scoring' || info.scored == null || info.total == null) return;
+            setState((s) => ({
+              ...s,
+              rerankProgress: {
+                ...(s.rerankProgress ?? {}),
+                [changedFile]: { scored: info.scored!, total: info.total! },
+              },
+            }));
+          };
 
           let finalResults: IAnalyzeResult['suggestedTests'];
           if (rerankerUnavailable) {
@@ -362,6 +373,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 registry,
                 thresholds,
                 config.rerank?.explanations === true,
+                onFileProgress,
               );
             } catch (err) {
               rerankerUnavailable = true;
@@ -643,6 +655,7 @@ export const analyzeCommand = new Command('analyze')
   .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
   .option('--max-results <number>', 'Maximum number of results', '10')
   .option('--all', 'Show all suggestions (overrides --max-results)')
+  .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
   .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
   .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
