@@ -1,7 +1,17 @@
 import { IFileEntry, IRegistry } from '@/types/registry';
 
+import {
+  BiEncoderPrefilter,
+  DEFAULT_BI_ENCODER_CONFIG,
+  IBiEncoderCandidate,
+} from './bi-encoder-prefilter';
 import { CrossEncoderReranker } from './cross-encoder-reranker';
-import { DEFAULT_OLLAMA_CONFIG, IFileContentConfig, OllamaReranker } from './ollama-reranker';
+import {
+  BUCKET_MULTIPLIER,
+  DEFAULT_OLLAMA_CONFIG,
+  IFileContentConfig,
+  OllamaReranker,
+} from './ollama-reranker';
 import { PelicanLock } from './pelican-lock';
 
 export interface IRerankerConfig {
@@ -38,6 +48,23 @@ export interface IRerankerConfig {
   /** Sigmoid score below which CE will drop a pair. Default 0.08. */
   cePrefilterThreshold?: number;
   /**
+   * When enabled, a local bi-encoder (code-trained embedding model via Ollama)
+   * ranks all candidates by cosine similarity and keeps only the top
+   * `biEncoderTopK`. Makes the downstream LLM cost O(1) per source regardless
+   * of repo size. Default true.
+   */
+  biEncoderPrefilter?: boolean;
+  /** Ollama embedding model. Default jina/jina-embeddings-v2-base-code. */
+  biEncoderModel?: string;
+  /**
+   * Safety ceiling on surviving candidates after bi-encoder ranking. Not a
+   * forced fill — real pruning comes from the bi-encoder's min-score floor.
+   * Default 30.
+   */
+  biEncoderTopK?: number;
+  /** Disk cache for embeddings. Default `.pelican/embeddings.json`. */
+  biEncoderCachePath?: string;
+  /**
    * When false, bypass the `.pelican.lock` cache entirely — every candidate is
    * sent to the LLM regardless of prior confirm/reject state, and no new
    * entries are written. Useful for debugging filter behavior. Default true.
@@ -49,6 +76,20 @@ export interface IRerankerConfig {
    * result list contains files only, no reasons.
    */
   explanations?: boolean;
+  /** Pack all candidates in one LLM call per source. Default true. */
+  listwise?: boolean;
+  /** Max candidates per listwise window. Default 16. */
+  listwiseWindow?: number;
+  /**
+   * Pelican structural score at or above which a candidate is auto-kept
+   * without sending it to the LLM. The structural signal is precise enough
+   * at the high end that LLM verdicts rarely overturn — spending LLM time
+   * there is wasted. Set to 1 (or anything >1) to disable auto-keep and
+   * force every candidate through the LLM. When undefined, caller should
+   * default to scoring.highConfidence so the rerank band mirrors the
+   * labeling band.
+   */
+  autoKeepThreshold?: number;
 }
 
 export interface IRerankerProgress {
@@ -70,6 +111,10 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   lockPath: '.pelican/pelican.lock',
   cePrefilter: false,
   cePrefilterThreshold: 0.08,
+  biEncoderPrefilter: true,
+  biEncoderModel: DEFAULT_BI_ENCODER_CONFIG.model,
+  biEncoderTopK: DEFAULT_BI_ENCODER_CONFIG.topK, // 30 — safety ceiling only
+  biEncoderCachePath: DEFAULT_BI_ENCODER_CONFIG.cachePath,
   explanations: false,
   useCache: true,
 };
@@ -119,6 +164,8 @@ export class SemanticReranker {
   private lock: PelicanLock;
   private ce: CrossEncoderReranker | null = null;
   private ceReady = false;
+  private biEncoder: BiEncoderPrefilter | null = null;
+  private biEncoderReady = false;
 
   constructor(config: Partial<IRerankerConfig> = {}) {
     this.config = { ...DEFAULT_RERANKER_CONFIG, ...config };
@@ -131,10 +178,21 @@ export class SemanticReranker {
       base: this.config.base,
       target: this.config.target,
       explanations: this.config.explanations === true,
+      listwise: this.config.listwise === true,
+      listwiseWindow: this.config.listwiseWindow,
     });
     this.lock = new PelicanLock(this.config.lockPath);
     if (this.config.cePrefilter) {
       this.ce = new CrossEncoderReranker({ debug: this.config.debug });
+    }
+    if (this.config.biEncoderPrefilter !== false) {
+      this.biEncoder = new BiEncoderPrefilter({
+        model: this.config.biEncoderModel,
+        host: this.config.ollamaHost,
+        topK: this.config.biEncoderTopK,
+        cachePath: this.config.biEncoderCachePath,
+        debug: this.config.debug,
+      });
     }
   }
 
@@ -167,6 +225,20 @@ export class SemanticReranker {
           process.stderr.write(`[rerank] CE prefilter unavailable — ${msg}\n`);
         }
         this.ce = null;
+      }
+    }
+    if (this.biEncoder) {
+      const ok = await this.biEncoder.checkAvailable();
+      if (ok) {
+        this.biEncoderReady = true;
+      } else {
+        if (this.config.debug) {
+          process.stderr.write(
+            `[rerank] bi-encoder model "${this.config.biEncoderModel}" not available at ` +
+              `${this.config.ollamaHost} — run: ollama pull ${this.config.biEncoderModel}\n`,
+          );
+        }
+        this.biEncoder = null;
       }
     }
     this.config.onProgress?.({ status: 'ready', model: this.config.ollamaModel });
@@ -244,10 +316,18 @@ export class SemanticReranker {
         // overlap before they reach the expensive LLM call. Threshold is kept
         // deliberately low (default 0.08) so we only shed the obvious misses.
         // Pelican's structural score + LLM still decide the ambiguous middle.
-        const survivors = await this.cePrefilter(
+        const ceSurvivors = await this.cePrefilter(
           changedFile,
           sourceEntry,
           toScore,
+          results,
+          registry,
+        );
+
+        const survivors = await this.biEncoderPrefilterStage(
+          changedFile,
+          sourceEntry,
+          ceSurvivors,
           results,
           registry,
         );
@@ -262,7 +342,7 @@ export class SemanticReranker {
           if (this.config.debug) {
             const keptCount = results.filter((r) => r.kept).length;
             process.stderr.write(
-              `[rerank] kept ${keptCount}/${results.length} for ${changedFile} (CE dropped all ${toScore.length})\n`,
+              `[rerank] kept ${keptCount}/${results.length} for ${changedFile} (prefilters dropped all ${toScore.length})\n`,
             );
           }
           return results;
@@ -280,11 +360,22 @@ export class SemanticReranker {
 
         for (const llm of llmResults) {
           const cand = survivors.find((c) => c.testFile === llm.testFile)!;
+          // LLM tilts pelican, doesn't overturn it. Multiplier is now
+          // GENTLE (0.5..1.3) so borderline buckets don't swing the kept
+          // count wildly. Pelican's structural score stays the anchor.
+          const mult =
+            llm.bucket !== undefined ? BUCKET_MULTIPLIER[llm.bucket] : undefined;
+          const keptCombined =
+            mult !== undefined
+              ? Math.min(1, cand.pelicanScore * mult)
+              : Math.min(1, cand.pelicanScore + this.config.confirmedBoost);
+          const rejectCombined =
+            mult !== undefined ? cand.pelicanScore * mult : cand.pelicanScore;
           if (llm.relevant) {
             if (useCache) this.lock.confirm(changedFile, llm.testFile, llm.reason);
             results.push({
               testFile: llm.testFile,
-              combined: Math.min(1, cand.pelicanScore + this.config.confirmedBoost),
+              combined: keptCombined,
               kept: true,
               reason: llm.reason,
               fromCache: false,
@@ -293,7 +384,7 @@ export class SemanticReranker {
             if (useCache) this.lock.reject(changedFile, llm.testFile);
             results.push({
               testFile: llm.testFile,
-              combined: cand.pelicanScore,
+              combined: rejectCombined,
               kept: false,
               reason: llm.reason,
               fromCache: false,
@@ -395,6 +486,73 @@ export class SemanticReranker {
       if (this.config.debug) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[rerank] CE prefilter errored, falling through: ${msg}\n`);
+      }
+      return toScore;
+    }
+  }
+
+  /**
+   * Bi-encoder stage: rank remaining candidates by cosine similarity of code
+   * embeddings and keep only the configured top-K. Dropped candidates are
+   * written into `results` as `kept:false` (cached via lock) so they still
+   * surface in debug output with a clear reason.
+   *
+   * If the bi-encoder model isn't loaded (pull failed, Ollama missing) this
+   * is a no-op — we return `toScore` untouched so we never silently lose
+   * candidates because of an environment issue.
+   */
+  private async biEncoderPrefilterStage(
+    changedFile: string,
+    sourceEntry: IFileEntry,
+    toScore: IRerankCandidate[],
+    results: IRerankResult[],
+    registry: IRegistry,
+  ): Promise<IRerankCandidate[]> {
+    if (!this.biEncoder || !this.biEncoderReady || toScore.length === 0) return toScore;
+    const topK = this.config.biEncoderTopK ?? DEFAULT_BI_ENCODER_CONFIG.topK;
+    if (toScore.length <= topK) return toScore;
+
+    try {
+      const sourceText = buildCETextForSource(sourceEntry);
+      const candidates: IBiEncoderCandidate[] = toScore.map((c) => {
+        const entry = registry.getFile(c.testFile) as IFileEntry | undefined;
+        return {
+          id: c.testFile,
+          text: buildCETextForTest(c.testFile, entry),
+          prior: c.pelicanScore,
+        };
+      });
+
+      const { kept, dropped } = await this.biEncoder.topK(sourceText, candidates);
+
+      const survivorIds = new Set(kept.map((k) => k.candidate.id));
+      const survivors = toScore.filter((c) => survivorIds.has(c.testFile));
+
+      for (const d of dropped) {
+        const cand = toScore.find((c) => c.testFile === d.candidate.id)!;
+        if (this.config.useCache !== false) {
+          this.lock.reject(changedFile, cand.testFile);
+        }
+        results.push({
+          testFile: cand.testFile,
+          combined: cand.pelicanScore,
+          kept: false,
+          reason: `bi-encoder: rank ${d.rank + 1}, cosine ${d.score.toFixed(3)}`,
+          fromCache: false,
+        });
+      }
+
+      if (this.config.debug) {
+        process.stderr.write(
+          `[rerank] ${changedFile}: bi-encoder kept ${survivors.length}/${toScore.length} ` +
+            `(topK=${topK})\n`,
+        );
+      }
+      return survivors;
+    } catch (err) {
+      if (this.config.debug) {
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[rerank] bi-encoder errored, falling through: ${msg}\n`);
       }
       return toScore;
     }

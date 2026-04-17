@@ -86,9 +86,35 @@ export async function loadProjectConfig(configPath?: string): Promise<IProjectCo
   try {
     const content = await fs.readFile(path, 'utf-8');
     const userConfig = JSON.parse(content);
-    return mergeConfig(DEFAULT_CONFIG, userConfig);
-  } catch {
+    const merged = mergeConfig(DEFAULT_CONFIG, userConfig);
+    validateScoringThresholds(merged);
+    return merged;
+  } catch (err) {
+    if (err instanceof ConfigValidationError) throw err;
     return { ...DEFAULT_CONFIG };
+  }
+}
+
+export class ConfigValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigValidationError';
+  }
+}
+
+/**
+ * Guard against the "inverted bands" mis-config where highConfidence is
+ * set below minConfidence — a real user hit this and saw every result
+ * collapse into the HIGH band (anything ≥ min was also ≥ high). Silent
+ * misconfig here manifests as confusing tiering, not an obvious error.
+ */
+function validateScoringThresholds(config: IProjectConfig): void {
+  const { minConfidence, highConfidence } = config.scoring;
+  if (highConfidence < minConfidence) {
+    throw new ConfigValidationError(
+      `scoring.highConfidence (${highConfidence}) must be >= scoring.minConfidence (${minConfidence}). ` +
+        `Results below minConfidence are filtered out; anything kept needs a band between [min, high) → Medium and [high, 1] → High.`,
+    );
   }
 }
 

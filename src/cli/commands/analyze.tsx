@@ -3,6 +3,7 @@ import * as path from 'path';
 
 import { Command } from 'commander';
 import { render } from 'ink';
+import pLimit from 'p-limit';
 import React, { useState, useEffect } from 'react';
 
 import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
@@ -86,6 +87,15 @@ function bandFor(
  *   3. Recomputes `confidence` from the new score using ScoringEngine's
  *      same thresholds, so bands stay consistent end-to-end.
  */
+/**
+ * Pelican scores at or above this bypass the LLM entirely. Structural
+ * evidence this strong (direct imports, matching mounts, route ownership)
+ * is rarely overturned by the LLM — spending decode time on it is waste.
+ * Lives here, not in the reranker, because the reranker still sees these
+ * pairs in its result list; we just skip the LLM call for them.
+ */
+const AUTO_KEEP_PELICAN = 0.9;
+
 async function applyReranker(
   reranker: SemanticReranker,
   changedFile: string,
@@ -95,15 +105,36 @@ async function applyReranker(
   explanationsEnabled: boolean,
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
-  const candidates = scored.map((r) => ({
+
+  // Split into auto-kept (high pelican → skip LLM) and "needs LLM".
+  // Auto-kept pairs still flow through the final sorted list at their
+  // pelican score; they just never see the model.
+  const autoKept: IAnalyzeResult['suggestedTests'] = [];
+  const toRerank: IAnalyzeResult['suggestedTests'] = [];
+  for (const r of scored) {
+    if (r.score >= AUTO_KEEP_PELICAN) autoKept.push(r);
+    else toRerank.push(r);
+  }
+
+  const candidates = toRerank.map((r) => ({
     testFile: r.testFile,
     pelicanScore: r.score,
   }));
-  const rerankResults = await reranker.rerank(changedFile, candidates, registry);
+  const rerankResults =
+    candidates.length > 0
+      ? await reranker.rerank(changedFile, candidates, registry)
+      : [];
   const byFile = new Map(rerankResults.map((r) => [r.testFile, r]));
 
   const mutated: IAnalyzeResult['suggestedTests'] = [];
-  for (const result of scored) {
+
+  for (const result of autoKept) {
+    result.confidence = bandFor(result.score, thresholds);
+    if (!explanationsEnabled) result.explanation = '';
+    mutated.push(result);
+  }
+
+  for (const result of toRerank) {
     const rr = byFile.get(result.testFile);
     if (!rr || !rr.kept) continue;
 
@@ -361,10 +392,17 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           };
         }
 
-        const results: IAnalyzeResult[] = [];
-        for (const changedFile of changedFiles) {
-          results.push(await processFile(changedFile));
-        }
+        // Cross-file parallelism. Each source file has a different prefix
+        // (its own source block), so we can't share KV cache across files
+        // anyway — running them serially just leaves Ollama's parallel
+        // slots idle. With OLLAMA_NUM_PARALLEL>=fileConcurrency, wall-clock
+        // divides by ~fileConcurrency. Keep it modest (2) so per-source
+        // KV prefix reuse inside `rerankPairs` still wins within each slot.
+        const fileConcurrency = Math.min(2, changedFiles.length);
+        const fileLimit = pLimit(fileConcurrency);
+        const results = await Promise.all(
+          changedFiles.map((f) => fileLimit(() => processFile(f))),
+        );
 
         // Phase 5: Done
         setState((s) => ({

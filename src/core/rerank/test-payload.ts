@@ -165,14 +165,46 @@ function isCommentOrWhitespace(body: string): boolean {
 export function buildSourceHeader(entry: IFileEntry): string {
   const provider = detectSourceProvider(entry);
   const entryPoint = isSourceEntryPoint(entry);
+  const routes = entry.routesDefined?.map((r) => r.path).filter(Boolean).slice(0, 8).join(', ');
+  const sels = entry.selectors
+    ?.map((s) => s.value)
+    .filter(Boolean)
+    .slice(0, 10)
+    .join(', ');
+  const reduxActions = entry.reduxUsage?.actionsDispatched?.slice(0, 6).join(', ');
+  const reduxSlices = entry.reduxUsage?.slicesDefined?.slice(0, 4).join(', ');
+  const uiKind = detectSourceUIKind(entry);
   const lines = [
     'SOURCE METADATA:',
     `- path: ${entry.path}`,
+    `- ui_kind: ${uiKind}`,
     provider ? `- provider: ${provider}` : undefined,
     entryPoint ? `- entry_point: true` : undefined,
     entry.exports.length ? `- exports: ${entry.exports.slice(0, 10).join(', ')}` : undefined,
+    routes ? `- routes_defined: ${routes}` : undefined,
+    sels ? `- selectors: ${sels}` : undefined,
+    reduxActions ? `- actions: ${reduxActions}` : undefined,
+    reduxSlices ? `- slices: ${reduxSlices}` : undefined,
   ].filter(Boolean);
   return lines.join('\n');
+}
+
+export type SourceUIKind = 'component' | 'container' | 'machine' | 'hook' | 'reducer' | 'util' | 'entry';
+
+/**
+ * Classify the source's runtime role — drives R8/R9 folder-gate rules.
+ * A Jest-backend-only folder tests never execute a `container`, a `demo`
+ * spec rarely exercises a `machine`. Purely syntactic — no content read.
+ */
+export function detectSourceUIKind(entry: IFileEntry): SourceUIKind {
+  const p = entry.path.toLowerCase();
+  if (isSourceEntryPoint(entry)) return 'entry';
+  if (/\/machines?\//.test(p) || /machine\.(t|j)sx?$/i.test(p)) return 'machine';
+  if (/\/hooks?\//.test(p) || /^use[A-Z]/.test(path.basename(entry.path))) return 'hook';
+  if (/reducer|slice/i.test(p)) return 'reducer';
+  if (/\/containers?\//.test(p)) return 'container';
+  if (/\/(utils?|helpers?|lib)\//.test(p)) return 'util';
+  return 'component';
 }
 
 /**
@@ -183,20 +215,63 @@ export function buildTestHeader(entry: IFileEntry, fileContent?: string): string
   const c = classifyTest(entry, fileContent);
   const visits = entry.cypress?.visitedRoutes?.slice(0, 6).join(', ');
   const describes = entry.cypress?.describeBlocks?.slice(0, 3).join(' > ');
+  const intercepts = entry.cypress?.interceptedAPIs
+    ?.map((a) => `${a.method} ${a.urlPattern}`)
+    .slice(0, 6)
+    .join(', ');
+  const selectors = entry.cypress?.selectors
+    ?.map((s) => s.value)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(', ');
+  const bypassCmds = detectBypassCommands(entry);
+  const folder = detectTestFolder(entry);
 
   const lines = [
     'TEST METADATA:',
     `- path: ${entry.path}`,
     `- kind: ${c.kind}`,
+    `- folder: ${folder}`,
     `- it_count: ${c.itCount}`,
     c.loginHelper ? `- login_helper: ${c.loginHelper}` : undefined,
     c.mountTargets.length ? `- mount_targets: ${c.mountTargets.join(', ')}` : undefined,
     c.seeded ? `- seeded: true` : undefined,
     c.provider ? `- provider: ${c.provider}` : undefined,
+    bypassCmds.length ? `- bypass_cmds: ${bypassCmds.join(', ')}` : undefined,
     describes ? `- describes: ${describes}` : undefined,
     visits ? `- visits: ${visits}` : undefined,
+    intercepts ? `- intercepts: ${intercepts}` : undefined,
+    selectors ? `- selectors: ${selectors}` : undefined,
   ].filter(Boolean);
   return lines.join('\n');
+}
+
+/**
+ * Detect Cypress custom commands the test uses to BYPASS UI flows —
+ * `cy.makeTransaction()`, `cy.loginByXstate()`, `cy.seedDatabase()` etc.
+ * When a spec bypasses a flow via programmatic command, the React
+ * containers on that flow's UI path aren't exercised — R7 uses this.
+ */
+export function detectBypassCommands(entry: IFileEntry): string[] {
+  const cmds = entry.cypress?.customCommandsUsed ?? [];
+  return cmds.filter((c) =>
+    /^(make|seed|login\w*By|programmatic|create|setup)/i.test(c),
+  );
+}
+
+/**
+ * Cypress test folder bucket (`api` / `demo` / `ui` / `component` / `other`).
+ * `api/` specs never exercise React components; `demo/` specs are
+ * walkthrough-style smoke, not coverage — both drive R8/R9.
+ */
+export function detectTestFolder(entry: IFileEntry): string {
+  const p = entry.path.toLowerCase();
+  if (/cypress\/tests?\/api\//.test(p)) return 'api';
+  if (/cypress\/tests?\/demo\//.test(p)) return 'demo';
+  if (/cypress\/tests?\/ui-auth-providers\//.test(p)) return 'ui-auth';
+  if (/cypress\/tests?\/ui\//.test(p)) return 'ui';
+  if (/\.cy\.(t|j)sx?$/.test(p)) return 'component';
+  return 'other';
 }
 
 /**
