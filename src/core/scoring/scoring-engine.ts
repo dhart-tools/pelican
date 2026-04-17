@@ -97,21 +97,32 @@ export class ScoringEngine {
   }
 
   /**
-   * Scoring formula:
-   * finalScore = max(allSignalScores) + min(sum(otherScores) * 0.1, 0.05)
+   * Scoring formula — noisy-or over matched signal weights:
+   *   finalScore = 1 - ∏(1 - w_i) for every matched signal i
+   *
+   * Each signal is an independent evidence channel; noisy-or combines them
+   * the way a probabilistic union does. Unlike the prior `max + tiebreaker`
+   * formula, scores genuinely spread across the 0..1 band:
+   *   - single direct-import (w=0.95)           → 0.95
+   *   - direct-import + filename (both ~0.95)   → 0.9975
+   *   - filename only (w=0.95)                  → 0.95
+   *   - colocation alone (w=0.5)                → 0.50
+   *   - two weak signals (w=0.3 each)           → 0.51
+   *
+   * This lets minConfidence actually partition: 0.6 keeps anchor-grade
+   * signals only; 0.99 keeps tests with overlapping evidence; 0.4 lets
+   * weaker signals through.
    */
   private calculateScore(signals: ISignal[]): number {
-    if (signals.length === 0) {
-      return 0;
+    if (signals.length === 0) return 0;
+
+    let complement = 1;
+    for (const s of signals) {
+      if (!s.matched) continue;
+      const w = Math.max(0, Math.min(1, s.weight));
+      complement *= 1 - w;
     }
-
-    const signalScores = signals.map((s) => s.weight * (s.matched ? 1 : 0));
-
-    const maxScore = Math.max(...signalScores);
-    const sumOthers = signalScores.reduce((sum, score) => sum + (score < maxScore ? score : 0), 0);
-    const tiebreaker = Math.min(sumOthers * 0.1, 0.05);
-
-    return Math.min(maxScore + tiebreaker, 1.0);
+    return 1 - complement;
   }
 
   /**

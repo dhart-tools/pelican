@@ -245,6 +245,10 @@ export interface IAnalyzeOptions {
   debug?: boolean;
   /** Set to false by --no-rerank flag. Skips Ollama reranking; still uses .pelican.lock cache. */
   rerank?: boolean;
+  /** Set to false by --no-cache flag. Bypasses .pelican.lock for this run; nothing read or written. */
+  cache?: boolean;
+  /** Set by --all flag. Removes the result cap; every kept suggestion is shown. */
+  all?: boolean;
 }
 
 export interface IRegistryBuildOptions {

@@ -38,6 +38,12 @@ export interface IRerankerConfig {
   /** Sigmoid score below which CE will drop a pair. Default 0.08. */
   cePrefilterThreshold?: number;
   /**
+   * When false, bypass the `.pelican.lock` cache entirely — every candidate is
+   * sent to the LLM regardless of prior confirm/reject state, and no new
+   * entries are written. Useful for debugging filter behavior. Default true.
+   */
+  useCache?: boolean;
+  /**
    * When true, the reranker asks the LLM for a short explanation per test.
    * When false (default), only the boolean verdict is requested — much faster,
    * result list contains files only, no reasons.
@@ -65,6 +71,7 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   cePrefilter: false,
   cePrefilterThreshold: 0.08,
   explanations: false,
+  useCache: true,
 };
 
 export interface IRerankCandidate {
@@ -183,20 +190,25 @@ export class SemanticReranker {
       }));
     }
 
-    await this.lock.load();
+    const useCache = this.config.useCache !== false;
+    if (useCache) await this.lock.load();
 
     const results: IRerankResult[] = [];
     const toScore: IRerankCandidate[] = [];
 
     // Partition: cached confirmed, cached rejected, unknown.
-    // Don't trust cached rejections for high-scoring candidates — if pelican
-    // is confident (>= threshold), re-evaluate rather than serving a stale
-    // LLM rejection that might have been wrong.
-    const HIGH_SCORE_OVERRIDE = this.config.threshold + 0.2;
-
+    // Cached rejections are sticky — pass `--no-cache` to force a full re-eval
+    // if you believe a rejection is stale.
     for (const cand of candidates) {
+      if (!useCache) {
+        toScore.push(cand);
+        continue;
+      }
       if (this.lock.isConfirmed(changedFile, cand.testFile)) {
-        const reason = this.lock.getReason(changedFile, cand.testFile);
+        const reason =
+          this.config.explanations === true
+            ? this.lock.getReason(changedFile, cand.testFile)
+            : undefined;
         results.push({
           testFile: cand.testFile,
           combined: Math.min(1, cand.pelicanScore + this.config.cacheBoost),
@@ -205,17 +217,12 @@ export class SemanticReranker {
           fromCache: true,
         });
       } else if (this.lock.isRejected(changedFile, cand.testFile)) {
-        if (cand.pelicanScore >= HIGH_SCORE_OVERRIDE) {
-          // Pelican is very confident — don't trust a cached rejection, re-score
-          toScore.push(cand);
-        } else {
-          results.push({
-            testFile: cand.testFile,
-            combined: cand.pelicanScore,
-            kept: false,
-            fromCache: true,
-          });
-        }
+        results.push({
+          testFile: cand.testFile,
+          combined: cand.pelicanScore,
+          kept: false,
+          fromCache: true,
+        });
       } else {
         toScore.push(cand);
       }
@@ -251,7 +258,7 @@ export class SemanticReranker {
         }));
 
         if (survivors.length === 0) {
-          await this.lock.flush();
+          if (useCache) await this.lock.flush();
           if (this.config.debug) {
             const keptCount = results.filter((r) => r.kept).length;
             process.stderr.write(
@@ -274,7 +281,7 @@ export class SemanticReranker {
         for (const llm of llmResults) {
           const cand = survivors.find((c) => c.testFile === llm.testFile)!;
           if (llm.relevant) {
-            this.lock.confirm(changedFile, llm.testFile, llm.reason);
+            if (useCache) this.lock.confirm(changedFile, llm.testFile, llm.reason);
             results.push({
               testFile: llm.testFile,
               combined: Math.min(1, cand.pelicanScore + this.config.confirmedBoost),
@@ -283,7 +290,7 @@ export class SemanticReranker {
               fromCache: false,
             });
           } else {
-            this.lock.reject(changedFile, llm.testFile);
+            if (useCache) this.lock.reject(changedFile, llm.testFile);
             results.push({
               testFile: llm.testFile,
               combined: cand.pelicanScore,
@@ -319,7 +326,7 @@ export class SemanticReranker {
       }
     }
 
-    await this.lock.flush();
+    if (useCache) await this.lock.flush();
 
     // No minKeep — if the LLM rejects all candidates, zero suggestions is
     // the correct answer. Force-keeping a rejected test is misleading.
@@ -364,7 +371,9 @@ export class SemanticReranker {
         if (scores[i] >= threshold) {
           survivors.push(toScore[i]);
         } else {
-          this.lock.reject(changedFile, toScore[i].testFile);
+          if (this.config.useCache !== false) {
+            this.lock.reject(changedFile, toScore[i].testFile);
+          }
           results.push({
             testFile: toScore[i].testFile,
             combined: toScore[i].pelicanScore,

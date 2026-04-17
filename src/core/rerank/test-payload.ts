@@ -4,6 +4,201 @@ import { IFileEntry } from '@/types/registry';
 
 const MAX_PAYLOAD_CHARS = 2000;
 
+const PROVIDERS = ['okta', 'google', 'cognito', 'auth0', 'facebook'] as const;
+type Provider = (typeof PROVIDERS)[number];
+
+/**
+ * Infer a provider tag from filename + imports. Helps the LLM reject
+ * provider-mismatched test pairs (e.g. AppOkta.tsx against a Google spec).
+ */
+export function detectSourceProvider(entry: IFileEntry): Provider | undefined {
+  const base = path.basename(entry.path).toLowerCase();
+  for (const p of PROVIDERS) if (base.includes(p)) return p;
+  const imports = entry.imports.map((i) => i.toLowerCase());
+  for (const p of PROVIDERS) if (imports.some((i) => i.includes(p))) return p;
+  return undefined;
+}
+
+/** `src/index*.tsx` and similar bundle entry points. */
+export function isSourceEntryPoint(entry: IFileEntry): boolean {
+  return /\/(index|main)[^/]*\.(tsx?|jsx?)$/i.test(entry.path);
+}
+
+export type TestKind = 'stub' | 'component' | 'e2e';
+
+export interface ITestClassification {
+  kind: TestKind;
+  itCount: number;
+  loginHelper?: string;
+  mountTargets: string[];
+  seeded: boolean;
+  provider?: Provider;
+}
+
+/**
+ * Classify a test file with structured metadata the LLM can reason about.
+ *
+ * - `kind: 'stub'`     — zero it-blocks AND content has no it/test/describe call.
+ * - `kind: 'component'`— filename matches `*.cy.[jt]sx?` (Cypress component test).
+ * - `kind: 'e2e'`      — everything else.
+ *
+ * `mountTargets` and `seeded` need the actual file content; `fileContent`
+ * optional. When omitted they remain empty/false.
+ */
+export function classifyTest(
+  entry: IFileEntry,
+  fileContent?: string,
+): ITestClassification {
+  const itCount = entry.cypress?.itBlocks.length ?? 0;
+  const isComponentFile = /\.cy\.(jsx?|tsx?)$/i.test(entry.path);
+
+  const commands = entry.cypress?.customCommandsUsed ?? [];
+  const loginHelper = commands.find((c) => /^login/i.test(c));
+
+  let kind: TestKind;
+  if (isComponentFile) {
+    kind = 'component';
+  } else if (itCount === 0 && !hasTestBlocks(fileContent)) {
+    kind = 'stub';
+  } else if (itCount > 0 && fileContent && allItBodiesEmpty(fileContent)) {
+    kind = 'stub';
+  } else {
+    kind = 'e2e';
+  }
+
+  const mountTargets: string[] = [];
+  let seeded = false;
+  if (fileContent) {
+    const mountRe = /cy\.mount\s*\(\s*<\s*([A-Z][A-Za-z0-9_]+)/g;
+    for (const m of fileContent.matchAll(mountRe)) mountTargets.push(m[1]);
+    seeded = /cy\.task\(\s*['"]db:seed/.test(fileContent);
+  }
+
+  const base = path.basename(entry.path).toLowerCase();
+  const provider = (PROVIDERS.find((p) => base.includes(p))
+    ?? (loginHelper
+      ? PROVIDERS.find((p) => loginHelper.toLowerCase().includes(p))
+      : undefined));
+
+  return {
+    kind,
+    itCount,
+    loginHelper,
+    mountTargets: [...new Set(mountTargets)],
+    seeded,
+    provider,
+  };
+}
+
+function hasTestBlocks(content?: string): boolean {
+  if (!content) return false;
+  return /\b(it|test|describe)\s*\(/.test(content);
+}
+
+/**
+ * True when every `it(...)` / `test(...)` block in `content` has an empty body
+ * (only whitespace and comments). Used to detect stub specs whose `it` blocks
+ * exist but do nothing — e.g. Cypress Studio scaffolds.
+ *
+ * Uses a brace-balanced walk, so nested braces in arrow bodies are tolerated.
+ */
+function allItBodiesEmpty(content: string): boolean {
+  const blockRe = /\b(?:it|test)\s*\(/g;
+  let found = false;
+
+  for (const m of content.matchAll(blockRe)) {
+    found = true;
+    const start = m.index! + m[0].length;
+    const openParen = findBodyOpenBrace(content, start);
+    if (openParen < 0) return false;
+    const body = extractBalancedBody(content, openParen);
+    if (body === null) return false;
+    if (!isCommentOrWhitespace(body)) return false;
+  }
+  return found;
+}
+
+/**
+ * Walk from `from` until we find the `{` that opens the it-block body,
+ * skipping past the string arg and the callback's param list / `=>`.
+ */
+function findBodyOpenBrace(content: string, from: number): number {
+  let depth = 0;
+  for (let i = from; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') {
+      if (depth === 0) return -1;
+      depth--;
+    } else if (ch === '{' && depth === 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function extractBalancedBody(content: string, openBrace: number): string | null {
+  let depth = 0;
+  for (let i = openBrace; i < content.length; i++) {
+    const ch = content[i];
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return content.slice(openBrace + 1, i);
+    }
+  }
+  return null;
+}
+
+function isCommentOrWhitespace(body: string): boolean {
+  const stripped = body
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/[^\n]*/g, '');
+  return stripped.trim() === '';
+}
+
+/**
+ * Structured metadata header for a source file. Prepended to the source block
+ * so the LLM sees concrete, checkable flags (provider, entry-point) before the
+ * code sample.
+ */
+export function buildSourceHeader(entry: IFileEntry): string {
+  const provider = detectSourceProvider(entry);
+  const entryPoint = isSourceEntryPoint(entry);
+  const lines = [
+    'SOURCE METADATA:',
+    `- path: ${entry.path}`,
+    provider ? `- provider: ${provider}` : undefined,
+    entryPoint ? `- entry_point: true` : undefined,
+    entry.exports.length ? `- exports: ${entry.exports.slice(0, 10).join(', ')}` : undefined,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
+/**
+ * Structured metadata header for a test file. Gives the LLM a compact,
+ * structured summary the prompt's decision rubric can reference by key.
+ */
+export function buildTestHeader(entry: IFileEntry, fileContent?: string): string {
+  const c = classifyTest(entry, fileContent);
+  const visits = entry.cypress?.visitedRoutes?.slice(0, 6).join(', ');
+  const describes = entry.cypress?.describeBlocks?.slice(0, 3).join(' > ');
+
+  const lines = [
+    'TEST METADATA:',
+    `- path: ${entry.path}`,
+    `- kind: ${c.kind}`,
+    `- it_count: ${c.itCount}`,
+    c.loginHelper ? `- login_helper: ${c.loginHelper}` : undefined,
+    c.mountTargets.length ? `- mount_targets: ${c.mountTargets.join(', ')}` : undefined,
+    c.seeded ? `- seeded: true` : undefined,
+    c.provider ? `- provider: ${c.provider}` : undefined,
+    describes ? `- describes: ${describes}` : undefined,
+    visits ? `- visits: ${visits}` : undefined,
+  ].filter(Boolean);
+  return lines.join('\n');
+}
+
 /**
  * Splits camelCase / kebab-case / snake_case into space-separated lowercase tokens.
  * `SignInForm` → `sign in form`. Helps LLM read component names as words.

@@ -92,6 +92,7 @@ async function applyReranker(
   scored: IAnalyzeResult['suggestedTests'],
   registry: Registry,
   thresholds: { high: number; min: number },
+  explanationsEnabled: boolean,
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
   const candidates = scored.map((r) => ({
@@ -108,7 +109,11 @@ async function applyReranker(
 
     result.score = rr.combined;
     result.confidence = bandFor(rr.combined, thresholds);
-    if (rr.reason) result.explanation = rr.reason;
+    if (explanationsEnabled) {
+      if (rr.reason) result.explanation = rr.reason;
+    } else {
+      result.explanation = '';
+    }
     result.fromCache = rr.fromCache;
 
     mutated.push(result);
@@ -182,7 +187,11 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
     changedFiles: [],
     results: [],
     progress: 0,
-    maxResults: options.maxResults ? Number.parseInt(options.maxResults) : undefined,
+    maxResults: options.all
+      ? Number.POSITIVE_INFINITY
+      : options.maxResults
+        ? Number.parseInt(options.maxResults)
+        : undefined,
   });
 
   useEffect(() => {
@@ -241,6 +250,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
+          useCache: options.cache !== false,
           onProgress: (info) => {
             if (info.status === 'scoring') {
               setState((s) => ({
@@ -283,7 +293,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         registerScorers(engine, config.scoring.enabledScorers);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
-        const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
+        const maxResults = options.all
+          ? Number.POSITIVE_INFINITY
+          : parseInt(options.maxResults) || config.scoring.maxResults || 10;
         const thresholds = {
           high: config.scoring.highConfidence ?? 0.8,
           min: config.scoring.minConfidence ?? 0.4,
@@ -293,11 +305,15 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // anyway. Sequential processing keeps Ollama's KV prefix cache hot for
         // each source file's test batch — huge win over interleaved requests
         // that evict each other's cache.
-        setState((s) => ({ ...s, activeFiles: [...changedFiles] }));
-
         const rerankThreshold = config.scoring.minConfidence;
 
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
+          setState((s) => ({
+            ...s,
+            activeFiles: [changedFile],
+            rerankScored: undefined,
+            rerankTotal: undefined,
+          }));
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
           const preRerankCount = relevant.length;
@@ -314,6 +330,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 rerankCandidates,
                 registry,
                 thresholds,
+                config.rerank?.explanations === true,
               );
             } catch (err) {
               rerankerUnavailable = true;
@@ -450,7 +467,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   registerScorers(engine, config.scoring.enabledScorers);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
-  const maxResults = parseInt(options.maxResults) || config.scoring.maxResults || 10;
+  const maxResults = options.all
+    ? Number.POSITIVE_INFINITY
+    : parseInt(options.maxResults) || config.scoring.maxResults || 10;
 
   if (debug) {
     debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
@@ -469,6 +488,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
+    useCache: options.cache !== false,
     onProgress: (info) => {
       if (info.status === 'scoring' && info.scored != null && info.total != null) {
         process.stderr.write(`[pelican] reranking ${info.scored}/${info.total}\n`);
@@ -538,6 +558,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
           rerankCandidates,
           registry,
           thresholds,
+          config.rerank?.explanations === true,
         );
       } catch (err) {
         rerankerUnavailable = true;
@@ -583,8 +604,10 @@ export const analyzeCommand = new Command('analyze')
   .option('-o, --output <format>', 'Output format: tui, json, list', 'tui')
   .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
   .option('--max-results <number>', 'Maximum number of results', '10')
+  .option('--all', 'Show all suggestions (overrides --max-results)')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
   .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
+  .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
   .option('--debug', 'Print detailed extraction and scoring info to stderr')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {

@@ -8,6 +8,12 @@ import { EConfidenceLevel } from "@/utils/enums";
 import { SectionDivider } from "./SectionDivider";
 import { SignalBadge } from "./SignalBadge";
 
+const BAND_ORDER: EConfidenceLevel[] = [
+  EConfidenceLevel.HIGH,
+  EConfidenceLevel.MEDIUM,
+  EConfidenceLevel.LOW,
+];
+
 interface ResultsTableProps {
   results: Array<{
     changedFile: string;
@@ -79,7 +85,10 @@ interface TestRowProps {
 
 function TestRow({ testFile, confidence, explanation, fromCache, isLast }: TestRowProps) {
   const dotColor = DOT_COLOR[confidence] ?? palette.dim;
-  const lines = explanation ? wordWrap(explanation, DESC_WIDTH) : [];
+  const cleanExplanation =
+    explanation && explanation.trim() !== "No reason provided." ? explanation : "";
+  const lines = cleanExplanation ? wordWrap(cleanExplanation, DESC_WIDTH) : [];
+  const hasExplanation = lines.length > 0;
   const branch = isLast ? "╰" : "├";
   const continuation = isLast ? " " : "│";
 
@@ -98,13 +107,10 @@ function TestRow({ testFile, confidence, explanation, fromCache, isLast }: TestR
           </Text>
           {fromCache && <Text color={palette.muted}> ↩ cached</Text>}
         </Box>
-        <Box marginLeft={2} flexShrink={0}>
-          <SignalBadge confidence={confidence} />
-        </Box>
       </Box>
 
       {/* Explanation lines — connected to tree */}
-      {lines.length > 0 && (
+      {hasExplanation && (
         <Box flexDirection="column">
           {lines.map((line, i) => (
             <Box key={i}>
@@ -121,8 +127,9 @@ function TestRow({ testFile, confidence, explanation, fromCache, isLast }: TestR
         </Box>
       )}
 
-      {/* Spacing between test entries, but not after the last one */}
-      {!isLast && (
+      {/* Spacing between entries only when explanations are present.
+          Without explanations rows sit flush for a compact file list. */}
+      {!isLast && hasExplanation && (
         <Box>
           <Text color={palette.muted}>{"│"}</Text>
         </Box>
@@ -184,18 +191,34 @@ export function ResultsTable({ results, maxResults = 10, elapsedMs }: ResultsTab
             </Text>
           </Box>
 
-          {/* Test files — tree-connected below the source */}
+          {/* Tests grouped by confidence band — badge shown once per band. */}
           <Box flexDirection="column" paddingLeft={3}>
-            {tests.map((t, i) => (
-              <TestRow
-                key={t.testFile}
-                testFile={t.testFile}
-                confidence={t.confidence}
-                explanation={t.explanation}
-                fromCache={t.fromCache}
-                isLast={i === tests.length - 1}
-              />
-            ))}
+            {BAND_ORDER.map((band) => {
+              const bandTests = tests.filter((t) => t.confidence === band);
+              if (bandTests.length === 0) return null;
+              return (
+                <Box key={band} flexDirection="column" marginTop={1}>
+                  <Box justifyContent="space-between">
+                    <Text color={palette.dim}>
+                      {bandTests.length} {bandTests.length === 1 ? "test" : "tests"}
+                    </Text>
+                    <Box flexShrink={0}>
+                      <SignalBadge confidence={band} />
+                    </Box>
+                  </Box>
+                  {bandTests.map((t, i) => (
+                    <TestRow
+                      key={t.testFile}
+                      testFile={t.testFile}
+                      confidence={t.confidence}
+                      explanation={t.explanation}
+                      fromCache={t.fromCache}
+                      isLast={i === bandTests.length - 1}
+                    />
+                  ))}
+                </Box>
+              );
+            })}
           </Box>
         </Box>
       ))}

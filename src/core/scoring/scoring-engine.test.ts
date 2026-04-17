@@ -96,16 +96,17 @@ describe('ScoringEngine', () => {
   });
 
   /**
-   * @description Tests the max-signal dominance formula with tiebreaker.
-   * When multiple signals match, the highest signal dominates, and 10% of other matches (capped at 0.05) are added as a tiebreaker.
+   * @description Tests noisy-or signal combination.
+   * Matched signals combine as an independent-evidence union:
+   *   score = 1 - ∏(1 - w_i)
    *
    * @example
    * Signal 1: 0.8
    * Signal 2: 0.4
    *
-   * @expected finalScore = 0.8 + min(0.4 * 0.1, 0.05) = 0.84
+   * @expected finalScore = 1 - (1 - 0.8) * (1 - 0.4) = 1 - 0.12 = 0.88
    */
-  test('calculateScore(): should apply max-signal dominance with tiebreaker', () => {
+  test('calculateScore(): should combine signals via noisy-or', () => {
     const signals = [
       { source: 's1', type: 't1', weight: 0.8, matched: true },
       { source: 's2', type: 't2', weight: 0.4, matched: true },
@@ -113,7 +114,7 @@ describe('ScoringEngine', () => {
 
     // @ts-ignore - reaching into private method for test
     const score = engine.calculateScore(signals);
-    expect(score).toBeCloseTo(0.84);
+    expect(score).toBeCloseTo(0.88);
   });
 
   /**

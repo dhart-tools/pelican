@@ -8,7 +8,13 @@ import { Ollama } from "ollama";
 
 import { IFileEntry } from "@/types/registry";
 
-import { buildSourcePayload, buildTestPayload } from "./test-payload";
+import {
+  buildSourceHeader,
+  buildSourcePayload,
+  buildTestHeader,
+  buildTestPayload,
+  classifyTest,
+} from "./test-payload";
 
 const execFileP = promisify(execFile);
 
@@ -188,13 +194,18 @@ function buildKVPrefix(sourceBlock: string): string {
   const compSource = compressedBlocks[0];
   const legendSection = legend ? `\nSymbol legend — ${legend}\n` : "";
 
-  return `You are a senior developer deciding which tests could break after a code change.
+  return `Decide: does CANDIDATE TEST execute SOURCE's code at runtime? Walk R1→R4, then A1→A3. Stop at first match. No match → false.
 
-Read the source file carefully. Understand what it does — its logic, state management, data transformations, side effects, UI behavior, and the contract it exposes to consumers.
+R1 STUB: test.it_count=0 → false.
+R2 MOUNT MISMATCH: test.kind="component" AND source path/exports not in test.mount_targets → false.
+R3 PROVIDER LOCK: source.provider set (okta|google|cognito|auth0|facebook) AND test.provider/login_helper is not the SAME provider → false. (No provider signal on test counts as mismatch.)
+R4 ONBOARDING SKIP: source path or exports mention onboarding/welcome/firstrun/signup-flow AND test.seeded=true AND test describes/visits don't mention signup|signin|onboarding|register → false.
 
-Then read the candidate test. Decide: if a bug were introduced in the source file, would this test have any chance of catching it?
+A1 DIRECT WIRE: test imports source, OR test.mount_targets contains source or any name source exports → true.
+A2 DOMAIN OVERLAP: source's exports/routes/selectors/JSX-text share a DISTINCTIVE domain token (not generic like "app", "container", "page") with test's describes/visits/asserted-text/intercepted-APIs → true. Thin/generic overlap → skip, do not accept on A2.
+A3 INFRASTRUCTURE TRANSIT: source is a machine/hook/container/context/reducer/slice/util with no direct UI AND source's domain keyword appears in test's describes/visits/imports, OR governs a flow the test clearly runs (userOnboardingMachine ↔ signup/signin; transactionSlice ↔ create/list transactions) → true.
 ${legendSection}
-SOURCE FILE (changed):
+SOURCE:
 ${compSource}
 
 CANDIDATE TEST:
@@ -211,7 +222,7 @@ Keep "reason" to ONE short sentence, max 80 characters:
 
   return `${testBlock}
 
-A test is relevant if its assertions have any behavioral dependency on the source file, even indirectly (through a parent component, a shared hook, a util, or an API layer). A test is NOT relevant only if its assertions have zero behavioral dependency on the source file.
+Apply R1→R4 then A1→A3. First match wins. No match → false.
 
 ${trailer}`;
 }
@@ -346,6 +357,7 @@ async function buildAdaptiveSourcePayload(
   base?: string,
   target?: string,
 ): Promise<string> {
+  const header = buildSourceHeader(entry);
   const identity = buildCompactIdentity(entry);
   const baseRef = base ?? "HEAD~1";
   const targetRef = target ?? "HEAD";
@@ -359,7 +371,7 @@ async function buildAdaptiveSourcePayload(
       { cwd: process.cwd(), maxBuffer: 1024 * 1024 },
     );
     if (stdout.trim().length > 30) {
-      return `${identity}\n\nWhat changed:\n${stdout}`;
+      return `${header}\n\n${identity}\n\nWhat changed:\n${stdout}`;
     }
   } catch {
     // git unavailable or no diff — fall through
@@ -372,10 +384,10 @@ async function buildAdaptiveSourcePayload(
     const raw = await fs.readFile(changedFile, "utf-8");
     const body = stripImports(raw);
     const sampled = stratifiedSampleLines(body, fileContentConfig);
-    return `${identity}\n\nFile content:\n${sampled}`;
+    return `${header}\n\n${identity}\n\nFile content:\n${sampled}`;
   } catch {
     // 3. File unreadable — fall back to registry metadata
-    return buildSourcePayload(entry);
+    return `${header}\n\n${buildSourcePayload(entry)}`;
   }
 }
 
@@ -455,10 +467,35 @@ export class OllamaReranker {
       );
     }
 
-    // Build all test blocks upfront
+    // Build all test blocks upfront + collect pre-LLM stub rejections.
     const testBlocks: Array<{ id: number; testFile: string; block: string }> = [];
+    const stubRejections: IOllamaRerankResult[] = [];
     for (let i = 0; i < testEntries.length; i++) {
       const { testFile, entry } = testEntries[i];
+
+      // Cheap stub detection: if registry says zero it-blocks AND the file has
+      // no test/describe call, there's nothing the LLM could sensibly keep.
+      if (entry) {
+        let rawForClassify: string | undefined;
+        try {
+          rawForClassify = await fs.readFile(testFile, "utf-8");
+        } catch {
+          rawForClassify = undefined;
+        }
+        const kind = classifyTest(entry, rawForClassify).kind;
+        if (kind === "stub") {
+          stubRejections.push({
+            testFile,
+            relevant: false,
+            reason: "Stub — no test cases",
+          });
+          if (this.config.debug) {
+            process.stderr.write(`[ollama] pre-reject stub: ${testFile}\n`);
+          }
+          continue;
+        }
+      }
+
       const block = await this.buildTestBlock(testFile, entry, fileContentConfig);
       testBlocks.push({ id: i + 1, testFile, block });
       if (this.config.debug) {
@@ -570,7 +607,7 @@ export class OllamaReranker {
       );
     }
 
-    return allResults;
+    return [...allResults, ...stubRejections];
   }
 
   /**
@@ -603,28 +640,37 @@ export class OllamaReranker {
   ): Promise<string> {
     if (!entry) return `Test file: ${testFile}`;
 
-    // Cypress tests have rich extracted metadata — use it directly
+    // Always try to read the file — mount targets and seeded markers only
+    // show up in raw content, and structured metadata leans on them.
+    let rawContent: string | undefined;
+    try {
+      rawContent = await fs.readFile(testFile, "utf-8");
+    } catch {
+      // fine — fall through with metadata-only header
+    }
+
+    const header = buildTestHeader(entry, rawContent);
+
     const hasCypressData =
       entry.cypress &&
       (entry.cypress.describeBlocks.length > 0 ||
         entry.cypress.itBlocks.length > 0 ||
         entry.cypress.visitedRoutes.length > 0);
+
     if (hasCypressData) {
-      return buildTestPayload(entry);
+      // Cypress metadata is rich enough; skip the raw body to save prompt tokens.
+      return `${header}\n\n${buildTestPayload(entry)}`;
     }
 
-    // Non-Cypress: read actual file content so LLM can see what's tested
-    try {
-      const raw = await fs.readFile(testFile, "utf-8");
-      const sampled = stratifiedSampleLines(raw, fileContentConfig);
-      const header = `Test file: ${testFile}`;
+    if (rawContent) {
+      const sampled = stratifiedSampleLines(rawContent, fileContentConfig);
       const imports = entry.imports.length
         ? `Imports: ${entry.imports.slice(0, 15).join(", ")}`
         : "";
-      return [header, imports, "", sampled].filter(Boolean).join("\n");
-    } catch {
-      return buildTestPayload(entry);
+      return [header, "", imports, "", sampled].filter(Boolean).join("\n");
     }
+
+    return `${header}\n\n${buildTestPayload(entry)}`;
   }
 
 }
@@ -637,8 +683,7 @@ function parseResponse(text: string): { relevant: boolean; reason: string } {
       const parsed = JSON.parse(match[0]);
       // Accept partial shapes — small models (phi3, qwen2.5:3b) sometimes
       // omit `reason` or emit the key as a string instead of a boolean.
-      const reason =
-        typeof parsed.reason === "string" ? parsed.reason.trim() : "No reason provided.";
+      const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
       if (typeof parsed.relevant === "boolean") {
         return { relevant: parsed.relevant, reason };
       }
