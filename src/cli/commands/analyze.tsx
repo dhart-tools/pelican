@@ -104,6 +104,7 @@ async function applyReranker(
   thresholds: { high: number; min: number },
   explanationsEnabled: boolean,
   onProgress?: (info: { status: string; scored?: number; total?: number }) => void,
+  minConfidence?: number,
 ): Promise<IAnalyzeResult['suggestedTests']> {
   if (scored.length === 0) return scored;
 
@@ -151,8 +152,13 @@ async function applyReranker(
     mutated.push(result);
   }
 
-  mutated.sort((a, b) => b.score - a.score);
-  return mutated;
+  // Re-apply the min-confidence floor AFTER rerank. Bucket multipliers can
+  // push a combined score below the pre-rerank threshold; without this step
+  // the UI would display results the user asked to hide.
+  const filtered =
+    minConfidence != null ? mutated.filter((r) => r.score >= minConfidence) : mutated;
+  filtered.sort((a, b) => b.score - a.score);
+  return filtered;
 }
 
 /**
@@ -374,6 +380,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 thresholds,
                 config.rerank?.explanations === true,
                 onFileProgress,
+                config.scoring.minConfidence,
               );
             } catch (err) {
               rerankerUnavailable = true;
@@ -609,6 +616,8 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
           registry,
           thresholds,
           config.rerank?.explanations === true,
+          undefined,
+          config.scoring.minConfidence,
         );
       } catch (err) {
         rerankerUnavailable = true;
