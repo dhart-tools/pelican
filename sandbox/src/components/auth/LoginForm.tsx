@@ -10,6 +10,7 @@ import { useDispatch } from "react-redux";
 import { useTranslation } from "react-i18next";
 import { loginUser, setAuthError, setAuthLoading } from "../../store/authSlice";
 import { loginApi } from "../../api/auth";
+import { classnames } from "../../utils/classnames";
 import type { AppDispatch } from "../../store";
 
 interface LoginFormProps {
@@ -35,7 +36,7 @@ export function LoginForm({ onSuccess }: LoginFormProps) {
   }
 
   return (
-    <form id="login-form" onSubmit={handleSubmit}>
+    <form id="login-form" onSubmit={handleSubmit} className={classnames('login-form')}>
       <h1>{t("auth.loginTitle")}</h1>
       <input
         data-testid="email-input"

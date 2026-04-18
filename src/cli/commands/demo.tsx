@@ -14,6 +14,7 @@ import { palette } from '@/cli/theme';
 import { loadTheme } from '@/cli/user-config';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
 import { DependentSelectorScorer } from '@/core/scoring/scorers/dependent-selector-scorer';
@@ -27,6 +28,7 @@ import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 import { IScoreResult } from '@/types/scorers';
 
@@ -448,6 +450,8 @@ function DemoApp() {
         new ColocationScorer(),
         new DescribeBlockScorer(),
         new DependentSelectorScorer(),
+        new ActionTypeScorer(),
+        new UsageSiteScorer(),
       ]) {
         if (config.scoring.enabledScorers.includes(scorer.name)) engine.register(scorer);
       }

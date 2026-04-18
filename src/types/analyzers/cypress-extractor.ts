@@ -21,6 +21,16 @@ export interface ICypressExtractionResult {
 
   // Custom commands
   customCommandsUsed: string[];
+
+  // Redux action-type strings referenced by the test (string literals,
+  // keyMirror keys, *Types.X property accesses). Lets the action-type scorer
+  // bridge tests to changed Redux files when they share an action contract.
+  actionTypeStrings: string[];
+
+  // `import { X } from 'module'` in the spec. Used to resolve identifiers
+  // used in the spec back to literal action-type strings defined in the
+  // imported module.
+  importedIdentifiers: Array<{ name: string; module: string }>;
 }
 
 export interface ICypressSelector {

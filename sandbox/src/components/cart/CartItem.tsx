@@ -6,6 +6,7 @@
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { removeFromCart, updateQuantity } from '../../store/cartSlice';
+import { classnames } from '../../utils/classnames';
 import type { CartItem as CartItemType } from '../../store/cartSlice';
 import type { AppDispatch } from '../../store';
 
@@ -18,7 +19,7 @@ export function CartItem({ item }: CartItemProps) {
   const dispatch = useDispatch<AppDispatch>();
 
   return (
-    <div data-testid="cart-item" id={`cart-item-${item.productId}`}>
+    <div data-testid="cart-item" id={`cart-item-${item.productId}`} className={classnames('cart-item')}>
       <img src={item.imageUrl} alt={item.name} />
       <span data-testid="cart-item-name">{item.name}</span>
       <span data-testid="cart-item-price">${item.price.toFixed(2)}</span>

@@ -71,6 +71,26 @@ export class ScoringEngine {
         }
       }
 
+      // Describe-block co-signal gate. A spec whose describe/it blocks
+      // happen to mention a source token should not be selected *solely*
+      // on that evidence — generic domain words (user, order, cart) appear
+      // across unrelated specs by coincidence often enough that describe-
+      // alone matches drive S3-style false positives (type-only edits that
+      // share a noun with the spec). Keep the signal lit only when some
+      // structural scorer (import, route, redux, selector, etc.) also
+      // backs the pair.
+      const hasStructuralMatch = signals.some(
+        (s) => s.matched && s.type !== 'describe-block',
+      );
+      if (!hasStructuralMatch) {
+        for (const s of signals) {
+          if (s.matched && s.type === 'describe-block') {
+            s.matched = false;
+            s.reason = `${s.reason} — suppressed: no co-signal (describe-only match)`;
+          }
+        }
+      }
+
       // Apply ubiquity dampener
       const dampenedSignals = this.applyUbiquityDampener(changedFile, signals);
 

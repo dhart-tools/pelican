@@ -61,6 +61,8 @@ const DEFAULT_CONFIG: IProjectConfig = {
       'describe-block',
       'translation-match',
       'dependent-selector',
+      'action-type',
+      'usage-site',
     ],
     ubiquityThreshold: 0.7,
     minConfidence: 0.4,

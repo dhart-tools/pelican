@@ -7,6 +7,8 @@
 import { useDispatch } from 'react-redux';
 import { useTranslation } from 'react-i18next';
 import { addToCart } from '../../store/cartSlice';
+import { usePriceFormatter } from '../../hooks/usePriceFormatter';
+import { classnames } from '../../utils/classnames';
 import type { Product } from '../../api/products';
 import type { AppDispatch } from '../../store';
 
@@ -17,6 +19,7 @@ interface ProductCardProps {
 export function ProductCard({ product }: ProductCardProps) {
   const { t } = useTranslation();
   const dispatch = useDispatch<AppDispatch>();
+  const formatPrice = usePriceFormatter();
 
   function handleAddToCart() {
     dispatch(
@@ -31,11 +34,11 @@ export function ProductCard({ product }: ProductCardProps) {
   }
 
   return (
-    <div data-testid="product-card" id={`product-${product.id}`}>
+    <div data-testid="product-card" id={`product-${product.id}`} className={classnames('product-card', { 'out-of-stock': !product.inStock })}>
       <img src={product.imageUrl} alt={product.name} />
       <h3>{product.name}</h3>
       <p data-testid="product-price">
-        {t('products.price')}: ${product.price.toFixed(2)}
+        {t('products.price')}: {formatPrice(product.price)}
       </p>
       {product.inStock ? (
         <button data-testid="add-to-cart-btn" onClick={handleAddToCart}>

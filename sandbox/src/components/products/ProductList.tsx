@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { selectProducts, selectProductsLoading, setProducts, setProductsLoading } from '../../store/productSlice';
 import { fetchProducts } from '../../api/products';
 import { ProductCard } from './ProductCard';
+import { classnames } from '../../utils/classnames';
 import type { AppDispatch } from '../../store';
 
 export function ProductList() {
@@ -34,7 +35,7 @@ export function ProductList() {
   }
 
   return (
-    <section data-testid="product-list">
+    <section data-testid="product-list" className={classnames('product-list')}>
       <h2>{t('products.title')}</h2>
       {products.map((product) => (
         <ProductCard key={product.id} product={product} />

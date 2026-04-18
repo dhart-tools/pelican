@@ -57,6 +57,9 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
         actionsDispatched: [],
         slicesDefined: [],
       },
+      actionTypeStrings: [],
+      actionTypeConstExports: {},
+      importedIdentifiers: [],
     };
 
     this.visitNode(sourceFile, result);
@@ -125,6 +128,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
 
     if (ts.isCallExpression(node)) {
       this.extractFunctionCalls(node, result);
+      this.maybeCollectKeyMirrorActionTypes(node, result);
     }
 
     // Extract selector-like properties from object literals (e.g. { dataTestId: 'SaveButton' })
@@ -132,7 +136,79 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
       this.extractObjectPropertySelector(node, result);
     }
 
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      this.maybeCollectActionType(node.text, result);
+    }
+
+    // `export const FOO = 'action-type-literal'` — record the binding so
+    // other files that import FOO by identifier can be linked back to this
+    // literal during registry post-processing.
+    if (ts.isVariableStatement(node)) {
+      this.maybeCollectActionTypeConstExport(node, result);
+    }
+
+    // PropertyAccess form: `ActionTypes.RECEIVED_FOO`, `TeamTypes.RECEIVED_TEAMS`.
+    // Mattermost dispatches/reducer-cases address types this way, so the raw
+    // string never appears at the call site even though both sides agree on
+    // the symbol. Treat the trailing identifier as an action-type reference.
+    if (ts.isPropertyAccessExpression(node)) {
+      this.maybeCollectActionTypeFromPropertyAccess(node, result);
+    }
+
     ts.forEachChild(node, (child) => this.visitNode(child, result));
+  }
+
+  // Action-type-shaped strings — two accepted forms:
+  //   * UPPER_SNAKE with at least one underscore (RECEIVED_CHANNEL, LOGIN_SUCCESS).
+  //     Single-word UPPER strings like POST/DELETE/BEARER are rejected — too generic.
+  //   * "slice/SOMETHING" RTK namespaced form (channels/receivedChannel).
+  //     The slash + lowercase-prefix shape is rare enough to be specific to
+  //     redux-toolkit action conventions, so we accept any case after the slash.
+  private static readonly ACTION_TYPE_RE = /^(?:[a-z][a-zA-Z0-9]*\/)?[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+
+  private maybeCollectActionType(text: string, result: ISourceExtractionResult): void {
+    if (text.length < 5 || text.length > 80) return;
+    if (!SourceExtractorAnalyzer.ACTION_TYPE_RE.test(text)) return;
+    result.actionTypeStrings.push(text);
+  }
+
+  // Property access whose object is identifier ending in "Types" or "ActionTypes",
+  // and member name passes the action-type regex. Restricted to that suffix to
+  // avoid harvesting unrelated UPPER_SNAKE constants on other namespaces.
+  private maybeCollectActionTypeFromPropertyAccess(
+    node: ts.PropertyAccessExpression,
+    result: ISourceExtractionResult,
+  ): void {
+    const obj = node.expression;
+    if (!ts.isIdentifier(obj)) return;
+    if (!/Types$/.test(obj.text)) return;
+    const memberName = node.name.text;
+    this.maybeCollectActionType(memberName, result);
+  }
+
+  // Mattermost / mattermost-redux convention: `keyMirror({ FOO_BAR: null, ... })`
+  // produces an object whose values equal their keys. The action types are
+  // identifier keys, not string literals — so they bypass `maybeCollectActionType`.
+  // This handler harvests UPPER_SNAKE keys from any `keyMirror(...)` call.
+  private maybeCollectKeyMirrorActionTypes(
+    node: ts.CallExpression,
+    result: ISourceExtractionResult,
+  ): void {
+    const callee = node.expression;
+    const calleeName = ts.isIdentifier(callee)
+      ? callee.text
+      : ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : '';
+    if (calleeName !== 'keyMirror') return;
+    const arg = node.arguments[0];
+    if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop) && !ts.isShorthandPropertyAssignment(prop)) continue;
+      const keyNode = prop.name;
+      if (!keyNode || !ts.isIdentifier(keyNode)) continue;
+      this.maybeCollectActionType(keyNode.text, result);
+    }
   }
 
   /**
@@ -143,8 +219,39 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    */
   private extractImport(node: ts.ImportDeclaration, result: ISourceExtractionResult): void {
     const moduleSpecifier = node.moduleSpecifier;
-    if (ts.isStringLiteral(moduleSpecifier)) {
-      result.imports.push(moduleSpecifier.text);
+    if (!ts.isStringLiteral(moduleSpecifier)) return;
+    const module = moduleSpecifier.text;
+    result.imports.push(module);
+
+    const clause = node.importClause;
+    if (!clause || !clause.namedBindings) return;
+    if (ts.isNamedImports(clause.namedBindings)) {
+      for (const el of clause.namedBindings.elements) {
+        result.importedIdentifiers.push({ name: el.name.text, module });
+      }
+    }
+  }
+
+  // Scan `export const X = 'literal'` (and `export const { X, Y } = ...`
+  // is out of scope — keep it simple). When the literal matches the
+  // action-type regex, remember the binding so importers can resolve it.
+  private maybeCollectActionTypeConstExport(
+    node: ts.VariableStatement,
+    result: ISourceExtractionResult,
+  ): void {
+    const isExported = ts
+      .getModifiers(node)
+      ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    if (!isExported) return;
+    for (const decl of node.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) continue;
+      const init = decl.initializer;
+      if (!init) continue;
+      if (!ts.isStringLiteral(init) && !ts.isNoSubstitutionTemplateLiteral(init)) continue;
+      const literal = init.text;
+      if (!SourceExtractorAnalyzer.ACTION_TYPE_RE.test(literal)) continue;
+      if (literal.length < 5 || literal.length > 80) continue;
+      result.actionTypeConstExports[decl.name.text] = literal;
     }
   }
 

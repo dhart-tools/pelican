@@ -95,6 +95,8 @@ export enum EScorerType {
   COLOCATION = 'colocation',
   DESCRIBE_BLOCK = 'describe-block',
   DEPENDENT_SELECTOR = 'dependent-selector',
+  ACTION_TYPE = 'action-type',
+  USAGE_SITE = 'usage-site',
 }
 
 export enum EImportExportType {

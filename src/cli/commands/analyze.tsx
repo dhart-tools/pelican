@@ -12,6 +12,7 @@ import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
 import { DependentSelectorScorer } from '@/core/scoring/scorers/dependent-selector-scorer';
@@ -25,6 +26,7 @@ import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
 import {
   ModelUnavailableError,
   SemanticReranker,
@@ -58,6 +60,8 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new ColocationScorer(),
     new DescribeBlockScorer(),
     new DependentSelectorScorer(),
+    new ActionTypeScorer(),
+    new UsageSiteScorer(),
   ];
 
   for (const scorer of allScorers) {

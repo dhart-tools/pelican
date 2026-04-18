@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { selectCartCount } from '../../store/cartSlice';
 import { selectIsAuthenticated, logoutUser } from '../../store/authSlice';
+import { classnames } from '../../utils/classnames';
 import type { AppDispatch } from '../../store';
 
 export function Navbar() {
@@ -18,7 +19,7 @@ export function Navbar() {
   const isAuthenticated = useSelector(selectIsAuthenticated);
 
   return (
-    <nav data-testid="navbar">
+    <nav data-testid="navbar" className={classnames('navbar', { authed: isAuthenticated })}>
       <Link data-testid="nav-home" to="/">
         {t('common.home')}
       </Link>

@@ -93,6 +93,20 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'dependent-selector',
     weight: 0.65,
   },
+  [EScorerType.ACTION_TYPE]: {
+    name: EScorerType.ACTION_TYPE,
+    version: '1.0.0',
+    description: 'Scores based on shared Redux action-type string literals',
+    type: 'action-type',
+    weight: 0.6,
+  },
+  [EScorerType.USAGE_SITE]: {
+    name: EScorerType.USAGE_SITE,
+    version: '1.0.0',
+    description: 'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
+    type: 'usage-site',
+    weight: 0.55,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {

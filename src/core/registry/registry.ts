@@ -22,6 +22,7 @@ export class Registry implements IRegistry {
   };
   private reduxChains: Map<string, IReduxChain> = new Map();
   private textIndex: Map<string, Set<string>> = new Map();
+  private actionTypeIndex: Map<string, Set<string>> = new Map();
 
   // ========== Index Methods ==========
 
@@ -63,6 +64,14 @@ export class Registry implements IRegistry {
 
   setTextIndex(index: Map<string, Set<string>>): void {
     this.textIndex = index;
+  }
+
+  getActionTypeIndex(): Map<string, Set<string>> {
+    return this.actionTypeIndex;
+  }
+
+  setActionTypeIndex(index: Map<string, Set<string>>): void {
+    this.actionTypeIndex = index;
   }
 
   // ========== Query Methods ==========
@@ -131,6 +140,7 @@ export class Registry implements IRegistry {
     this.selectorIndex.clear();
     this.routeMap.clear();
     this.textIndex.clear();
+    this.actionTypeIndex.clear();
 
     for (const entry of entries) {
       const normalizedEntry = {
@@ -147,6 +157,7 @@ export class Registry implements IRegistry {
     this.buildSelectorIndex(normalizedEntries);
     this.buildRouteMap(normalizedEntries);
     this.buildTextIndex(normalizedEntries);
+    this.buildActionTypeIndex(normalizedEntries);
   }
 
   buildImportGraph(entries: IFileEntry[]): void {
@@ -227,6 +238,21 @@ export class Registry implements IRegistry {
             this.textIndex.set(normalizedText, files);
           }
         }
+      }
+    }
+  }
+
+  // Inverted index of Redux-action-type-shaped string literals to file paths
+  // that reference them. Lets the action-type scorer find tests/sources that
+  // share an action-type contract without sharing an import edge (e.g. a saga
+  // that listens to another slice's action by string).
+  buildActionTypeIndex(entries: IFileEntry[]): void {
+    for (const entry of entries) {
+      if (!entry.actionTypeStrings) continue;
+      for (const s of entry.actionTypeStrings) {
+        const files = this.actionTypeIndex.get(s) || new Set();
+        files.add(entry.path);
+        this.actionTypeIndex.set(s, files);
       }
     }
   }
@@ -339,6 +365,10 @@ export class Registry implements IRegistry {
       },
       reduxChains: Array.from(this.reduxChains.entries()),
       textIndex: Array.from(this.textIndex.entries()).map(([k, v]) => [k, Array.from(v)]),
+      actionTypeIndex: Array.from(this.actionTypeIndex.entries()).map(([k, v]) => [
+        k,
+        Array.from(v),
+      ]),
     };
 
     return JSON.stringify(data, null, 2);
@@ -375,6 +405,10 @@ export class Registry implements IRegistry {
     this.reduxChains = new Map(parsed.reduxChains);
 
     this.textIndex = new Map(parsed.textIndex.map(([k, v]: [string, string[]]) => [k, new Set(v)]));
+
+    this.actionTypeIndex = new Map(
+      (parsed.actionTypeIndex || []).map(([k, v]: [string, string[]]) => [k, new Set(v)]),
+    );
   }
 }
 

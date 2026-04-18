@@ -98,6 +98,8 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
       interceptedAPIs: [],
       urlAssertions: [],
       customCommandsUsed: [],
+      actionTypeStrings: [],
+      importedIdentifiers: [],
     };
 
     // Phase 1: Resolve JSON namespace imports so we can dereference variable selectors
@@ -207,16 +209,76 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
     if (ts.isImportDeclaration(node)) {
       const moduleSpecifier = node.moduleSpecifier;
       if (ts.isStringLiteral(moduleSpecifier)) {
-        result.imports!.push(moduleSpecifier.text);
+        const module = moduleSpecifier.text;
+        result.imports!.push(module);
+        const clause = node.importClause;
+        if (clause?.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+          for (const el of clause.namedBindings.elements) {
+            result.importedIdentifiers.push({ name: el.name.text, module });
+          }
+        }
       }
     }
 
     if (ts.isCallExpression(node)) {
       this.extractCypressCommand(node, result);
       this.extractDescribeOrIt(node, result);
+      this.maybeCollectKeyMirrorActionTypes(node, result);
+    }
+
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      this.maybeCollectActionType(node.text, result);
+    }
+
+    if (ts.isPropertyAccessExpression(node)) {
+      this.maybeCollectActionTypeFromPropertyAccess(node, result);
     }
 
     ts.forEachChild(node, (child) => this.visitNode(child, result));
+  }
+
+  // Mirrors the action-type extraction in source-extractor — see that file for
+  // the rationale (Redux constants surface as string literals, keyMirror keys,
+  // or `*Types.X` accesses depending on the codebase). Tests dispatch actions
+  // the same way source code does, so we want the same coverage on the test side.
+  private static readonly ACTION_TYPE_RE =
+    /^(?:[a-z][a-zA-Z0-9]*\/)?[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+
+  private maybeCollectActionType(text: string, result: ICypressExtractionResult): void {
+    if (text.length < 5 || text.length > 80) return;
+    if (!CypressExtractorAnalyzer.ACTION_TYPE_RE.test(text)) return;
+    result.actionTypeStrings.push(text);
+  }
+
+  private maybeCollectKeyMirrorActionTypes(
+    node: ts.CallExpression,
+    result: ICypressExtractionResult,
+  ): void {
+    const callee = node.expression;
+    const calleeName = ts.isIdentifier(callee)
+      ? callee.text
+      : ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : '';
+    if (calleeName !== 'keyMirror') return;
+    const arg = node.arguments[0];
+    if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop) && !ts.isShorthandPropertyAssignment(prop)) continue;
+      const keyNode = prop.name;
+      if (!keyNode || !ts.isIdentifier(keyNode)) continue;
+      this.maybeCollectActionType(keyNode.text, result);
+    }
+  }
+
+  private maybeCollectActionTypeFromPropertyAccess(
+    node: ts.PropertyAccessExpression,
+    result: ICypressExtractionResult,
+  ): void {
+    const obj = node.expression;
+    if (!ts.isIdentifier(obj)) return;
+    if (!/Types$/.test(obj.text)) return;
+    this.maybeCollectActionType(node.name.text, result);
   }
 
   /**

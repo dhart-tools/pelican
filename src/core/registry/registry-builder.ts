@@ -6,11 +6,13 @@ import { glob } from 'glob';
 import * as ts from 'typescript';
 
 import { CypressExtractorAnalyzer } from '@/core/analyzers/cypress-extractor';
+import { ReduxChainAnalyzer } from '@/core/analyzers/redux-chain/redux-chain-analyzer';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
 import { normalizePath } from '@/core/registry/path-utils';
 import { createRegistry } from '@/core/registry/registry';
 import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
+import { IReduxExtractionResult } from '@/types/analyzers';
 import { IRegistry, IFileEntry } from '@/types/registry';
 
 export interface RegistryBuilderConfig {
@@ -96,6 +98,8 @@ export class RegistryBuilder {
     const fileEntries: IFileEntry[] = [];
     const sourceExtractor = new SourceExtractorAnalyzer();
     const cypressExtractor = new CypressExtractorAnalyzer();
+    const reduxChainAnalyzer = new ReduxChainAnalyzer();
+    const reduxExtractions: IReduxExtractionResult[] = [];
 
     if (this.debug) {
       this.log(`projectRoot: ${this.projectRoot}`);
@@ -118,6 +122,19 @@ export class RegistryBuilder {
         const result = await sourceExtractor.extract({ filePath, sourceCode });
         const entry = this.convertSourceExtractionToFileEntry(result, filePath);
         fileEntries.push(entry);
+
+        // Run redux-chain on source files too — detects createSlice, createAction,
+        // createSelector, saga generators. Consumers found in Pass 2 via imports.
+        try {
+          const redux = await reduxChainAnalyzer.extract({ filePath, sourceCode });
+          // Rewrite importedFiles from raw specifiers to resolved absolute-ish
+          // workspace paths so buildChains can match them against selector files.
+          redux.importedFiles = this.resolveImports(redux.importedFiles ?? [], filePath);
+          reduxExtractions.push(redux);
+        } catch (e) {
+          if (this.debug) this.log(`redux-chain extract failed for ${filePath}: ${e}`);
+        }
+
         if (this.debug) {
           this.logExtraction('source', filePath, {
             exports: result.exports,
@@ -172,7 +189,62 @@ export class RegistryBuilder {
 
     this.expandBarrelImports(fileEntries);
 
+    // Resolve imported identifiers → action-type literals BEFORE building
+    // the registry — `buildFromFileEntries` clones each entry, so mutations
+    // after that point never land in the indexed copy. For each
+    // `import { ORDER_FOO } from './types'`, if `./types.ts` has
+    // `export const ORDER_FOO = 'order/foo'`, add that literal to the
+    // importer's actionTypeStrings. Bridges sagas/specs that reference the
+    // constant by name to the file that mints the raw string.
+    const byPath = new Map<string, IFileEntry>();
+    for (const e of fileEntries) byPath.set(e.path, e);
+    for (const entry of fileEntries) {
+      const idents = entry.importedIdentifiers ?? [];
+      if (idents.length === 0) continue;
+      const added = new Set<string>(entry.actionTypeStrings ?? []);
+      const before = added.size;
+      for (const { name, module } of idents) {
+        const resolved = this.resolveImports([module], entry.path);
+        for (const target of resolved) {
+          const targetEntry = byPath.get(target);
+          const literal = targetEntry?.actionTypeConstExports?.[name];
+          if (literal) added.add(literal);
+        }
+      }
+      if (added.size > before) entry.actionTypeStrings = Array.from(added);
+    }
+
     this.registry.buildFromFileEntries(fileEntries);
+
+    // Redux chain reconciliation — after file entries are in the registry so
+    // the chain's action-type strings can also be surfaced through the
+    // file-level actionTypeStrings index (used by ActionTypeScorer).
+    try {
+      const chains = await reduxChainAnalyzer.buildChains(reduxExtractions);
+      this.registry.setReduxChains(chains);
+      if (this.debug) this.log(`redux chains built: ${chains.size}`);
+
+      // Promote chain.actionTypes back onto the slice file's
+      // actionTypeStrings list so ActionTypeScorer sees them.
+      for (const chain of chains.values()) {
+        const sliceFile = chain.files.slice ?? chain.files.reducer ?? chain.files.actions;
+        if (!sliceFile) continue;
+        const entry = this.registry.getFile(sliceFile);
+        if (!entry) continue;
+        const merged = new Set([...(entry.actionTypeStrings ?? []), ...chain.actionTypes]);
+        entry.actionTypeStrings = Array.from(merged);
+      }
+      // Rebuild the action-type index now that slice files have the synthesized
+      // `slice/actionCreator` strings added. Requires the registry to have a
+      // list of all entries; rely on the internal helper through files iterator.
+      const all: IFileEntry[] = [];
+      for (const f of this.registry.getFilesByType('source')) all.push(f);
+      for (const f of this.registry.getFilesByType('test')) all.push(f);
+      this.registry.buildActionTypeIndex(all);
+    } catch (e) {
+      if (this.debug) this.log(`redux chain build failed: ${e}`);
+    }
+
     return this.registry;
   }
 
@@ -562,6 +634,9 @@ export class RegistryBuilder {
       translationKeys: result.translationKeys,
       routesDefined: result.routesDefined,
       reduxUsage: result.reduxUsage,
+      actionTypeStrings: result.actionTypeStrings,
+      actionTypeConstExports: result.actionTypeConstExports,
+      importedIdentifiers: result.importedIdentifiers,
     };
   }
 
@@ -591,6 +666,8 @@ export class RegistryBuilder {
         describeBlocks: result.describeBlocks,
         itBlocks: result.itBlocks,
       },
+      actionTypeStrings: result.actionTypeStrings,
+      importedIdentifiers: result.importedIdentifiers,
     };
   }
 }
