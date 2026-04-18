@@ -3,6 +3,14 @@ import { getScorerConfig } from '@/core/scoring/scoring-config';
 import { IScorerContext, ISignal, IRegistry } from '@/types';
 import { EScorerType } from '@/utils/enums';
 
+/**
+ * Source files with more importers than this are shared infrastructure
+ * (constants, types, global hooks). Any route's component tree will
+ * transitively reach them, so a route-match via transitive deps is noise.
+ * Only honor the match when the route resolves DIRECTLY to the changed file.
+ */
+const HIGH_FANOUT_IMPORTERS = 200;
+
 export class RouteMatchScorer extends BaseScorer {
   constructor() {
     super(getScorerConfig(EScorerType.ROUTE_MATCH));
@@ -38,6 +46,11 @@ export class RouteMatchScorer extends BaseScorer {
         sig.weight = this.weight * (0.5 + 0.5 * specificity);
         return [sig];
       }
+
+      // High-fanout guard: skip transitive route→source resolution for files
+      // every route's tree eventually touches (constants, shared types).
+      const importerCount = registry.getDependents(changedFile).size;
+      if (importerCount > HIGH_FANOUT_IMPORTERS) continue;
 
       const depth = this.findTransitiveDependencies(componentPath, changedFile, registry);
       if (depth !== null) {

@@ -11,6 +11,7 @@ describe('RouteMatchScorer', () => {
     mockRegistry = {
       getRouteMap: jest.fn(),
       getDependencies: jest.fn(),
+      getDependents: jest.fn().mockReturnValue(new Set()),
     };
     mockContext = {
       registry: mockRegistry as IRegistry,

@@ -79,6 +79,7 @@ function RegistryBuildApp({ options }: { options: IRegistryBuildOptions }) {
           const iRegistry = await builder.buildFromDirectories({
             sourceDirs: config.sourceDirs,
             testPatterns: config.testPatterns,
+            excludePatterns: config.excludePatterns,
             projectRoot: process.cwd(),
             pathAliases: config.analyzers.cypressExtractor.pathAliases,
             debug: options.debug,

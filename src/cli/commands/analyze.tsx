@@ -203,6 +203,7 @@ async function loadOrBuildRegistry(
     const builtRegistry = await builder.buildFromDirectories({
       sourceDirs: config.sourceDirs,
       testPatterns: config.testPatterns,
+      excludePatterns: config.excludePatterns,
       projectRoot: process.cwd(),
       pathAliases: config.analyzers.cypressExtractor.pathAliases,
       debug,
@@ -502,6 +503,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const builtRegistry = await builder.buildFromDirectories({
       sourceDirs: config.sourceDirs,
       testPatterns: config.testPatterns,
+      excludePatterns: config.excludePatterns,
       projectRoot: process.cwd(),
       pathAliases: config.analyzers.cypressExtractor.pathAliases,
       debug,

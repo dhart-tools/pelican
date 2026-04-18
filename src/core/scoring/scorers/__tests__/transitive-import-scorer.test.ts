@@ -9,6 +9,7 @@ describe('TransitiveImportScorer', () => {
     scorer = new TransitiveImportScorer();
     mockRegistry = {
       getDependencies: jest.fn(),
+      getDependents: jest.fn().mockReturnValue(new Set()),
     };
   });
 

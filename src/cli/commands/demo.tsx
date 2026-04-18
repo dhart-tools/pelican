@@ -522,6 +522,7 @@ function DemoApp() {
       const iReg = await builder.buildFromDirectories({
         sourceDirs: config.sourceDirs,
         testPatterns: config.testPatterns,
+        excludePatterns: config.excludePatterns,
         projectRoot: process.cwd(),
       });
       clearInterval(timer);

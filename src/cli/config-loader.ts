@@ -87,6 +87,9 @@ interface IUserConfig {
   testPatterns?: string[];
   ignorePatterns?: string[];
 
+  /** Glob patterns for files to exclude from BOTH source and test discovery. */
+  excludePatterns?: string[];
+
   /** Path alias map for resolving imports. Replaces `analyzers.cypressExtractor.pathAliases`. */
   pathAliases?: Record<string, string>;
 
@@ -211,6 +214,7 @@ function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfi
     sourceDirs: user.sourceDirs ?? defaults.sourceDirs,
     testPatterns: user.testPatterns ?? defaults.testPatterns,
     ignorePatterns: user.ignorePatterns ?? defaults.ignorePatterns,
+    excludePatterns: user.excludePatterns ?? defaults.excludePatterns,
     analyzers: {
       ...defaults.analyzers,
       ...user.analyzers,

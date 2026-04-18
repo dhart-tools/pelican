@@ -177,6 +177,7 @@ export interface IProjectConfig {
   sourceDirs: string[];
   testPatterns: string[];
   ignorePatterns: string[];
+  excludePatterns?: string[];
   analyzers: {
     enabled: string[];
     sourceExtractor: { enabled: boolean; selectorStrategy: string[] };

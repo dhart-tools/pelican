@@ -381,6 +381,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         const registry = await builder.buildFromDirectories({
           sourceDirs: config.sourceDirs,
           testPatterns: config.testPatterns,
+          excludePatterns: config.excludePatterns,
           projectRoot: process.cwd(),
           pathAliases: config.analyzers.cypressExtractor.pathAliases,
         });
