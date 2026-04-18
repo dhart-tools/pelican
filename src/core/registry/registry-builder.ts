@@ -9,6 +9,7 @@ import { CypressExtractorAnalyzer } from '@/core/analyzers/cypress-extractor';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
 import { normalizePath } from '@/core/registry/path-utils';
 import { createRegistry } from '@/core/registry/registry';
+import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
 import { IRegistry, IFileEntry } from '@/types/registry';
 
@@ -59,6 +60,7 @@ export class RegistryBuilder {
   private registry: IRegistry;
   private projectRoot: string;
   private pathAliases: Record<string, string> = {};
+  private baseUrlRoots: string[] = [];
   private debug = false;
 
   constructor() {
@@ -68,8 +70,17 @@ export class RegistryBuilder {
 
   async buildFromDirectories(config: RegistryBuilderConfig): Promise<IRegistry> {
     this.projectRoot = config.projectRoot ?? process.cwd();
-    this.pathAliases = config.pathAliases ?? {};
     this.debug = config.debug ?? false;
+
+    // Auto-detect aliases + baseUrl from tsconfig.json in each source tree.
+    // User-provided aliases win on exact prefix conflict (merged last).
+    const detected = loadTsConfigAliases(
+      this.projectRoot,
+      config.sourceDirs,
+      this.debug ? (m) => this.log(m) : undefined,
+    );
+    this.pathAliases = { ...detected.aliases, ...(config.pathAliases ?? {}) };
+    this.baseUrlRoots = detected.baseUrlRoots;
 
     const extensions = config.sourceExtensions ?? ['.ts', '.tsx', '.js', '.jsx'];
     const ignoreDirs = config.ignoreDirs ?? ['node_modules', 'dist', 'build', '.next', 'coverage'];
@@ -80,7 +91,8 @@ export class RegistryBuilder {
 
     if (this.debug) {
       this.log(`projectRoot: ${this.projectRoot}`);
-      this.log(`pathAliases: ${JSON.stringify(this.pathAliases)}`);
+      this.log(`pathAliases (merged): ${JSON.stringify(this.pathAliases)}`);
+      this.log(`baseUrlRoots (tsconfig): ${JSON.stringify(this.baseUrlRoots)}`);
     }
 
     // --- Process source files ---
@@ -306,10 +318,19 @@ export class RegistryBuilder {
     if (importPath.startsWith('.')) {
       roots.push(path.resolve(this.projectRoot, baseDirectory, importPath));
     } else {
+      let aliasMatched = false;
       for (const [alias, target] of Object.entries(this.pathAliases)) {
         if (importPath.startsWith(alias)) {
           const rest = importPath.slice(alias.length).replace(/^\/+/, '');
           roots.push(path.resolve(this.projectRoot, target, rest));
+          aliasMatched = true;
+        }
+      }
+      // tsconfig baseUrl fallback for bare imports like `components/foo`.
+      // Only when no alias hit — aliases are more specific.
+      if (!aliasMatched) {
+        for (const base of this.baseUrlRoots) {
+          roots.push(path.resolve(this.projectRoot, base, importPath));
         }
       }
     }
@@ -335,11 +356,17 @@ export class RegistryBuilder {
       // Relative import — resolve from the importing file's directory
       candidates.push(path.resolve(this.projectRoot, path.dirname(fromFile), importPath));
     } else {
-      // Try configured path aliases
+      let aliasMatched = false;
       for (const [alias, target] of Object.entries(this.pathAliases)) {
         if (importPath.startsWith(alias)) {
           const rest = importPath.slice(alias.length);
           candidates.push(path.resolve(this.projectRoot, target, rest));
+          aliasMatched = true;
+        }
+      }
+      if (!aliasMatched) {
+        for (const base of this.baseUrlRoots) {
+          candidates.push(path.resolve(this.projectRoot, base, importPath));
         }
       }
     }
@@ -399,34 +426,39 @@ export class RegistryBuilder {
     const exts = ['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts'];
 
     for (const raw of imports) {
-      let baseAbs: string | null = null;
-
+      const searchRoots: string[] = [];
       if (raw.startsWith('.')) {
-        baseAbs = path.resolve(this.projectRoot, fromDir, raw);
+        searchRoots.push(path.resolve(this.projectRoot, fromDir, raw));
       } else {
         for (const [alias, target] of Object.entries(this.pathAliases)) {
           if (raw.startsWith(alias)) {
             const rest = raw.slice(alias.length).replace(/^\/+/, '');
-            baseAbs = path.resolve(this.projectRoot, target, rest);
-            break;
+            searchRoots.push(path.resolve(this.projectRoot, target, rest));
+          }
+        }
+        if (searchRoots.length === 0) {
+          for (const base of this.baseUrlRoots) {
+            searchRoots.push(path.resolve(this.projectRoot, base, raw));
           }
         }
       }
-      if (!baseAbs) continue;
+      if (searchRoots.length === 0) continue;
 
-      const candidates = [
-        baseAbs,
-        ...exts.map((e) => baseAbs + e),
-        ...exts.map((e) => path.join(baseAbs!, `index${e}`)),
-      ];
       let resolved: string | undefined;
-      for (const c of candidates) {
-        try {
-          if (fsSync.existsSync(c) && fsSync.statSync(c).isFile()) {
-            resolved = c;
-            break;
-          }
-        } catch { /* ignore */ }
+      outer: for (const searchRoot of searchRoots) {
+        const candidates = [
+          searchRoot,
+          ...exts.map((e) => searchRoot + e),
+          ...exts.map((e) => path.join(searchRoot, `index${e}`)),
+        ];
+        for (const c of candidates) {
+          try {
+            if (fsSync.existsSync(c) && fsSync.statSync(c).isFile()) {
+              resolved = c;
+              break outer;
+            }
+          } catch { /* ignore */ }
+        }
       }
       if (!resolved) continue;
 

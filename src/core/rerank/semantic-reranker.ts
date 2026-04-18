@@ -81,6 +81,20 @@ export interface IRerankerConfig {
   /** Max candidates per listwise window. Default 16. */
   listwiseWindow?: number;
   /**
+   * Prompt template version. 'v2' (default) — neutral SOURCE+TEST prompt,
+   * late-fusion blend with pelican prior. 'v1' — legacy R/A rubric with
+   * bucket multiplier. See ollama-reranker.ts for prompt details.
+   */
+  promptVersion?: "v1" | "v2";
+  /**
+   * Late-fusion weight on pelican structural prior when promptVersion='v2'.
+   * `combined = pelicanWeight * pelicanScore + (1 - pelicanWeight) * (confidence/5)`.
+   * Default 0.4 — matches InsertRank's 60% LLM / 40% prior split that worked
+   * best in code-rerank benchmarks. Lower = trust LLM more, raise = trust
+   * structural more.
+   */
+  pelicanWeight?: number;
+  /**
    * Pelican structural score at or above which a candidate is auto-kept
    * without sending it to the LLM. The structural signal is precise enough
    * at the high end that LLM verdicts rarely overturn — spending LLM time
@@ -117,6 +131,8 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   biEncoderCachePath: DEFAULT_BI_ENCODER_CONFIG.cachePath,
   explanations: false,
   useCache: true,
+  promptVersion: "v2",
+  pelicanWeight: 0.4,
 };
 
 export interface IRerankCandidate {
@@ -180,6 +196,7 @@ export class SemanticReranker {
       explanations: this.config.explanations === true,
       listwise: this.config.listwise === true,
       listwiseWindow: this.config.listwiseWindow,
+      promptVersion: this.config.promptVersion ?? "v2",
     });
     this.lock = new PelicanLock(this.config.lockPath);
     if (this.config.cePrefilter) {
@@ -363,19 +380,36 @@ export class SemanticReranker {
           },
         );
 
+        const promptVersion = this.config.promptVersion ?? "v2";
+        const pelicanWeight = this.config.pelicanWeight ?? 0.4;
         for (const llm of llmResults) {
           const cand = survivors.find((c) => c.testFile === llm.testFile)!;
-          // LLM tilts pelican, doesn't overturn it. Multiplier is now
-          // GENTLE (0.5..1.3) so borderline buckets don't swing the kept
-          // count wildly. Pelican's structural score stays the anchor.
-          const mult =
-            llm.bucket !== undefined ? BUCKET_MULTIPLIER[llm.bucket] : undefined;
-          const keptCombined =
-            mult !== undefined
-              ? Math.min(1, cand.pelicanScore * mult)
-              : Math.min(1, cand.pelicanScore + this.config.confirmedBoost);
-          const rejectCombined =
-            mult !== undefined ? cand.pelicanScore * mult : cand.pelicanScore;
+          // Score-blending strategy depends on prompt version:
+          //  - v2: late fusion. `combined = w·pelican + (1-w)·(conf/5)`. The
+          //    LLM's confidence is a proper independent signal that cannot
+          //    drive the score below 0 — borderline candidates keep their
+          //    pelican floor instead of getting bucket-multiplied to nothing.
+          //  - v1: legacy bucket multiplier (`pelican × BUCKET_MULTIPLIER[b]`).
+          //    Kept for A/B until v2 is proven on the full benchmark set.
+          let keptCombined: number;
+          let rejectCombined: number;
+          if (promptVersion === "v2" && llm.confidence !== undefined) {
+            const blended = Math.min(
+              1,
+              pelicanWeight * cand.pelicanScore + (1 - pelicanWeight) * (llm.confidence / 5),
+            );
+            keptCombined = blended;
+            rejectCombined = blended;
+          } else {
+            const mult =
+              llm.bucket !== undefined ? BUCKET_MULTIPLIER[llm.bucket] : undefined;
+            keptCombined =
+              mult !== undefined
+                ? Math.min(1, cand.pelicanScore * mult)
+                : Math.min(1, cand.pelicanScore + this.config.confirmedBoost);
+            rejectCombined =
+              mult !== undefined ? cand.pelicanScore * mult : cand.pelicanScore;
+          }
           if (llm.relevant) {
             if (useCache) this.lock.confirm(changedFile, llm.testFile, llm.reason);
             results.push({

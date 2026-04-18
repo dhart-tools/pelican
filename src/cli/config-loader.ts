@@ -70,22 +70,96 @@ const DEFAULT_CONFIG: IProjectConfig = {
 };
 
 /**
+ * Slim user-facing config shape — what users actually write in `.pelicanrc.json`.
+ *
+ * Everything is optional. The legacy verbose shape (`analyzers`, `scoring`)
+ * is still accepted for back-compat; advanced overrides live in `advanced`.
+ *
+ * @example minimal config
+ *   {
+ *     "sourceDirs": ["src"],
+ *     "pathAliases": { "@/": "src/" },
+ *     "rerank": { "model": "qwen2.5-coder:7b" }
+ *   }
+ */
+interface IUserConfig {
+  sourceDirs?: string[];
+  testPatterns?: string[];
+  ignorePatterns?: string[];
+
+  /** Path alias map for resolving imports. Replaces `analyzers.cypressExtractor.pathAliases`. */
+  pathAliases?: Record<string, string>;
+
+  /** Filter floor. Below this, results are dropped. Default 0.4. */
+  minConfidence?: number;
+  /** Band threshold. ≥ this is "high"; below is "medium". Default 0.8. */
+  highConfidence?: number;
+  /** Cap on results. Default 10. Set on CLI via `--all` to disable. */
+  maxResults?: number;
+
+  /** LLM rerank settings. Whole block optional; sane defaults applied. */
+  rerank?: IUserRerankConfig;
+
+  /**
+   * Escape hatch for power users who need to tune scorer weights, disable
+   * specific analyzers, or override structural internals. Most users should
+   * never set this.
+   */
+  advanced?: {
+    enabledScorers?: string[];
+    scorerWeights?: Record<string, number>;
+    ubiquityThreshold?: number;
+    routerFile?: string;
+    storeDirs?: string[];
+    selectorStrategy?: string[];
+  };
+
+  // ── Back-compat: legacy verbose shape still accepted ─────────────
+  analyzers?: IProjectConfig['analyzers'];
+  scoring?: Partial<IProjectConfig['scoring']>;
+}
+
+interface IUserRerankConfig {
+  /** Run the LLM reranker. Default true. */
+  enabled?: boolean;
+  /** Ollama model. Default qwen2.5-coder:7b. */
+  model?: string;
+  /** Ollama host. Default http://localhost:11434. */
+  host?: string;
+  /** Embedding-based prefilter (drops candidates by cosine before LLM). Default true. */
+  biEncoder?: boolean;
+  /** Embedding model when biEncoder is on. Default mxbai-embed-large. */
+  biEncoderModel?: string;
+  /** Cap candidates that survive the bi-encoder. Default 30. */
+  biEncoderTopK?: number;
+  /** Prompt template. Default 'v2'. */
+  promptVersion?: 'v1' | 'v2';
+  /** Late-fusion weight on pelican prior in v2. Default 0.4. */
+  pelicanWeight?: number;
+  /** Ask LLM for explanations per candidate. Default false. */
+  explanations?: boolean;
+
+  // ── Legacy field names still accepted ─────────────────────────────
+  ollamaModel?: string;
+  ollamaHost?: string;
+  biEncoderPrefilter?: boolean;
+  fileContent?: IProjectConfig['rerank'] extends { fileContent?: infer T } ? T : never;
+}
+
+/**
  * Loads config from .pelicanrc.json and merges with defaults.
- * CLI option overrides are applied by the command action, not here.
+ * Accepts either the slim user-facing shape or the legacy verbose shape.
  *
  * @example
  *   const config = await loadProjectConfig();
  *   // config.scoring.minConfidence === 0.4 (from file or default)
- *
- *   const config = await loadProjectConfig('/path/to/custom.json');
- *   // config loaded from specified path
  */
 export async function loadProjectConfig(configPath?: string): Promise<IProjectConfig> {
   const path = configPath || '.pelicanrc.json';
 
   try {
     const content = await fs.readFile(path, 'utf-8');
-    const userConfig = JSON.parse(content);
+    const userConfig: IUserConfig = JSON.parse(content);
     const merged = mergeConfig(DEFAULT_CONFIG, userConfig);
     validateScoringThresholds(merged);
     return merged;
@@ -105,14 +179,13 @@ export class ConfigValidationError extends Error {
 /**
  * Guard against the "inverted bands" mis-config where highConfidence is
  * set below minConfidence — a real user hit this and saw every result
- * collapse into the HIGH band (anything ≥ min was also ≥ high). Silent
- * misconfig here manifests as confusing tiering, not an obvious error.
+ * collapse into the HIGH band (anything ≥ min was also ≥ high).
  */
 function validateScoringThresholds(config: IProjectConfig): void {
   const { minConfidence, highConfidence } = config.scoring;
   if (highConfidence < minConfidence) {
     throw new ConfigValidationError(
-      `scoring.highConfidence (${highConfidence}) must be >= scoring.minConfidence (${minConfidence}). ` +
+      `highConfidence (${highConfidence}) must be >= minConfidence (${minConfidence}). ` +
         `Results below minConfidence are filtered out; anything kept needs a band between [min, high) → Medium and [high, 1] → High.`,
     );
   }
@@ -120,11 +193,6 @@ function validateScoringThresholds(config: IProjectConfig): void {
 
 /**
  * Extracts the ISuggestorConfig subset that the ScoringEngine expects.
- *
- * @example
- *   const projectConfig = await loadProjectConfig();
- *   const scoringConfig = toScoringConfig(projectConfig);
- *   const engine = new ScoringEngine(scoringConfig, registry);
  */
 export function toScoringConfig(config: IProjectConfig): ISuggestorConfig {
   return {
@@ -132,7 +200,13 @@ export function toScoringConfig(config: IProjectConfig): ISuggestorConfig {
   };
 }
 
-function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): IProjectConfig {
+function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfig {
+  // Top-level path aliases beat the legacy nested location.
+  const pathAliases =
+    user.pathAliases ??
+    user.analyzers?.cypressExtractor?.pathAliases ??
+    defaults.analyzers.cypressExtractor.pathAliases;
+
   return {
     sourceDirs: user.sourceDirs ?? defaults.sourceDirs,
     testPatterns: user.testPatterns ?? defaults.testPatterns,
@@ -143,14 +217,19 @@ function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): I
       sourceExtractor: {
         ...defaults.analyzers.sourceExtractor,
         ...user.analyzers?.sourceExtractor,
+        ...(user.advanced?.selectorStrategy && {
+          selectorStrategy: user.advanced.selectorStrategy,
+        }),
       },
       cypressExtractor: {
         ...defaults.analyzers.cypressExtractor,
         ...user.analyzers?.cypressExtractor,
+        pathAliases,
       },
       reduxChain: {
         ...defaults.analyzers.reduxChain,
         ...user.analyzers?.reduxChain,
+        ...(user.advanced?.storeDirs && { storeDirs: user.advanced.storeDirs }),
       },
       i18n: {
         ...defaults.analyzers.i18n,
@@ -159,6 +238,7 @@ function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): I
       routeAnalyzer: {
         ...defaults.analyzers.routeAnalyzer,
         ...user.analyzers?.routeAnalyzer,
+        ...(user.advanced?.routerFile && { routerFile: user.advanced.routerFile }),
       },
       importGraph: {
         ...defaults.analyzers.importGraph,
@@ -168,15 +248,37 @@ function mergeConfig(defaults: IProjectConfig, user: Partial<IProjectConfig>): I
     scoring: {
       ...defaults.scoring,
       ...user.scoring,
+      ...(user.advanced?.enabledScorers && { enabledScorers: user.advanced.enabledScorers }),
+      ...(user.advanced?.scorerWeights && { scorerWeights: user.advanced.scorerWeights }),
+      ...(user.advanced?.ubiquityThreshold !== undefined && {
+        ubiquityThreshold: user.advanced.ubiquityThreshold,
+      }),
+      ...(user.minConfidence !== undefined && { minConfidence: user.minConfidence }),
+      ...(user.highConfidence !== undefined && { highConfidence: user.highConfidence }),
+      ...(user.maxResults !== undefined && { maxResults: user.maxResults }),
     },
-    rerank: user.rerank
-      ? {
-          ...user.rerank,
-          fileContent: user.rerank.fileContent
-            ? { ...user.rerank.fileContent }
-            : undefined,
-          explanations: user.rerank.explanations,
-        }
-      : undefined,
+    rerank: normalizeRerankConfig(user.rerank),
+  };
+}
+
+/**
+ * Map the slim user-facing rerank shape (and legacy field names) onto the
+ * internal `IProjectConfig['rerank']` shape consumed by SemanticReranker.
+ */
+function normalizeRerankConfig(
+  user: IUserRerankConfig | undefined,
+): IProjectConfig['rerank'] {
+  if (!user) return undefined;
+  return {
+    enabled: user.enabled ?? true,
+    ollamaModel: user.model ?? user.ollamaModel ?? 'qwen2.5-coder:7b',
+    ollamaHost: user.host ?? user.ollamaHost ?? 'http://localhost:11434',
+    biEncoder: user.biEncoder ?? user.biEncoderPrefilter,
+    biEncoderModel: user.biEncoderModel,
+    biEncoderTopK: user.biEncoderTopK,
+    promptVersion: user.promptVersion,
+    pelicanWeight: user.pelicanWeight,
+    explanations: user.explanations,
+    fileContent: user.fileContent,
   };
 }

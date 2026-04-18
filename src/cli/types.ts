@@ -205,10 +205,21 @@ export interface IProjectConfig {
   rerank?: {
     /** Enable Ollama LLM reranking. Default true. */
     enabled: boolean;
-    /** Ollama model to use. Default: qwen3.5:latest */
+    /** Ollama model to use. Default: qwen2.5-coder:7b */
     ollamaModel: string;
     /** Ollama host. Default: http://localhost:11434 */
     ollamaHost: string;
+    /**
+     * Embedding-based prefilter (cosine cut before LLM). Default true.
+     * Disable when filename/identifier overlap matters more than
+     * semantic similarity (e.g. large Cypress repos with strong naming
+     * conventions); pelican's structural rank is then the prefilter.
+     */
+    biEncoder?: boolean;
+    /** Embedding model name when biEncoder is on. */
+    biEncoderModel?: string;
+    /** Cap on candidates surviving the bi-encoder. */
+    biEncoderTopK?: number;
     fileContent?: {
       /**
        * Number of equal-width regions to sample from the file. Default: 8.
@@ -234,6 +245,16 @@ export interface IProjectConfig {
      * decode shrinks from ~25 tokens to ~3 per call.
      */
     explanations?: boolean;
+    /**
+     * Prompt template version. Default 'v2' — neutral SOURCE+TEST prompt with
+     * late-fusion blend. Set to 'v1' to fall back to the legacy R/A rubric.
+     */
+    promptVersion?: "v1" | "v2";
+    /**
+     * Weight on pelican structural prior in the v2 late-fusion blend
+     * (`combined = w·pelican + (1-w)·(confidence/5)`). Default 0.4.
+     */
+    pelicanWeight?: number;
   };
 }
 
@@ -257,6 +278,8 @@ export interface IAnalyzeOptions {
   all?: boolean;
   /** Set by --expanded flag. Shows the per-source-file breakdown instead of the dedup'd combined list. */
   expanded?: boolean;
+  /** Set to false by --no-bi-encoder. Skips embedding cosine prefilter; pelican structural rank acts as the prefilter. */
+  biEncoder?: boolean;
 }
 
 export interface IRegistryBuildOptions {

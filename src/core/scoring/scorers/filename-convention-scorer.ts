@@ -1,6 +1,7 @@
 import path from 'path';
 
 import { BaseScorer } from '@/core/scoring/scorers/base';
+import { sharesFeatureDir } from '@/core/scoring/scorers/feature-dir';
 import { getScorerConfig } from '@/core/scoring/scoring-config';
 import { IScorerContext, ISignal } from '@/types';
 import { EScorerType } from '@/utils/enums';
@@ -50,6 +51,19 @@ const STOPWORDS = new Set([
   'container',
   'containers',
   'the',
+  // Layer/prefix tokens — structural, not features. `actions/post_actions.ts`
+  // should tokenise as [post], not [post, actions]; otherwise the gate treats
+  // `post` as a secondary token and demotes every legit post-related spec.
+  // Hook prefix `use` is also naming convention, not semantic content.
+  'actions',
+  'action',
+  'reducers',
+  'reducer',
+  'selectors',
+  'selector',
+  'hooks',
+  'hook',
+  'use',
 ]);
 
 const MIN_TOKEN_LEN = 2;
@@ -152,10 +166,27 @@ export class FilenameConventionScorer extends BaseScorer {
 
     const matched = hasStrongBaseMatch && baseOverlapRatio >= MATCH_THRESHOLD;
 
+    // Feature-dir gate: when a match leans on a SECONDARY token from the
+    // source basename (`backstage_category` → `category` is secondary) and
+    // changed+test live in DIFFERENT feature dirs, the token is almost
+    // certainly a generic collision. If the source basename has only one
+    // meaningful token (`login.tsx`), the hit IS primary — don't demote.
+    const shareFeature = sharesFeatureDir(changedFile, testFile);
+    const uniqueSourceTokens = new Set(changedBase);
+    const singleShortHitOnSecondaryToken =
+      matched &&
+      baseIntersection.length === 1 &&
+      exactBaseIntersection.length === 1 &&
+      exactBaseIntersection[0].length <= 10 &&
+      uniqueSourceTokens.size > 1; // source carries a primary identifier the test missed
+    const featureMismatchDemote = matched && !shareFeature && singleShortHitOnSecondaryToken;
+
     const signal = this.createSignal(
-      matched,
+      matched && !featureMismatchDemote,
       matched
-        ? `Filename tokens overlap ${(baseOverlapRatio * 100).toFixed(0)}% on basename [${baseIntersection.join(', ')}] (${changedBase.join('-')} ↔ ${testBase.join('-')})`
+        ? featureMismatchDemote
+          ? `Cross-feature single-token collision: [${baseIntersection.join(', ')}] — demoted (${changedBase.join('-')} ↔ ${testBase.join('-')})`
+          : `Filename tokens overlap ${(baseOverlapRatio * 100).toFixed(0)}% on basename [${baseIntersection.join(', ')}] (${changedBase.join('-')} ↔ ${testBase.join('-')})`
         : `Weak filename overlap (base ${baseIntersection.length}, all ${allIntersection.length}): ${changedBase.join('-')} vs ${testBase.join('-')}`,
       {
         changedFile,
@@ -167,10 +198,12 @@ export class FilenameConventionScorer extends BaseScorer {
         baseIntersection,
         baseOverlapRatio,
         allOverlapRatio,
+        sharesFeatureDir: shareFeature,
+        featureMismatchDemote,
       },
     );
 
-    if (matched) {
+    if (matched && !featureMismatchDemote) {
       // Graded: start from base overlap, add up to +0.2 bonus if parent-dir
       // tokens also agree (cart/CartSummary ↔ cart/summary).
       const parentBoost = allOverlapRatio > baseOverlapRatio ? 0.2 : 0;

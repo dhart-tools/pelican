@@ -127,6 +127,17 @@ export interface IOllamaRerankerConfig {
    */
   scoringMode?: "bucket" | "bool";
   /**
+   * Prompt template version:
+   *   'v1' — multi-rule R/A rubric with compressed symbols + bucket multiplier.
+   *   'v2' — neutral semantic prompt: SOURCE + TEST + "does this test exercise
+   *          this source?" → JSON {relevant, evidence, confidence:0-5}. No
+   *          pelican prior leaked into the prompt; no R/A rules. Combined with
+   *          late-fusion blend in SemanticReranker.
+   * Default 'v2' — produced higher recall in qwen2.5-coder benchmarks where
+   * the v1 rubric was over-rejecting borderline candidates.
+   */
+  promptVersion?: "v1" | "v2";
+  /**
    * When true (default), all surviving candidates for a given source file are
    * scored in a single listwise LLM call — one prefill of the source block
    * amortized across every test. When false, falls back to per-pair calls.
@@ -141,11 +152,14 @@ export interface IOllamaRerankerConfig {
 }
 
 export const DEFAULT_OLLAMA_CONFIG: IOllamaRerankerConfig = {
-  model: "qwen3.5:latest",
+  // qwen2.5-coder:7b is the model the production client runs; default to it so
+  // dev benchmarks line up with prod recall/precision numbers.
+  model: "qwen2.5-coder:7b",
   host: "http://localhost:11434",
   concurrency: 3,
   explanations: false,
   scoringMode: "bucket",
+  promptVersion: "v2",
   // Listwise (one LLM call per source) is ~2× faster than per-pair but the
   // model loses per-candidate rigor when many tests share one prompt, so
   // false positives spike. Keep the per-pair path as default until we
@@ -168,6 +182,12 @@ export interface IOllamaRerankResult {
    * ran in legacy boolean mode.
    */
   bucket?: number;
+  /**
+   * Prompt-v2 confidence: 0 (clear no) — 5 (clear yes). Independent from
+   * `bucket`; populated only by the v2 path so SemanticReranker can apply
+   * late-fusion `final = 0.4*pelican + 0.6*(confidence/5)`.
+   */
+  confidence?: number;
 }
 
 /**
@@ -329,6 +349,59 @@ function buildKVSuffix(
 
   return `${testBlock}\n${trailer}`;
 }
+
+// ─── Prompt v2 ────────────────────────────────────────────────────
+//
+// Hypothesis under test: pelican's R/A rubric + symbol compression was leaking
+// the analyzer's prior into the LLM, causing systematic over-rejection on
+// borderline candidates the structural pass had already short-listed. v2 hands
+// the model just SOURCE + TEST and a single neutral question — let the model
+// decide on its own evidence, then late-fusion with pelican downstream.
+//
+// Source block is NOT symbol-compressed here. KV reuse still works because
+// the prefix is byte-identical per source file, and the savings from
+// compression were marginal compared to the recall hit from training the
+// model to see selectors as opaque S1/S2 tokens.
+function buildKVPrefixV2(sourceBlock: string): string {
+  return `You judge if a TEST file likely exercises a SOURCE file at runtime. Most candidates here are Cypress E2E specs — they run against the LIVE APP, so they will NEVER import or mount the source file directly. Do NOT require an import. Judge by domain overlap instead.
+
+Mark relevant=true if ANY of:
+  - The test file PATH or BASENAME shares a distinctive token with the source path/basename (e.g. test path contains "channel_header" and source is channel_header.tsx).
+  - The test's describes / it titles / visited routes / asserted text / intercepted APIs / selectors share a DISTINCTIVE domain token with the source's path, exports, selectors, routes, JSX text, or action types.
+  - The source is a hook / reducer / slice / util / machine, and the source's domain word appears anywhere in the test's describes / visits / imports.
+  - The test is a Jest/RTL unit test that imports the source by path.
+
+Mark relevant=false ONLY if:
+  - Overlap is purely on generic tokens (app, page, container, handler, component, util, channel, message, post, sidebar) with no specific shared identifier.
+  - The test is a stub (zero it/test bodies).
+  - Layer mismatch: test is a Jest backend unit (src/__tests__/*.test.ts) AND the source is a frontend bundle entry.
+
+When you are unsure but a plausible runtime path exists, choose relevant=true. Recall is the priority — pelican has already pre-filtered out clearly-irrelevant files.
+
+confidence: 0=clear no, 1=likely no, 2=unsure, 3=likely yes, 4=yes, 5=clear yes. If you cannot find a clear rejection reason from the list above, confidence must be ≥3.
+
+SOURCE:
+${sourceBlock}
+
+TEST:
+`;
+}
+
+function buildKVSuffixV2(testBlock: string): string {
+  return `${testBlock}
+Reply JSON: {"relevant": true|false, "evidence": "<one clause, ≤25 words>", "confidence": 0-5}
+confidence: 0=clear no, 1=likely no, 2=unsure, 3=likely yes, 4=yes, 5=clear yes.`;
+}
+
+const VERDICT_SCHEMA_V2 = {
+  type: "object",
+  properties: {
+    relevant: { type: "boolean" },
+    evidence: { type: "string", maxLength: 200 },
+    confidence: { type: "integer", minimum: 0, maximum: 5 },
+  },
+  required: ["relevant", "evidence", "confidence"],
+} as const;
 
 // JSON schemas enforced by Ollama's structured-output mode. llama.cpp grammar
 // forces the model to stop at `maxLength`. Verdict bit emits first, so cutting
@@ -733,7 +806,92 @@ export class OllamaReranker {
       return [...listResults, ...stubRejections];
     }
 
-    // Per-pair path (kept as fallback). Every prompt begins with the same
+    const promptVersion = this.config.promptVersion ?? "v2";
+
+    // Per-pair v2 path: neutral SOURCE+TEST prompt, JSON {relevant, evidence,
+    // confidence}. Late-fusion happens in SemanticReranker via `confidence`.
+    if (promptVersion === "v2") {
+      const prefix = buildKVPrefixV2(sourceBlock);
+      if (this.config.debug) {
+        process.stderr.write(
+          `[ollama-timing] file=${changedFile} v2 tests=${total} prefix=${prefix.length}ch source=${sourceBlock.length}ch\n`,
+        );
+      }
+      const limit = pLimit(Math.max(1, this.config.concurrency));
+      await Promise.all(
+        testBlocks.map((tb, i) =>
+          limit(async () => {
+            const prompt = prefix + buildKVSuffixV2(tb.block);
+            const callStart = Date.now();
+            if (this.config.debug) {
+              const debugFile = ".pelican/debug-rerank.log";
+              const sep = "=".repeat(80);
+              const logEntry = [
+                `\n${sep}`,
+                `[ollama] V2 SCORING: ${changedFile} → ${tb.testFile} (${i + 1}/${total})`,
+                sep,
+                `── PROMPT (${prompt.length} chars, prefix ${prefix.length}) ──`,
+                prompt.slice(0, 2000),
+                prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : "",
+                `── END PROMPT ──\n`,
+              ].join("\n");
+              await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+            }
+            try {
+              const response = await this.ollama.generate({
+                model: this.config.model,
+                prompt,
+                stream: false,
+                think: false,
+                keep_alive: -1,
+                format: VERDICT_SCHEMA_V2,
+                options: { temperature: 0, num_predict: 96, num_ctx: 8192 },
+              });
+              const callMs = Date.now() - callStart;
+              if (this.config.debug) {
+                process.stderr.write(
+                  `[ollama-timing] v2 ${i + 1}/${total} ${tb.testFile} total=${callMs}ms\n`,
+                );
+                await fs
+                  .appendFile(
+                    ".pelican/debug-rerank.log",
+                    `── RAW RESPONSE ──\n${response.response}\n── END RESPONSE ──\n`,
+                    "utf-8",
+                  )
+                  .catch(() => {});
+              }
+              const verdict = parseV2Response(response.response);
+              allResults.push({ testFile: tb.testFile, ...verdict });
+              if (this.config.debug) {
+                const summary = `[ollama] v2 ${tb.testFile}: relevant=${verdict.relevant} conf=${verdict.confidence} — ${verdict.reason}\n`;
+                await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
+                process.stderr.write(summary);
+              }
+            } catch (err) {
+              if (this.config.debug) {
+                process.stderr.write(`[ollama] v2 scoring error for ${tb.testFile}: ${err}\n`);
+              }
+              allResults.push({
+                testFile: tb.testFile,
+                relevant: true,
+                reason: "LLM unavailable; included as precaution.",
+                confidence: 3,
+              });
+            }
+            scored += 1;
+            onPairScored?.(scored, total);
+          }),
+        ),
+      );
+      if (this.config.debug) {
+        process.stderr.write(
+          `[ollama-timing] file=${changedFile} v2 done total=${Date.now() - fileStart}ms tests=${total}\n`,
+        );
+      }
+      return [...allResults, ...stubRejections];
+    }
+
+    // Per-pair v1 path (kept as fallback). Every prompt begins with the same
     // `buildKVPrefix(sourceBlock)` bytes so Ollama prefills the source once
     // and reuses the cached attention state across calls.
     const kind = detectSourceUIKind(sourceEntry);
@@ -1142,6 +1300,56 @@ function parseBucketResponse(
     relevant: true,
     reason: "Model response could not be parsed; included as precaution.",
     bucket: 3,
+  };
+}
+
+/**
+ * Parse v2 response: `{"relevant": bool, "evidence": str, "confidence": 0-5}`.
+ * On parse failure default to relevant=true, confidence=3 — same precautionary
+ * include policy as the bool/bucket parsers. Caller (SemanticReranker) blends
+ * `confidence` with pelican structural score via late-fusion.
+ */
+function parseV2Response(
+  text: string,
+): { relevant: boolean; reason: string; confidence: number } {
+  try {
+    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      const evidence = typeof parsed.evidence === "string" ? parsed.evidence.trim() : "";
+      let relevant: boolean | undefined;
+      if (typeof parsed.relevant === "boolean") relevant = parsed.relevant;
+      else if (typeof parsed.relevant === "string") {
+        relevant = /^(true|yes|1)$/i.test(parsed.relevant.trim());
+      }
+      let confidence: number | undefined;
+      if (typeof parsed.confidence === "number") confidence = parsed.confidence;
+      else if (typeof parsed.confidence === "string") {
+        const n = parseInt(parsed.confidence, 10);
+        if (!Number.isNaN(n)) confidence = n;
+      }
+      if (relevant !== undefined && confidence !== undefined) {
+        const c = Math.max(0, Math.min(5, Math.round(confidence)));
+        return { relevant, reason: evidence, confidence: c };
+      }
+      // Partial parse: at least one field landed. Trust what we got, default
+      // the other to a precautionary include.
+      if (relevant !== undefined) {
+        return { relevant, reason: evidence, confidence: relevant ? 4 : 1 };
+      }
+      if (confidence !== undefined) {
+        const c = Math.max(0, Math.min(5, Math.round(confidence)));
+        return { relevant: c >= 3, reason: evidence, confidence: c };
+      }
+    }
+  } catch {
+    // fall through
+  }
+  return {
+    relevant: true,
+    reason: "Model response could not be parsed; included as precaution.",
+    confidence: 3,
   };
 }
 

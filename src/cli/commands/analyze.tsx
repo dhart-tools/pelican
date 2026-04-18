@@ -287,6 +287,17 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           ...(config.rerank?.explanations !== undefined && {
             explanations: config.rerank.explanations,
           }),
+          ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
+          ...(config.rerank?.pelicanWeight !== undefined && {
+            pelicanWeight: config.rerank.pelicanWeight,
+          }),
+          ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
+            biEncoderPrefilter: false,
+          }),
+          ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
+          ...(config.rerank?.biEncoderTopK !== undefined && {
+            biEncoderTopK: config.rerank.biEncoderTopK,
+          }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
           useCache: options.cache !== false,
@@ -543,6 +554,17 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     ...(config.rerank?.explanations !== undefined && {
       explanations: config.rerank.explanations,
     }),
+    ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
+    ...(config.rerank?.pelicanWeight !== undefined && {
+      pelicanWeight: config.rerank.pelicanWeight,
+    }),
+    ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
+      biEncoderPrefilter: false,
+    }),
+    ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
+    ...(config.rerank?.biEncoderTopK !== undefined && {
+      biEncoderTopK: config.rerank.biEncoderTopK,
+    }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
     useCache: options.cache !== false,
@@ -668,6 +690,10 @@ export const analyzeCommand = new Command('analyze')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
   .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
   .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
+  .option(
+    '--no-bi-encoder',
+    'Skip embedding cosine prefilter; pelican structural rank acts as the prefilter (faster, often better recall on naming-strong repos)',
+  )
   .option('--debug', 'Print detailed extraction and scoring info to stderr')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {

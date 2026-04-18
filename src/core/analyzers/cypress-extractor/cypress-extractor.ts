@@ -366,8 +366,20 @@ export class CypressExtractorAnalyzer extends BaseAnalyzer<
     }
 
     if (ts.isTemplateExpression(urlArg)) {
-      const staticPrefix = urlArg.head.text;
-      result.visitedRoutes.push(staticPrefix);
+      // Reconstruct with `*` for each interpolation so we still capture the
+      // structural path. `/${team.name}/integrations/incoming_webhooks` →
+      // `/*/integrations/incoming_webhooks`. Without this every templated
+      // cy.visit lost its suffix and collapsed to the static head (usually "/"),
+      // breaking route-match for 95%+ of real specs.
+      let reconstructed = urlArg.head.text;
+      for (const span of urlArg.templateSpans) {
+        reconstructed += `*${span.literal.text}`;
+      }
+      result.visitedRoutes.push(reconstructed);
+    }
+
+    if (ts.isNoSubstitutionTemplateLiteral(urlArg)) {
+      result.visitedRoutes.push(urlArg.text);
     }
   }
 

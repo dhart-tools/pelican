@@ -91,7 +91,37 @@ export class RouteMatchScorer extends BaseScorer {
         best = { componentPath, specificity };
       }
     }
+    if (best) return best;
+
+    // Nested-route fallback: React Router parents like `/:team/integrations`
+    // render regardless of child URL. A test visiting
+    // `/:team/integrations/incoming_webhooks/add` navigates INTO the parent's
+    // tree, so the parent still renders. Without this we miss every spec that
+    // lives deeper than the registered route.
+    //
+    // We match as a path-prefix (segment boundary) and scale specificity down
+    // to avoid this stealing specific-route matches. All parents (including
+    // non-dynamic like `/admin_console`) participate.
+    for (const [pattern, componentPath] of routeMap) {
+      const regex = this.patternToPrefixRegex(pattern);
+      if (!regex.test(visited)) continue;
+      const base = this.routeSpecificity(pattern);
+      const specificity = base * 0.5;
+      if (!best || specificity > best.specificity) {
+        best = { componentPath, specificity };
+      }
+    }
     return best;
+  }
+
+  private patternToPrefixRegex(pattern: string): RegExp {
+    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+    const body = escaped
+      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+')
+      .replace(/\*/g, '.*');
+    // Require a segment boundary after the pattern so `/:team/integrations`
+    // doesn't match `/:team/integrations_foo`.
+    return new RegExp(`^${body}/.+$`);
   }
 
   private routeSpecificity(pattern: string): number {
