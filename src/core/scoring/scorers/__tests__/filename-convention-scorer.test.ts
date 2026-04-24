@@ -27,10 +27,7 @@ describe('FilenameConventionScorer', () => {
   });
 
   test('resolves index.ts to parent-dir name (fileManager/index.ts ↔ fileManager/fileManager.test.ts)', () => {
-    const s = evaluate(
-      'src/fileManager/index.ts',
-      'src/fileManager/fileManager.test.ts',
-    );
+    const s = evaluate('src/fileManager/index.ts', 'src/fileManager/fileManager.test.ts');
     expect(s.matched).toBe(true);
   });
 

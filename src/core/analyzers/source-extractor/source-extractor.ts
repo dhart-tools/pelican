@@ -164,7 +164,8 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
   //   * "slice/SOMETHING" RTK namespaced form (channels/receivedChannel).
   //     The slash + lowercase-prefix shape is rare enough to be specific to
   //     redux-toolkit action conventions, so we accept any case after the slash.
-  private static readonly ACTION_TYPE_RE = /^(?:[a-z][a-zA-Z0-9]*\/)?[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+  private static readonly ACTION_TYPE_RE =
+    /^(?:[a-z][a-zA-Z0-9]*\/)?[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
 
   private maybeCollectActionType(text: string, result: ISourceExtractionResult): void {
     if (text.length < 5 || text.length > 80) return;
@@ -239,9 +240,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
     node: ts.VariableStatement,
     result: ISourceExtractionResult,
   ): void {
-    const isExported = ts
-      .getModifiers(node)
-      ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    const isExported = ts.getModifiers(node)?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
     if (!isExported) return;
     for (const decl of node.declarationList.declarations) {
       if (!ts.isIdentifier(decl.name)) continue;

@@ -75,7 +75,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.COLOCATION]: {
     name: EScorerType.COLOCATION,
     version: '1.0.0',
-    description: 'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
+    description:
+      'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
     type: 'colocation',
     weight: 0.75,
   },
@@ -89,7 +90,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.DEPENDENT_SELECTOR]: {
     name: EScorerType.DEPENDENT_SELECTOR,
     version: '1.0.0',
-    description: 'Scores based on selectors in files that import the changed file (reverse dependency)',
+    description:
+      'Scores based on selectors in files that import the changed file (reverse dependency)',
     type: 'dependent-selector',
     weight: 0.65,
   },
@@ -103,7 +105,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.USAGE_SITE]: {
     name: EScorerType.USAGE_SITE,
     version: '1.0.0',
-    description: 'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
+    description:
+      'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
     type: 'usage-site',
     weight: 0.55,
   },

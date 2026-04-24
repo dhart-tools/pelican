@@ -14,11 +14,41 @@ const INDEX_BASENAMES = new Set(['index', 'main', 'default', 'entry']);
 // An identical match on these is nearly meaningless — every dir has its own.
 // Require the colocation scorer or import-graph to carry the signal instead.
 const GENERIC_BASENAMES = new Set([
-  'utils', 'util', 'helpers', 'helper', 'types', 'type', 'constants', 'const',
-  'config', 'configs', 'defaults', 'common', 'shared', 'hooks', 'styles',
-  'style', 'theme', 'misc', 'errors', 'validation', 'validators', 'fixtures',
-  'mocks', 'queries', 'mutations', 'selectors', 'actions', 'reducers',
-  'handlers', 'data', 'api', 'model', 'models', 'service', 'services',
+  'utils',
+  'util',
+  'helpers',
+  'helper',
+  'types',
+  'type',
+  'constants',
+  'const',
+  'config',
+  'configs',
+  'defaults',
+  'common',
+  'shared',
+  'hooks',
+  'styles',
+  'style',
+  'theme',
+  'misc',
+  'errors',
+  'validation',
+  'validators',
+  'fixtures',
+  'mocks',
+  'queries',
+  'mutations',
+  'selectors',
+  'actions',
+  'reducers',
+  'handlers',
+  'data',
+  'api',
+  'model',
+  'models',
+  'service',
+  'services',
 ]);
 
 const STOPWORDS = new Set([
@@ -150,19 +180,16 @@ export class FilenameConventionScorer extends BaseScorer {
     const baseIntersection = [...exactBaseIntersection, ...fuzzyMatches];
     const effectiveIntersectionCount = exactBaseIntersection.length + fuzzyMatches.length * 0.9;
     const baseOverlapRatio =
-      effectiveIntersectionCount /
-      Math.min(new Set(changedBase).size, new Set(testBase).size);
+      effectiveIntersectionCount / Math.min(new Set(changedBase).size, new Set(testBase).size);
     const hasStrongBaseMatch =
-      exactBaseIntersection.some((t) => t.length >= 3) ||
-      fuzzyMatches.some((t) => t.length >= 5);
+      exactBaseIntersection.some((t) => t.length >= 3) || fuzzyMatches.some((t) => t.length >= 5);
 
     // Combined set includes parent-dir tokens as weak boosters of the ratio,
     // only counted when a base-token match already exists.
     const changedAll = Array.from(new Set([...changedBase, ...changedParent]));
     const testAll = Array.from(new Set([...testBase, ...testParent]));
     const allIntersection = changedAll.filter((t) => testAll.includes(t));
-    const allOverlapRatio =
-      allIntersection.length / Math.min(changedAll.length, testAll.length);
+    const allOverlapRatio = allIntersection.length / Math.min(changedAll.length, testAll.length);
 
     const matched = hasStrongBaseMatch && baseOverlapRatio >= MATCH_THRESHOLD;
 
@@ -239,11 +266,13 @@ export class FilenameConventionScorer extends BaseScorer {
   private parentDirTokens(filePath: string, isTest: boolean): string[] {
     // When basename is plain `index` (no dotted variant), parent dir already
     // became the basename — step up one more level for the parent-dir context.
-    const baseLower = path.basename(filePath).replace(isTest ? TEST_SUFFIX_RE : SOURCE_EXT_RE, '').toLowerCase();
+    const baseLower = path
+      .basename(filePath)
+      .replace(isTest ? TEST_SUFFIX_RE : SOURCE_EXT_RE, '')
+      .toLowerCase();
     const dotParts = baseLower.split('.');
     const isPlainIndex =
-      INDEX_BASENAMES.has(baseLower) ||
-      (dotParts.length === 1 && INDEX_BASENAMES.has(dotParts[0]));
+      INDEX_BASENAMES.has(baseLower) || (dotParts.length === 1 && INDEX_BASENAMES.has(dotParts[0]));
     // Dotted index variants (index.cognito.tsx) extract their basename from the
     // dot segments, so parent dir is still the immediate directory — no skip.
     const isDottedIndex = dotParts.length > 1 && INDEX_BASENAMES.has(dotParts[0]);

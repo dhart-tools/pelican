@@ -45,10 +45,7 @@ export interface ITestClassification {
  * `mountTargets` and `seeded` need the actual file content; `fileContent`
  * optional. When omitted they remain empty/false.
  */
-export function classifyTest(
-  entry: IFileEntry,
-  fileContent?: string,
-): ITestClassification {
+export function classifyTest(entry: IFileEntry, fileContent?: string): ITestClassification {
   const itCount = entry.cypress?.itBlocks.length ?? 0;
   const isComponentFile = /\.cy\.(jsx?|tsx?)$/i.test(entry.path);
 
@@ -75,10 +72,9 @@ export function classifyTest(
   }
 
   const base = path.basename(entry.path).toLowerCase();
-  const provider = (PROVIDERS.find((p) => base.includes(p))
-    ?? (loginHelper
-      ? PROVIDERS.find((p) => loginHelper.toLowerCase().includes(p))
-      : undefined));
+  const provider =
+    PROVIDERS.find((p) => base.includes(p)) ??
+    (loginHelper ? PROVIDERS.find((p) => loginHelper.toLowerCase().includes(p)) : undefined);
 
   return {
     kind,
@@ -151,9 +147,7 @@ function extractBalancedBody(content: string, openBrace: number): string | null 
 }
 
 function isCommentOrWhitespace(body: string): boolean {
-  const stripped = body
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   return stripped.trim() === '';
 }
 
@@ -165,7 +159,11 @@ function isCommentOrWhitespace(body: string): boolean {
 export function buildSourceHeader(entry: IFileEntry): string {
   const provider = detectSourceProvider(entry);
   const entryPoint = isSourceEntryPoint(entry);
-  const routes = entry.routesDefined?.map((r) => r.path).filter(Boolean).slice(0, 8).join(', ');
+  const routes = entry.routesDefined
+    ?.map((r) => r.path)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(', ');
   const sels = entry.selectors
     ?.map((s) => s.value)
     .filter(Boolean)
@@ -189,7 +187,14 @@ export function buildSourceHeader(entry: IFileEntry): string {
   return lines.join('\n');
 }
 
-export type SourceUIKind = 'component' | 'container' | 'machine' | 'hook' | 'reducer' | 'util' | 'entry';
+export type SourceUIKind =
+  | 'component'
+  | 'container'
+  | 'machine'
+  | 'hook'
+  | 'reducer'
+  | 'util'
+  | 'entry';
 
 /**
  * Classify the source's runtime role — drives R8/R9 folder-gate rules.
@@ -254,9 +259,7 @@ export function buildTestHeader(entry: IFileEntry, fileContent?: string): string
  */
 export function detectBypassCommands(entry: IFileEntry): string[] {
   const cmds = entry.cypress?.customCommandsUsed ?? [];
-  return cmds.filter((c) =>
-    /^(make|seed|login\w*By|programmatic|create|setup)/i.test(c),
-  );
+  return cmds.filter((c) => /^(make|seed|login\w*By|programmatic|create|setup)/i.test(c));
 }
 
 /**
@@ -305,7 +308,9 @@ export function buildSourcePayload(entry: IFileEntry): string {
   const parts: string[] = [];
 
   const basename = basenameTokens(entry.path);
-  parts.push(basename ? `Source component: ${basename} (${entry.path})` : `Source file: ${entry.path}`);
+  parts.push(
+    basename ? `Source component: ${basename} (${entry.path})` : `Source file: ${entry.path}`,
+  );
 
   if (entry.exports.length) {
     parts.push(`Exports: ${entry.exports.slice(0, 20).join(', ')}`);
@@ -317,11 +322,19 @@ export function buildSourcePayload(entry: IFileEntry): string {
     parts.push(`Classes: ${entry.classes.slice(0, 10).join(', ')}`);
   }
   if (entry.selectors?.length) {
-    const sels = entry.selectors.map((s) => s.value).filter(Boolean).slice(0, 20).join(', ');
+    const sels = entry.selectors
+      .map((s) => s.value)
+      .filter(Boolean)
+      .slice(0, 20)
+      .join(', ');
     if (sels) parts.push(`Data-test selectors: ${sels}`);
   }
   if (entry.routesDefined?.length) {
-    const routes = entry.routesDefined.map((r) => r.path).filter(Boolean).slice(0, 15).join(', ');
+    const routes = entry.routesDefined
+      .map((r) => r.path)
+      .filter(Boolean)
+      .slice(0, 15)
+      .join(', ');
     if (routes) parts.push(`Defines routes: ${routes}`);
   }
   if (entry.translationKeys?.length) {
@@ -346,11 +359,11 @@ export function buildTestPayload(entry: IFileEntry): string {
   const parts: string[] = [];
 
   const basename = basenameTokens(entry.path);
-  const isCypress = entry.cypress && (
-    entry.cypress.describeBlocks.length > 0 ||
-    entry.cypress.itBlocks.length > 0 ||
-    entry.cypress.visitedRoutes.length > 0
-  );
+  const isCypress =
+    entry.cypress &&
+    (entry.cypress.describeBlocks.length > 0 ||
+      entry.cypress.itBlocks.length > 0 ||
+      entry.cypress.visitedRoutes.length > 0);
 
   if (isCypress) {
     parts.push(basename ? `Cypress test: ${basename} (${entry.path})` : `Test file: ${entry.path}`);

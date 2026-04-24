@@ -85,7 +85,7 @@ export interface IRerankerConfig {
    * late-fusion blend with pelican prior. 'v1' — legacy R/A rubric with
    * bucket multiplier. See ollama-reranker.ts for prompt details.
    */
-  promptVersion?: "v1" | "v2";
+  promptVersion?: 'v1' | 'v2';
   /**
    * Late-fusion weight on pelican structural prior when promptVersion='v2'.
    * `combined = pelicanWeight * pelicanScore + (1 - pelicanWeight) * (confidence/5)`.
@@ -131,7 +131,7 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   biEncoderCachePath: DEFAULT_BI_ENCODER_CONFIG.cachePath,
   explanations: false,
   useCache: true,
-  promptVersion: "v2",
+  promptVersion: 'v2',
   pelicanWeight: 0.4,
 };
 
@@ -196,7 +196,7 @@ export class SemanticReranker {
       explanations: this.config.explanations === true,
       listwise: this.config.listwise === true,
       listwiseWindow: this.config.listwiseWindow,
-      promptVersion: this.config.promptVersion ?? "v2",
+      promptVersion: this.config.promptVersion ?? 'v2',
     });
     this.lock = new PelicanLock(this.config.lockPath);
     if (this.config.cePrefilter) {
@@ -380,7 +380,7 @@ export class SemanticReranker {
           },
         );
 
-        const promptVersion = this.config.promptVersion ?? "v2";
+        const promptVersion = this.config.promptVersion ?? 'v2';
         const pelicanWeight = this.config.pelicanWeight ?? 0.4;
         for (const llm of llmResults) {
           const cand = survivors.find((c) => c.testFile === llm.testFile)!;
@@ -393,7 +393,7 @@ export class SemanticReranker {
           //    Kept for A/B until v2 is proven on the full benchmark set.
           let keptCombined: number;
           let rejectCombined: number;
-          if (promptVersion === "v2" && llm.confidence !== undefined) {
+          if (promptVersion === 'v2' && llm.confidence !== undefined) {
             const blended = Math.min(
               1,
               pelicanWeight * cand.pelicanScore + (1 - pelicanWeight) * (llm.confidence / 5),
@@ -401,14 +401,12 @@ export class SemanticReranker {
             keptCombined = blended;
             rejectCombined = blended;
           } else {
-            const mult =
-              llm.bucket !== undefined ? BUCKET_MULTIPLIER[llm.bucket] : undefined;
+            const mult = llm.bucket !== undefined ? BUCKET_MULTIPLIER[llm.bucket] : undefined;
             keptCombined =
               mult !== undefined
                 ? Math.min(1, cand.pelicanScore * mult)
                 : Math.min(1, cand.pelicanScore + this.config.confirmedBoost);
-            rejectCombined =
-              mult !== undefined ? cand.pelicanScore * mult : cand.pelicanScore;
+            rejectCombined = mult !== undefined ? cand.pelicanScore * mult : cand.pelicanScore;
           }
           if (llm.relevant) {
             if (useCache) this.lock.confirm(changedFile, llm.testFile, llm.reason);
@@ -596,7 +594,6 @@ export class SemanticReranker {
       return toScore;
     }
   }
-
 }
 
 function buildCETextForSource(entry: IFileEntry): string {
@@ -604,11 +601,19 @@ function buildCETextForSource(entry: IFileEntry): string {
   if (entry.exports.length) parts.push(`exports: ${entry.exports.slice(0, 20).join(', ')}`);
   if (entry.imports.length) parts.push(`imports: ${entry.imports.slice(0, 10).join(', ')}`);
   if (entry.selectors?.length) {
-    const sels = entry.selectors.map((s) => s.value).filter(Boolean).slice(0, 15).join(', ');
+    const sels = entry.selectors
+      .map((s) => s.value)
+      .filter(Boolean)
+      .slice(0, 15)
+      .join(', ');
     if (sels) parts.push(`selectors: ${sels}`);
   }
   if (entry.routesDefined?.length) {
-    const routes = entry.routesDefined.map((r) => r.path).filter(Boolean).slice(0, 10).join(', ');
+    const routes = entry.routesDefined
+      .map((r) => r.path)
+      .filter(Boolean)
+      .slice(0, 10)
+      .join(', ');
     if (routes) parts.push(`routes: ${routes}`);
   }
   return parts.join('\n');
@@ -625,7 +630,11 @@ function buildCETextForTest(testFile: string, entry: IFileEntry | undefined): st
     if (its) parts.push(`its: ${its}`);
     const routes = entry.cypress.visitedRoutes.slice(0, 10).join(', ');
     if (routes) parts.push(`visits: ${routes}`);
-    const selectors = entry.cypress.selectors.map((s) => s.value).filter(Boolean).slice(0, 15).join(', ');
+    const selectors = entry.cypress.selectors
+      .map((s) => s.value)
+      .filter(Boolean)
+      .slice(0, 15)
+      .join(', ');
     if (selectors) parts.push(`selectors: ${selectors}`);
   }
   return parts.join('\n');

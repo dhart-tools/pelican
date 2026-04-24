@@ -91,10 +91,7 @@ export class SelectorMatchScorer extends BaseScorer {
     if (exactMatches.length > 0 || prefixMatches.length > 0) {
       // Worst-case (deepest) origin of the matched values — 0 = own file,
       // 1 = direct import, 2 = grand-child. Transitive matches dampen.
-      const allMatched: string[] = [
-        ...exactMatches,
-        ...prefixMatches.map((p) => p.source),
-      ];
+      const allMatched: string[] = [...exactMatches, ...prefixMatches.map((p) => p.source)];
       const minDepth = Math.min(...allMatched.map((v) => valueOrigin.get(v) ?? 0));
       const sig = this.createSignal(
         true,

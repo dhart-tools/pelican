@@ -129,9 +129,7 @@ export class RouteMatchScorer extends BaseScorer {
 
   private patternToPrefixRegex(pattern: string): RegExp {
     const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    const body = escaped
-      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+')
-      .replace(/\*/g, '.*');
+    const body = escaped.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+').replace(/\*/g, '.*');
     // Require a segment boundary after the pattern so `/:team/integrations`
     // doesn't match `/:team/integrations_foo`.
     return new RegExp(`^${body}/.+$`);
@@ -152,9 +150,7 @@ export class RouteMatchScorer extends BaseScorer {
   private patternToRegex(pattern: string): RegExp {
     // Escape regex metachars, then swap `:param` and `*` back in.
     const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    const body = escaped
-      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+')
-      .replace(/\*/g, '.*');
+    const body = escaped.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+').replace(/\*/g, '.*');
     return new RegExp(`^${body}/?$`);
   }
 

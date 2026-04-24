@@ -30,7 +30,10 @@ export class UsageSiteScorer extends BaseScorer {
     const directImporters = registry.getDependents(changedFile).size;
     if (directImporters > HIGH_FANOUT_IMPORTERS) {
       return [
-        this.createSignal(false, `High-fanout source (${directImporters} importers) — usage cone is noise`),
+        this.createSignal(
+          false,
+          `High-fanout source (${directImporters} importers) — usage cone is noise`,
+        ),
       ];
     }
 
@@ -74,7 +77,10 @@ export class UsageSiteScorer extends BaseScorer {
 
     if (depthByFile.size > MAX_CONE_SIZE) {
       return [
-        this.createSignal(false, `Usage cone too large (>${MAX_CONE_SIZE} files) — match would be noise`),
+        this.createSignal(
+          false,
+          `Usage cone too large (>${MAX_CONE_SIZE} files) — match would be noise`,
+        ),
       ];
     }
 

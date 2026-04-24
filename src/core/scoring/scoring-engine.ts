@@ -79,9 +79,7 @@ export class ScoringEngine {
       // share a noun with the spec). Keep the signal lit only when some
       // structural scorer (import, route, redux, selector, etc.) also
       // backs the pair.
-      const hasStructuralMatch = signals.some(
-        (s) => s.matched && s.type !== 'describe-block',
-      );
+      const hasStructuralMatch = signals.some((s) => s.matched && s.type !== 'describe-block');
       if (!hasStructuralMatch) {
         for (const s of signals) {
           if (s.matched && s.type === 'describe-block') {
@@ -222,7 +220,7 @@ export class ScoringEngine {
         return 'This test lives alongside the changed file — likely tests it directly';
 
       case 'describe-block':
-        return 'This test\'s describe/it blocks reference the changed component by name';
+        return "This test's describe/it blocks reference the changed component by name";
 
       default:
         return reason || 'This test is connected to the changed file';

@@ -113,7 +113,12 @@ export class RegistryBuilder {
     // the user's explicit `excludePatterns` (typically unit-test noise in a
     // repo that only cares about E2E specs).
     const sourceExcludes = [...excludePatterns, ...config.testPatterns];
-    const sourceFiles = await this.findSourceFiles(config.sourceDirs, extensions, ignoreDirs, sourceExcludes);
+    const sourceFiles = await this.findSourceFiles(
+      config.sourceDirs,
+      extensions,
+      ignoreDirs,
+      sourceExcludes,
+    );
     if (this.debug) this.log(`Found ${sourceFiles.length} source files.`);
 
     for (const filePath of sourceFiles) {
@@ -166,8 +171,7 @@ export class RegistryBuilder {
           filePath,
           sourceCode,
           resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
-          resolveTsConstImport: (importPath) =>
-            this.resolveTsConstImport(importPath, filePath),
+          resolveTsConstImport: (importPath) => this.resolveTsConstImport(importPath, filePath),
         });
         const entry = this.convertCypressExtractionToFileEntry(result, filePath);
         fileEntries.push(entry);
@@ -317,7 +321,11 @@ export class RegistryBuilder {
     const targets = new Set<string>();
     for (const stmt of sf.statements) {
       if (ts.isImportDeclaration(stmt)) continue; // ignored
-      if (ts.isExportDeclaration(stmt) && stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      if (
+        ts.isExportDeclaration(stmt) &&
+        stmt.moduleSpecifier &&
+        ts.isStringLiteral(stmt.moduleSpecifier)
+      ) {
         const spec = stmt.moduleSpecifier.text;
         const resolved = this.resolveImports([spec], abs);
         for (const r of resolved) targets.add(r);
@@ -380,9 +388,10 @@ export class RegistryBuilder {
     // Fallback: if user didn't configure any testPatterns, sweep common layouts
     // (`**/*.cy.ts`, `**/*.spec.ts`, `**/*.test.ts`, `**/*.e2e.ts`, plus .tsx/.js/.jsx variants)
     // so pelican isn't silently blind on default installs.
-    const effectivePatterns = testPatterns.length > 0
-      ? testPatterns
-      : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
+    const effectivePatterns =
+      testPatterns.length > 0
+        ? testPatterns
+        : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
 
     const files = await glob(effectivePatterns, {
       cwd: this.projectRoot,
@@ -409,12 +418,7 @@ export class RegistryBuilder {
     for (const candidate of candidates) {
       try {
         const content = await fs.readFile(candidate, 'utf-8');
-        const sourceFile = ts.createSourceFile(
-          candidate,
-          content,
-          ts.ScriptTarget.Latest,
-          true,
-        );
+        const sourceFile = ts.createSourceFile(candidate, content, ts.ScriptTarget.Latest, true);
 
         const result = new Map<string, Record<string, string>>();
         for (const stmt of sourceFile.statements) {
@@ -444,7 +448,9 @@ export class RegistryBuilder {
 
         if (result.size > 0) {
           if (this.debug) {
-            this.log(`resolveTsConstImport: ${candidate} exports [${[...result.keys()].join(', ')}]`);
+            this.log(
+              `resolveTsConstImport: ${candidate} exports [${[...result.keys()].join(', ')}]`,
+            );
           }
           return result;
         }
@@ -530,7 +536,9 @@ export class RegistryBuilder {
         const parsed = JSON.parse(content) as Record<string, unknown>;
         if (this.debug) {
           const keys = Object.keys(parsed);
-          this.log(`  ✓ resolved: ${candidate} (${keys.length} keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''})`);
+          this.log(
+            `  ✓ resolved: ${candidate} (${keys.length} keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''})`,
+          );
         }
         return parsed;
       } catch {
@@ -541,7 +549,9 @@ export class RegistryBuilder {
     }
 
     if (this.debug && candidates.length === 0) {
-      this.log(`  ⚠ no alias matched for "${importPath}". Configure pathAliases in .pelicanrc.json`);
+      this.log(
+        `  ⚠ no alias matched for "${importPath}". Configure pathAliases in .pelicanrc.json`,
+      );
     }
 
     return null;
@@ -605,7 +615,9 @@ export class RegistryBuilder {
               resolved = c;
               break outer;
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (!resolved) continue;

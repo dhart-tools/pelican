@@ -30,7 +30,9 @@ export class DependentSelectorScorer extends BaseScorer {
     // Skip if changed file already has its own selectors — SelectorMatchScorer handles that.
     const ownSelectors = changedEntry.selectors || [];
     if (ownSelectors.length >= 3) {
-      return [this.createSignal(false, 'Source has own selectors; SelectorMatchScorer covers this')];
+      return [
+        this.createSignal(false, 'Source has own selectors; SelectorMatchScorer covers this'),
+      ];
     }
 
     const testSelectors = testEntry.cypress?.selectors || [];
@@ -99,11 +101,13 @@ export class DependentSelectorScorer extends BaseScorer {
     }
 
     if (exactMatches.length === 0 && prefixMatches.length === 0) {
-      return [this.createSignal(false, 'No dependent selectors match test', {
-        changedFile,
-        testFile,
-        dependentSelectorCount: selectorOrigin.size,
-      })];
+      return [
+        this.createSignal(false, 'No dependent selectors match test', {
+          changedFile,
+          testFile,
+          dependentSelectorCount: selectorOrigin.size,
+        }),
+      ];
     }
 
     const allMatches = [...exactMatches, ...prefixMatches];

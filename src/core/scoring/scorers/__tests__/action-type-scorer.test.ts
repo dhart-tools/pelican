@@ -31,7 +31,11 @@ describe('ActionTypeScorer', () => {
       changedActions: ['RECEIVED_CHANNEL', 'LEAVE_CHANNEL'],
       testActions: ['RECEIVED_CHANNEL'],
     });
-    const [signal] = scorer.evaluate('src/reducers/channels.ts', 'src/reducers/channels.test.ts', ctx);
+    const [signal] = scorer.evaluate(
+      'src/reducers/channels.ts',
+      'src/reducers/channels.test.ts',
+      ctx,
+    );
     expect(signal.matched).toBe(true);
     expect(signal.reason).toContain('RECEIVED_CHANNEL');
   });
@@ -41,7 +45,11 @@ describe('ActionTypeScorer', () => {
       changedActions: ['RECEIVED_CHANNEL'],
       testActions: ['LOGIN_SUCCESS'],
     });
-    const [signal] = scorer.evaluate('src/reducers/channels.ts', 'src/reducers/channels.test.ts', ctx);
+    const [signal] = scorer.evaluate(
+      'src/reducers/channels.ts',
+      'src/reducers/channels.test.ts',
+      ctx,
+    );
     expect(signal.matched).toBe(false);
   });
 
@@ -53,13 +61,21 @@ describe('ActionTypeScorer', () => {
       testActions: ['LOGOUT_SUCCESS'],
       actionTypeIndex: new Map([['LOGOUT_SUCCESS', owners]]),
     });
-    const [signal] = scorer.evaluate('src/reducers/channels.ts', 'src/reducers/channels.test.ts', ctx);
+    const [signal] = scorer.evaluate(
+      'src/reducers/channels.ts',
+      'src/reducers/channels.test.ts',
+      ctx,
+    );
     expect(signal.matched).toBe(false);
   });
 
   test('returns no-match when one side has no action types at all', () => {
     const ctx = buildContext({ changedActions: [], testActions: ['RECEIVED_CHANNEL'] });
-    const [signal] = scorer.evaluate('src/reducers/channels.ts', 'src/reducers/channels.test.ts', ctx);
+    const [signal] = scorer.evaluate(
+      'src/reducers/channels.ts',
+      'src/reducers/channels.test.ts',
+      ctx,
+    );
     expect(signal.matched).toBe(false);
     expect(signal.reason).toContain('No action-type strings');
   });

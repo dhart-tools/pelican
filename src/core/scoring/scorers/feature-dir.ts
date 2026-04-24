@@ -35,9 +35,7 @@ const STRUCTURAL_DIR_TOKENS = new Set([
   'config',
 ]);
 
-const STOPWORDS = new Set([
-  'test', 'tests', 'spec', 'specs', 'the', 'of', 'for', 'with', 'cy',
-]);
+const STOPWORDS = new Set(['test', 'tests', 'spec', 'specs', 'the', 'of', 'for', 'with', 'cy']);
 
 const MIN_TOKEN_LEN = 2;
 

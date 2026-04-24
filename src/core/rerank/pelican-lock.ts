@@ -82,9 +82,7 @@ export class PelicanLock {
     }
     // Remove from rejected if it was there
     if (this.data.rejected[sourceFile]) {
-      this.data.rejected[sourceFile] = this.data.rejected[sourceFile].filter(
-        (t) => t !== testFile,
-      );
+      this.data.rejected[sourceFile] = this.data.rejected[sourceFile].filter((t) => t !== testFile);
     }
     this.dirty = true;
   }

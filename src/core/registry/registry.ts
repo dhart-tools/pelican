@@ -211,11 +211,17 @@ export class Registry implements IRegistry {
         let target: string | undefined;
         for (const imp of entry.imports) {
           const base = (imp.split('/').pop() ?? '').replace(/\.(tsx?|jsx?|mts|cts|mjs|cjs)$/i, '');
-          if (base === route.component) { target = imp; break; }
+          if (base === route.component) {
+            target = imp;
+            break;
+          }
           // index.tsx: match parent dir
           if (base === 'index') {
             const parent = imp.split('/').slice(-2, -1)[0];
-            if (parent === route.component) { target = imp; break; }
+            if (parent === route.component) {
+              target = imp;
+              break;
+            }
           }
         }
         // 2. Fallback: global component-name index.
