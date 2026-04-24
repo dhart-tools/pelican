@@ -271,9 +271,7 @@ function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfi
  * Map the slim user-facing rerank shape (and legacy field names) onto the
  * internal `IProjectConfig['rerank']` shape consumed by SemanticReranker.
  */
-function normalizeRerankConfig(
-  user: IUserRerankConfig | undefined,
-): IProjectConfig['rerank'] {
+function normalizeRerankConfig(user: IUserRerankConfig | undefined): IProjectConfig['rerank'] {
   if (!user) return undefined;
   return {
     enabled: user.enabled ?? true,

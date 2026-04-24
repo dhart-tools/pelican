@@ -250,7 +250,7 @@ export interface IProjectConfig {
      * Prompt template version. Default 'v2' — neutral SOURCE+TEST prompt with
      * late-fusion blend. Set to 'v1' to fall back to the legacy R/A rubric.
      */
-    promptVersion?: "v1" | "v2";
+    promptVersion?: 'v1' | 'v2';
     /**
      * Weight on pelican structural prior in the v2 late-fusion blend
      * (`combined = w·pelican + (1-w)·(confidence/5)`). Default 0.4.

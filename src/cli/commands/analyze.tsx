@@ -12,6 +12,8 @@ import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { getChangedFiles } from '@/core/rerank/diff-extractor';
+import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
 import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
@@ -27,11 +29,6 @@ import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-score
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
-import {
-  ModelUnavailableError,
-  SemanticReranker,
-} from '@/core/rerank/semantic-reranker';
-import { getChangedFiles } from '@/core/rerank/diff-extractor';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -71,10 +68,7 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
   }
 }
 
-function bandFor(
-  score: number,
-  thresholds: { high: number; min: number },
-): EConfidenceLevel {
+function bandFor(score: number, thresholds: { high: number; min: number }): EConfidenceLevel {
   if (score >= thresholds.high) return EConfidenceLevel.HIGH;
   if (score >= thresholds.min) return EConfidenceLevel.MEDIUM;
   return EConfidenceLevel.LOW;
@@ -262,7 +256,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         let changedFiles: string[];
         if (options.files) {
           const raw = Array.isArray(options.files) ? options.files : [options.files];
-          changedFiles = raw.flatMap((f) => f.split(',')).map((f) => f.trim()).filter(Boolean);
+          changedFiles = raw
+            .flatMap((f) => f.split(','))
+            .map((f) => f.trim())
+            .filter(Boolean);
         } else {
           changedFiles = await getChangedFiles(options.base, options.target);
           if (changedFiles.length === 0) {
@@ -371,7 +368,11 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
           const preRerankCount = relevant.length;
 
-          const onFileProgress = (info: { status: string; scored?: number; total?: number }): void => {
+          const onFileProgress = (info: {
+            status: string;
+            scored?: number;
+            total?: number;
+          }): void => {
             if (info.status !== 'scoring' || info.scored == null || info.total == null) return;
             setState((s) => ({
               ...s,
@@ -414,8 +415,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             ...s,
             completedFiles: [...(s.completedFiles ?? []), changedFile],
             activeFiles: (s.activeFiles ?? []).filter((f) => f !== changedFile),
-            progress:
-              (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
+            progress: (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
           }));
 
           return {
@@ -435,9 +435,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // KV prefix reuse inside `rerankPairs` still wins within each slot.
         const fileConcurrency = Math.min(2, changedFiles.length);
         const fileLimit = pLimit(fileConcurrency);
-        const results = await Promise.all(
-          changedFiles.map((f) => fileLimit(() => processFile(f))),
-        );
+        const results = await Promise.all(changedFiles.map((f) => fileLimit(() => processFile(f))));
 
         // Phase 5: Done
         setState((s) => ({
@@ -497,7 +495,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
     registry.deserialize(cacheData);
     if (debug) {
-      debugLog(`registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`);
+      debugLog(
+        `registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`,
+      );
     }
   } catch {
     if (debug) {
@@ -527,7 +527,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   } else {
     changedFiles = await getChangedFiles(options.base, options.target);
     if (changedFiles.length === 0) {
-      process.stderr.write('[pelican] No changed files detected. Specify --files or make changes in git.\n');
+      process.stderr.write(
+        '[pelican] No changed files detected. Specify --files or make changes in git.\n',
+      );
       console.log(JSON.stringify({ results: [] }, null, 2));
       return;
     }
@@ -546,7 +548,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     : parseInt(options.maxResults) || config.scoring.maxResults || 10;
 
   if (debug) {
-    debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
+    debugLog(
+      `scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`,
+    );
   }
 
   // Headless progress: write to stderr with a throttled once-per-5%-per-file

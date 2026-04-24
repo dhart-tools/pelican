@@ -1,10 +1,9 @@
-import { Box, Text } from "ink";
-import React from "react";
+import { Box, Text } from 'ink';
+import React from 'react';
 
-import { palette } from "@/cli/theme";
-import { EConfidenceLevel } from "@/utils/enums";
+import { palette } from '@/cli/theme';
+import { EConfidenceLevel } from '@/utils/enums';
 
-import { SectionDivider } from "./SectionDivider";
 import {
   BADGE_COLOR,
   BAND_RANK,
@@ -13,7 +12,8 @@ import {
   flattenAndSort,
   formatElapsed,
   summarizeRerank,
-} from "./results-shared";
+} from './results-shared';
+import { SectionDivider } from './SectionDivider';
 
 interface Props {
   results: IResultEntry[];
@@ -43,22 +43,19 @@ function dedupByTest(flat: TFlatTest[]): TFlatTest[] {
   });
 }
 
-const BAND_META: Record<
-  EConfidenceLevel,
-  { label: string; icon: string }
-> = {
-  [EConfidenceLevel.HIGH]: { label: "MUST RUN", icon: "▲" },
-  [EConfidenceLevel.MEDIUM]: { label: "SHOULD CHECK", icon: "●" },
-  [EConfidenceLevel.LOW]: { label: "GOOD TO HAVE", icon: "○" },
+const BAND_META: Record<EConfidenceLevel, { label: string; icon: string }> = {
+  [EConfidenceLevel.HIGH]: { label: 'MUST RUN', icon: '▲' },
+  [EConfidenceLevel.MEDIUM]: { label: 'SHOULD CHECK', icon: '●' },
+  [EConfidenceLevel.LOW]: { label: 'GOOD TO HAVE', icon: '○' },
 };
 
 const PATH_WIDTH = 58;
 
 function trimPath(full: string, width: number): string {
-  const norm = full.replace(/\\/g, "/").replace(/^\.\//, "");
+  const norm = full.replace(/\\/g, '/').replace(/^\.\//, '');
   if (norm.length <= width) return norm;
-  const parts = norm.split("/");
-  const tail = parts.slice(-2).join("/");
+  const parts = norm.split('/');
+  const tail = parts.slice(-2).join('/');
   return tail.length < width - 2 ? `…/${tail}` : `…${tail.slice(-(width - 1))}`;
 }
 
@@ -76,16 +73,16 @@ function BandSection({ band, tests, startIndex }: BandSectionProps) {
     <Box flexDirection="column" marginTop={1}>
       <Box>
         <Text color={color} bold>
-          {"  "}
+          {'  '}
           {meta.icon} {meta.label}
         </Text>
         <Text color={palette.muted}>
-          {"  "}·{"  "}
+          {'  '}·{'  '}
           {tests.length}
         </Text>
       </Box>
       {tests.map((t, i) => {
-        const idx = String(startIndex + i + 1).padStart(2, " ");
+        const idx = String(startIndex + i + 1).padStart(2, ' ');
         return (
           <Box key={t.testFile}>
             <Box width={7} flexShrink={0}>
@@ -122,36 +119,22 @@ export function CombinedResults({ results, elapsedMs }: Props) {
       <Box marginTop={1} paddingLeft={2} justifyContent="space-between">
         <Box>
           <Text color={palette.brand} bold>
-            {"◆  "}
+            {'◆  '}
           </Text>
           <Text color={palette.text} bold>
             {deduped.length}
           </Text>
-          <Text color={palette.sub}>
-            {" "}
-            test{deduped.length !== 1 ? "s" : ""} to run
-          </Text>
+          <Text color={palette.sub}> test{deduped.length !== 1 ? 's' : ''} to run</Text>
           <Text color={palette.muted}>
-            {"  ·  "}across {results.length} changed{" "}
-            {results.length === 1 ? "file" : "files"}
+            {'  ·  '}across {results.length} changed {results.length === 1 ? 'file' : 'files'}
           </Text>
         </Box>
-        {elapsedMs != null && (
-          <Text color={palette.muted}>{formatElapsed(elapsedMs)}</Text>
-        )}
+        {elapsedMs != null && <Text color={palette.muted}>{formatElapsed(elapsedMs)}</Text>}
       </Box>
 
       <BandSection band={EConfidenceLevel.HIGH} tests={high} startIndex={0} />
-      <BandSection
-        band={EConfidenceLevel.MEDIUM}
-        tests={med}
-        startIndex={high.length}
-      />
-      <BandSection
-        band={EConfidenceLevel.LOW}
-        tests={low}
-        startIndex={high.length + med.length}
-      />
+      <BandSection band={EConfidenceLevel.MEDIUM} tests={med} startIndex={high.length} />
+      <BandSection band={EConfidenceLevel.LOW} tests={low} startIndex={high.length + med.length} />
 
       <Box marginTop={1}>
         <SectionDivider />
@@ -159,8 +142,7 @@ export function CombinedResults({ results, elapsedMs }: Props) {
       {rerankActive && (
         <Box paddingLeft={2}>
           <Text color={palette.muted}>
-            {totalPreRerank} scored · {totalPostRerank} kept by rerank ·{" "}
-            {deduped.length} unique
+            {totalPreRerank} scored · {totalPostRerank} kept by rerank · {deduped.length} unique
           </Text>
         </Box>
       )}

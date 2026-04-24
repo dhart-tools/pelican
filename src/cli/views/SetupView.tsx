@@ -6,9 +6,9 @@ import { Header } from '@/cli/components/Header';
 import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
 import { Panel } from '@/cli/components/Panel';
 import { SectionDivider } from '@/cli/components/SectionDivider';
+import { SETUP_MODELS, downloadMinutes } from '@/cli/setup-models';
 import { palette } from '@/cli/theme';
 import { ISetupState, ISetupStep } from '@/cli/types';
-import { SETUP_MODELS, downloadMinutes } from '@/cli/setup-models';
 
 const LABEL_WIDTH = 12;
 
@@ -37,13 +37,7 @@ function DetectedRow({ step }: { step: ISetupStep }) {
   );
 }
 
-function InstallingRow({
-  step,
-  progressBar,
-}: {
-  step: ISetupStep;
-  progressBar?: React.ReactNode;
-}) {
+function InstallingRow({ step, progressBar }: { step: ISetupStep; progressBar?: React.ReactNode }) {
   let icon: React.ReactNode;
   let iconColor: string;
   let labelColor: string;
@@ -168,13 +162,12 @@ function ModelSelectMenu({
                   <Text color={active ? palette.sub : palette.dim}>{model.size.padEnd(10)}</Text>
                   <Box width={14}>
                     <Stars count={model.stars} active={active} />
-                    <Text color={active ? palette.sub : palette.muted}>
-                      {' '}
-                      {model.precision}
-                    </Text>
+                    <Text color={active ? palette.sub : palette.muted}> {model.precision}</Text>
                   </Box>
                   {installed ? (
-                    <Text color={palette.emerald} bold>✔ already installed</Text>
+                    <Text color={palette.emerald} bold>
+                      ✔ already installed
+                    </Text>
                   ) : (
                     <Text color={active ? palette.sub : palette.muted}>
                       {downloadMinutes(model.sizeBytes, internetSpeedBps)}
@@ -243,9 +236,7 @@ export function SetupView(state: ISetupState) {
           <Box flexDirection="column" marginTop={1}>
             {installed.map((step, i) => {
               const showBar =
-                step.kind === 'model' &&
-                step.status === 'loading' &&
-                state.modelProgress != null;
+                step.kind === 'model' && step.status === 'loading' && state.modelProgress != null;
               return (
                 <InstallingRow
                   key={`i-${i}`}

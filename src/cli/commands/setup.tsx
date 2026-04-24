@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import { promisify } from 'util';
 
 import { Command } from 'commander';
@@ -8,12 +9,10 @@ import { useInput } from 'ink';
 import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
-import * as path from 'path';
-
+import { SETUP_MODELS } from '@/cli/setup-models';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
-import { SETUP_MODELS } from '@/cli/setup-models';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 
 const execFileP = promisify(execFile);
@@ -38,7 +37,6 @@ async function persistModelChoice(configPath: string, model: string): Promise<vo
     // to the built-in default, which is still functional.
   }
 }
-
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -358,7 +356,12 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ...s,
           steps: [
             ...s.steps,
-            { name: 'config', status: 'success' as const, detail: configPath, section: 'installed' as const },
+            {
+              name: 'config',
+              status: 'success' as const,
+              detail: configPath,
+              section: 'installed' as const,
+            },
           ],
         }));
 
@@ -395,7 +398,11 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ...s,
           steps: s.steps.map((step) =>
             step.name === 'registry'
-              ? { ...step, status: 'success' as const, detail: `${sourceCount} source · ${testCount} tests` }
+              ? {
+                  ...step,
+                  status: 'success' as const,
+                  detail: `${sourceCount} source · ${testCount} tests`,
+                }
               : step,
           ),
         }));
@@ -456,7 +463,10 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         // Phase 5: Fetch locally installed models + measure speed in parallel
         const ollama = new Ollama({ host: OLLAMA_HOST });
         const [installedList, speedBps] = await Promise.all([
-          ollama.list().then((r) => r.models.map((m) => m.name)).catch(() => [] as string[]),
+          ollama
+            .list()
+            .then((r) => r.models.map((m) => m.name))
+            .catch(() => [] as string[]),
           measureInternetSpeed(),
         ]);
 
@@ -477,7 +487,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     }
 
     run();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Phase 5+: pull confirmed model ──────────────────────────────
   useEffect(() => {
