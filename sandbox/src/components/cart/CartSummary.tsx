@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { selectCartItems, selectCartTotal, clearCart, setCheckingOut } from '../../store/cartSlice';
 import { placeOrder } from '../../api/orders';
 import { CartItem } from './CartItem';
+import { classnames } from '../../utils/classnames';
 import type { AppDispatch } from '../../store';
 
 export function CartSummary() {
@@ -35,7 +36,7 @@ export function CartSummary() {
   }
 
   return (
-    <section data-testid="cart-summary" id="cart-checkout-section">
+    <section data-testid="cart-summary" id="cart-checkout-section" className={classnames('cart-summary')}>
       <h2>{t('cart.title')}</h2>
       {items.map((item) => (
         <CartItem key={item.productId} item={item} />

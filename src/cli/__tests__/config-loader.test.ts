@@ -98,7 +98,9 @@ describe('loadProjectConfig', () => {
   it('preserves default testPatterns when not provided by user', async () => {
     mockReadFile.mockResolvedValue(JSON.stringify({ sourceDirs: ['app'] }));
     const config = await loadProjectConfig();
-    expect(config.testPatterns).toEqual(['**/*.cy.ts', '**/*.cy.tsx']);
+    expect(config.testPatterns).toContain('**/*.cy.ts');
+    expect(config.testPatterns).toContain('**/*.cy.tsx');
+    expect(config.testPatterns).toContain('**/*.spec.ts');
   });
 
   it('merges scoring scorerWeights when provided', async () => {

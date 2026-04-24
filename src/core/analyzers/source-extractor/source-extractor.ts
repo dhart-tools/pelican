@@ -57,6 +57,9 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
         actionsDispatched: [],
         slicesDefined: [],
       },
+      actionTypeStrings: [],
+      actionTypeConstExports: {},
+      importedIdentifiers: [],
     };
 
     this.visitNode(sourceFile, result);
@@ -109,8 +112,10 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
       const tagName = ts.isJsxElement(node)
         ? node.openingElement.tagName.getText()
         : node.tagName.getText();
-      if (tagName === EReactComponent.ROUTE) {
-        this.extractRouteFromJSX(result, node as ts.JsxSelfClosingElement);
+      // Accept any `*Route` tag (Route, PrivateRoute, PublicRoute, ProtectedRoute…)
+      // or `AuthenticatedRoute`, etc. Real apps rarely use React Router's raw `Route`.
+      if (tagName === EReactComponent.ROUTE || /Route$/.test(tagName)) {
+        this.extractRouteFromJSX(result, node);
       }
     }
 
@@ -123,9 +128,87 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
 
     if (ts.isCallExpression(node)) {
       this.extractFunctionCalls(node, result);
+      this.maybeCollectKeyMirrorActionTypes(node, result);
+    }
+
+    // Extract selector-like properties from object literals (e.g. { dataTestId: 'SaveButton' })
+    if (ts.isPropertyAssignment(node)) {
+      this.extractObjectPropertySelector(node, result);
+    }
+
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      this.maybeCollectActionType(node.text, result);
+    }
+
+    // `export const FOO = 'action-type-literal'` — record the binding so
+    // other files that import FOO by identifier can be linked back to this
+    // literal during registry post-processing.
+    if (ts.isVariableStatement(node)) {
+      this.maybeCollectActionTypeConstExport(node, result);
+    }
+
+    // PropertyAccess form: `ActionTypes.RECEIVED_FOO`, `TeamTypes.RECEIVED_TEAMS`.
+    // Mattermost dispatches/reducer-cases address types this way, so the raw
+    // string never appears at the call site even though both sides agree on
+    // the symbol. Treat the trailing identifier as an action-type reference.
+    if (ts.isPropertyAccessExpression(node)) {
+      this.maybeCollectActionTypeFromPropertyAccess(node, result);
     }
 
     ts.forEachChild(node, (child) => this.visitNode(child, result));
+  }
+
+  // Action-type-shaped strings — two accepted forms:
+  //   * UPPER_SNAKE with at least one underscore (RECEIVED_CHANNEL, LOGIN_SUCCESS).
+  //     Single-word UPPER strings like POST/DELETE/BEARER are rejected — too generic.
+  //   * "slice/SOMETHING" RTK namespaced form (channels/receivedChannel).
+  //     The slash + lowercase-prefix shape is rare enough to be specific to
+  //     redux-toolkit action conventions, so we accept any case after the slash.
+  private static readonly ACTION_TYPE_RE = /^(?:[a-z][a-zA-Z0-9]*\/)?[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+
+  private maybeCollectActionType(text: string, result: ISourceExtractionResult): void {
+    if (text.length < 5 || text.length > 80) return;
+    if (!SourceExtractorAnalyzer.ACTION_TYPE_RE.test(text)) return;
+    result.actionTypeStrings.push(text);
+  }
+
+  // Property access whose object is identifier ending in "Types" or "ActionTypes",
+  // and member name passes the action-type regex. Restricted to that suffix to
+  // avoid harvesting unrelated UPPER_SNAKE constants on other namespaces.
+  private maybeCollectActionTypeFromPropertyAccess(
+    node: ts.PropertyAccessExpression,
+    result: ISourceExtractionResult,
+  ): void {
+    const obj = node.expression;
+    if (!ts.isIdentifier(obj)) return;
+    if (!/Types$/.test(obj.text)) return;
+    const memberName = node.name.text;
+    this.maybeCollectActionType(memberName, result);
+  }
+
+  // Mattermost / mattermost-redux convention: `keyMirror({ FOO_BAR: null, ... })`
+  // produces an object whose values equal their keys. The action types are
+  // identifier keys, not string literals — so they bypass `maybeCollectActionType`.
+  // This handler harvests UPPER_SNAKE keys from any `keyMirror(...)` call.
+  private maybeCollectKeyMirrorActionTypes(
+    node: ts.CallExpression,
+    result: ISourceExtractionResult,
+  ): void {
+    const callee = node.expression;
+    const calleeName = ts.isIdentifier(callee)
+      ? callee.text
+      : ts.isPropertyAccessExpression(callee)
+        ? callee.name.text
+        : '';
+    if (calleeName !== 'keyMirror') return;
+    const arg = node.arguments[0];
+    if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+    for (const prop of arg.properties) {
+      if (!ts.isPropertyAssignment(prop) && !ts.isShorthandPropertyAssignment(prop)) continue;
+      const keyNode = prop.name;
+      if (!keyNode || !ts.isIdentifier(keyNode)) continue;
+      this.maybeCollectActionType(keyNode.text, result);
+    }
   }
 
   /**
@@ -136,18 +219,39 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    */
   private extractImport(node: ts.ImportDeclaration, result: ISourceExtractionResult): void {
     const moduleSpecifier = node.moduleSpecifier;
-    if (ts.isStringLiteral(moduleSpecifier)) {
-      result.imports.push(moduleSpecifier.text);
+    if (!ts.isStringLiteral(moduleSpecifier)) return;
+    const module = moduleSpecifier.text;
+    result.imports.push(module);
 
-      if (node.importClause?.namedBindings && ts.isNamedImports(node.importClause.namedBindings)) {
-        for (const element of node.importClause.namedBindings.elements) {
-          result.exports.push(element.name.text);
-        }
+    const clause = node.importClause;
+    if (!clause || !clause.namedBindings) return;
+    if (ts.isNamedImports(clause.namedBindings)) {
+      for (const el of clause.namedBindings.elements) {
+        result.importedIdentifiers.push({ name: el.name.text, module });
       }
+    }
+  }
 
-      if (node.importClause?.name) {
-        result.exports.push(node.importClause.name.text);
-      }
+  // Scan `export const X = 'literal'` (and `export const { X, Y } = ...`
+  // is out of scope — keep it simple). When the literal matches the
+  // action-type regex, remember the binding so importers can resolve it.
+  private maybeCollectActionTypeConstExport(
+    node: ts.VariableStatement,
+    result: ISourceExtractionResult,
+  ): void {
+    const isExported = ts
+      .getModifiers(node)
+      ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
+    if (!isExported) return;
+    for (const decl of node.declarationList.declarations) {
+      if (!ts.isIdentifier(decl.name)) continue;
+      const init = decl.initializer;
+      if (!init) continue;
+      if (!ts.isStringLiteral(init) && !ts.isNoSubstitutionTemplateLiteral(init)) continue;
+      const literal = init.text;
+      if (!SourceExtractorAnalyzer.ACTION_TYPE_RE.test(literal)) continue;
+      if (literal.length < 5 || literal.length > 80) continue;
+      result.actionTypeConstExports[decl.name.text] = literal;
     }
   }
 
@@ -188,7 +292,7 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
           const attrName = attr.name.getText();
           const attrValue = this.getAttributeValue(attr);
 
-          if (SELECTOR_ATTRIBUTES.includes(attrName)) {
+          if (SELECTOR_ATTRIBUTES.includes(attrName) && attrValue) {
             result.selectors.push({ attr: attrName, value: attrValue });
           }
         }
@@ -203,10 +307,41 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    * @returns The attribute value string, or an empty string if not a string literal
    */
   private getAttributeValue(attr: ts.JsxAttribute): string {
-    if (attr.initializer && ts.isStringLiteral(attr.initializer)) {
+    if (!attr.initializer) return '';
+    if (ts.isStringLiteral(attr.initializer)) {
       return attr.initializer.text;
     }
+    // `data-test={`transaction-item-${id}`}` — use static head as best-effort value
+    // so prefix-matching in SelectorMatchScorer can still match `getBySelLike(...)`.
+    if (ts.isJsxExpression(attr.initializer) && attr.initializer.expression) {
+      const expr = attr.initializer.expression;
+      if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+        return expr.text;
+      }
+      if (ts.isTemplateExpression(expr)) {
+        return expr.head.text;
+      }
+    }
     return '';
+  }
+
+  /**
+   * Extracts selectors from object literal property assignments.
+   * Catches patterns like `{ dataTestId: 'SaveButton' }` that aren't JSX attributes.
+   *
+   * @param node The property assignment node
+   * @param result The result object to populate
+   */
+  private extractObjectPropertySelector(
+    node: ts.PropertyAssignment,
+    result: ISourceExtractionResult,
+  ): void {
+    const propName = node.name.getText();
+    if (!SELECTOR_ATTRIBUTES.includes(propName)) return;
+
+    if (node.initializer && ts.isStringLiteral(node.initializer)) {
+      result.selectors.push({ attr: propName, value: node.initializer.text });
+    }
   }
 
   /**
@@ -273,32 +408,65 @@ export class SourceExtractorAnalyzer extends BaseAnalyzer<
    */
   private extractRouteFromJSX(
     result: ISourceExtractionResult,
-    routeElement: ts.JsxSelfClosingElement,
+    routeElement: ts.JsxElement | ts.JsxSelfClosingElement,
   ): void {
     let path: string | null = null;
     let component: string | null = null;
 
-    for (const attr of routeElement.attributes.properties) {
-      if (ts.isJsxAttribute(attr)) {
-        const attrName = attr.name.getText();
+    const attributes = ts.isJsxSelfClosingElement(routeElement)
+      ? routeElement.attributes.properties
+      : routeElement.openingElement.attributes.properties;
 
-        if (
-          attrName === EReactRouter.PATH &&
-          attr.initializer &&
-          ts.isStringLiteral(attr.initializer)
-        ) {
+    for (const attr of attributes) {
+      if (!ts.isJsxAttribute(attr)) continue;
+      const attrName = attr.name.getText();
+
+      if (attrName === EReactRouter.PATH && attr.initializer) {
+        if (ts.isStringLiteral(attr.initializer)) {
           path = attr.initializer.text;
-        }
-
-        if (
-          attrName === EReactRouter.ELEMENT &&
-          attr.initializer &&
-          ts.isJsxExpression(attr.initializer)
+        } else if (
+          ts.isJsxExpression(attr.initializer) &&
+          attr.initializer.expression &&
+          ts.isStringLiteral(attr.initializer.expression)
         ) {
-          const jsxExpr = attr.initializer as ts.JsxExpression;
-          if (jsxExpr.expression && ts.isJsxSelfClosingElement(jsxExpr.expression)) {
-            component = jsxExpr.expression.tagName.getText();
-          }
+          path = attr.initializer.expression.text;
+        }
+      }
+
+      // React Router v6: `element={<Foo />}`
+      if (
+        attrName === EReactRouter.ELEMENT &&
+        attr.initializer &&
+        ts.isJsxExpression(attr.initializer) &&
+        attr.initializer.expression
+      ) {
+        const expr = attr.initializer.expression;
+        if (ts.isJsxSelfClosingElement(expr)) component = expr.tagName.getText();
+        else if (ts.isJsxElement(expr)) component = expr.openingElement.tagName.getText();
+      }
+
+      // React Router v5 / custom: `component={Foo}`
+      if (
+        attrName === 'component' &&
+        attr.initializer &&
+        ts.isJsxExpression(attr.initializer) &&
+        attr.initializer.expression &&
+        ts.isIdentifier(attr.initializer.expression)
+      ) {
+        component = attr.initializer.expression.text;
+      }
+    }
+
+    // Children-as-route pattern: `<PrivateRoute path="/x"><Foo /></PrivateRoute>`
+    if (!component && ts.isJsxElement(routeElement)) {
+      for (const child of routeElement.children) {
+        if (ts.isJsxSelfClosingElement(child)) {
+          component = child.tagName.getText();
+          break;
+        }
+        if (ts.isJsxElement(child)) {
+          component = child.openingElement.tagName.getText();
+          break;
         }
       }
     }

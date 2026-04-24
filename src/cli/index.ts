@@ -2,6 +2,7 @@ import { Command } from 'commander';
 
 import { analyzeCommand } from './commands/analyze';
 import { demoCommand } from './commands/demo';
+import { modelCommand } from './commands/model-download';
 import { registryBuildCommand } from './commands/registry-build';
 import { setupCommand } from './commands/setup';
 import { themeCommand } from './commands/theme';
@@ -18,6 +19,7 @@ export function registerV2Commands(program: Command): void {
   program.addCommand(analyzeCommand);
   program.addCommand(setupCommand);
   program.addCommand(registryBuildCommand);
+  program.addCommand(modelCommand);
   program.addCommand(themeCommand);
   program.addCommand(demoCommand);
 }

@@ -39,7 +39,9 @@ describe('SelectorMatchScorer', () => {
     const signals = scorer.evaluate('src/Login.tsx', 'test.cy.ts', mockContext as IScorerContext);
 
     expect(signals[0].matched).toBe(true);
-    expect(signals[0].weight).toBe(0.8);
+    // Single match scales via density floor (1 match vs 3-match cap → 0.35 floor).
+    // 0.8 * 0.35 = 0.28
+    expect(signals[0].weight).toBeCloseTo(0.28, 2);
     expect(signals[0].reason).toContain('Test selectors match: login-submit');
   });
 

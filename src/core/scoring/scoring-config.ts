@@ -72,6 +72,41 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     type: 'api-intercept',
     weight: 0.55,
   },
+  [EScorerType.COLOCATION]: {
+    name: EScorerType.COLOCATION,
+    version: '1.0.0',
+    description: 'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
+    type: 'colocation',
+    weight: 0.75,
+  },
+  [EScorerType.DESCRIBE_BLOCK]: {
+    name: EScorerType.DESCRIBE_BLOCK,
+    version: '1.0.0',
+    description: 'Scores based on describe()/it() block text matching source filename tokens',
+    type: 'describe-block',
+    weight: 0.7,
+  },
+  [EScorerType.DEPENDENT_SELECTOR]: {
+    name: EScorerType.DEPENDENT_SELECTOR,
+    version: '1.0.0',
+    description: 'Scores based on selectors in files that import the changed file (reverse dependency)',
+    type: 'dependent-selector',
+    weight: 0.65,
+  },
+  [EScorerType.ACTION_TYPE]: {
+    name: EScorerType.ACTION_TYPE,
+    version: '1.0.0',
+    description: 'Scores based on shared Redux action-type string literals',
+    type: 'action-type',
+    weight: 0.6,
+  },
+  [EScorerType.USAGE_SITE]: {
+    name: EScorerType.USAGE_SITE,
+    version: '1.0.0',
+    description: 'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
+    type: 'usage-site',
+    weight: 0.55,
+  },
 };
 
 export function getScorerConfig(type: EScorerType): IScorerConfig {

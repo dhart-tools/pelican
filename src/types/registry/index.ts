@@ -30,6 +30,11 @@ export interface IFileEntry {
     actionsDispatched: string[];
     slicesDefined: string[];
   };
+  actionTypeStrings?: string[];
+  // `export const X = 'literal'` where literal matches the action-type regex.
+  actionTypeConstExports?: Record<string, string>;
+  // `import { X } from 'module'` — used to resolve identifiers back to literals.
+  importedIdentifiers?: Array<{ name: string; module: string }>;
 
   // From Cypress Extraction
   cypress?: {
@@ -64,11 +69,16 @@ export interface IRegistry {
   getTextIndex(): Map<string, Set<string>>;
   setTextIndex(index: Map<string, Set<string>>): void;
 
+  getActionTypeIndex(): Map<string, Set<string>>;
+  setActionTypeIndex(index: Map<string, Set<string>>): void;
+
   // Query methods
   getFile(path: string): IFileEntry | undefined;
   getFilesByType(type: 'source' | 'test'): IFileEntry[];
   getDependencies(filePath: string): Set<string>;
   getDependents(filePath: string): Set<string>;
+  getTestSelectorFrequency(value: string): number;
+  getTestFileCount(): number;
 
   // Build methods
   buildFromFileEntries(entries: IFileEntry[]): void;
@@ -76,6 +86,7 @@ export interface IRegistry {
   buildSelectorIndex(entries: IFileEntry[]): void;
   buildRouteMap(entries: IFileEntry[]): void;
   buildTextIndex(entries: IFileEntry[]): void;
+  buildActionTypeIndex(entries: IFileEntry[]): void;
   addOrUpdateFile(entry: IFileEntry): void;
 
   // Persistence

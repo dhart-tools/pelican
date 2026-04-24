@@ -1,0 +1,54 @@
+{
+  "sourceDirs": ["src"],
+  "testPatterns": ["**/*.cy.ts", "**/*.cy.tsx"],
+  "ignorePatterns": ["node_modules", "dist", ".git"],
+  "scoring": {
+    "minConfidence": 0,
+    "enabledScorers": [
+      "direct-import",
+      "transitive-import",
+      "route-match",
+      "redux-consumer",
+      "redux-chain",
+      "selector-match",
+      "selector-id-match",
+      "translation-match",
+      "api-intercept",
+      "filename-match",
+      "colocation",
+      "describe-block",
+      "dependent-selector",
+      "action-type",
+      "usage-site"
+    ]
+  },
+  "analyzers": {
+    "enabled": [
+      "source-extractor",
+      "cypress-extractor",
+      "import-graph-analyzer",
+      "route-analyzer",
+      "redux-chain-analyzer",
+      "i18n-analyzer"
+    ],
+    "sourceExtractor": {
+      "enabled": true,
+      "selectorStrategy": ["data-testid", "data-cy"]
+    },
+    "cypressExtractor": { "enabled": true },
+    "importGraph": { "enabled": true },
+    "routeAnalyzer": {
+      "enabled": true,
+      "routerFile": "src/App.tsx"
+    },
+    "reduxChain": {
+      "enabled": true,
+      "storeDirs": ["src/store"]
+    },
+    "i18n": {
+      "enabled": true,
+      "library": "react-i18next",
+      "localesPath": "public/locales"
+    }
+  }
+}

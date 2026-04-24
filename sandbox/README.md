@@ -28,7 +28,7 @@ npm run cypress:open # open Cypress test runner
 
 ## Analyzer Configuration
 
-All analyzers are enabled in `.suggestorrc.json`:
+All analyzers are enabled in `.pelicanrc.json`:
 
 - **source-extractor** — scans `src/**` for `data-testid`, `data-cy`, `id`, `t()` calls
 - **cypress-extractor** — scans `cypress/e2e/**/*.cy.ts` for `cy.visit`, `cy.get`, `cy.contains`, `cy.intercept`

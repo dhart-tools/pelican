@@ -3,15 +3,20 @@ import * as path from 'path';
 
 import { Command } from 'commander';
 import { render } from 'ink';
+import pLimit from 'p-limit';
 import React, { useState, useEffect } from 'react';
 
 import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
-import { IAnalyzeState, IAnalyzeOptions } from '@/cli/types';
+import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
+import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
+import { DependentSelectorScorer } from '@/core/scoring/scorers/dependent-selector-scorer';
+import { DescribeBlockScorer } from '@/core/scoring/scorers/describe-block-scorer';
 import { DirectImportScorer } from '@/core/scoring/scorers/direct-import-scorer';
 import { FilenameConventionScorer } from '@/core/scoring/scorers/filename-convention-scorer';
 import { ReduxChainScorer } from '@/core/scoring/scorers/redux-chain-scorer';
@@ -21,9 +26,16 @@ import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
+import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
+import {
+  ModelUnavailableError,
+  SemanticReranker,
+} from '@/core/rerank/semantic-reranker';
+import { getChangedFiles } from '@/core/rerank/diff-extractor';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
+import { EConfidenceLevel } from '@/utils/enums';
 
-const REGISTRY_CACHE_PATH = '.suggestor/registry.json';
+const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 
 /**
  * Registers all scorer instances that are enabled in config.
@@ -45,6 +57,11 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new TranslationMatchScorer(),
     new SelectorIdMatchScorer(),
     new APIInterceptScorer(),
+    new ColocationScorer(),
+    new DescribeBlockScorer(),
+    new DependentSelectorScorer(),
+    new ActionTypeScorer(),
+    new UsageSiteScorer(),
   ];
 
   for (const scorer of allScorers) {
@@ -54,12 +71,127 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
   }
 }
 
+function bandFor(
+  score: number,
+  thresholds: { high: number; min: number },
+): EConfidenceLevel {
+  if (score >= thresholds.high) return EConfidenceLevel.HIGH;
+  if (score >= thresholds.min) return EConfidenceLevel.MEDIUM;
+  return EConfidenceLevel.LOW;
+}
+
+/**
+ * Runs the cross-encoder reranker, filters out low-relevance candidates, and
+ * folds the reranker's score back into each surviving `IScoreResult` so the
+ * UI reflects the model's contribution:
+ *
+ *   1. Pushes a synthetic `semantic-rerank` signal onto `signals[]` — the
+ *      existing ResultsTable renders it uniformly with structural signals.
+ *   2. Replaces `score` with the reranker's hybrid combined score.
+ *   3. Recomputes `confidence` from the new score using ScoringEngine's
+ *      same thresholds, so bands stay consistent end-to-end.
+ */
+/**
+ * Pelican scores at or above this bypass the LLM entirely. Structural
+ * evidence this strong (direct imports, matching mounts, route ownership)
+ * is rarely overturned by the LLM — spending decode time on it is waste.
+ * Lives here, not in the reranker, because the reranker still sees these
+ * pairs in its result list; we just skip the LLM call for them.
+ */
+const AUTO_KEEP_PELICAN = 0.9;
+
+async function applyReranker(
+  reranker: SemanticReranker,
+  changedFile: string,
+  scored: IAnalyzeResult['suggestedTests'],
+  registry: Registry,
+  thresholds: { high: number; min: number },
+  explanationsEnabled: boolean,
+  onProgress?: (info: { status: string; scored?: number; total?: number }) => void,
+  minConfidence?: number,
+): Promise<IAnalyzeResult['suggestedTests']> {
+  if (scored.length === 0) return scored;
+
+  // Split into auto-kept (high pelican → skip LLM) and "needs LLM".
+  // Auto-kept pairs still flow through the final sorted list at their
+  // pelican score; they just never see the model.
+  const autoKept: IAnalyzeResult['suggestedTests'] = [];
+  const toRerank: IAnalyzeResult['suggestedTests'] = [];
+  for (const r of scored) {
+    if (r.score >= AUTO_KEEP_PELICAN) autoKept.push(r);
+    else toRerank.push(r);
+  }
+
+  const candidates = toRerank.map((r) => ({
+    testFile: r.testFile,
+    pelicanScore: r.score,
+  }));
+  const rerankResults =
+    candidates.length > 0
+      ? await reranker.rerank(changedFile, candidates, registry, onProgress)
+      : [];
+  const byFile = new Map(rerankResults.map((r) => [r.testFile, r]));
+
+  const mutated: IAnalyzeResult['suggestedTests'] = [];
+
+  for (const result of autoKept) {
+    result.confidence = bandFor(result.score, thresholds);
+    if (!explanationsEnabled) result.explanation = '';
+    mutated.push(result);
+  }
+
+  for (const result of toRerank) {
+    const rr = byFile.get(result.testFile);
+    if (!rr || !rr.kept) continue;
+
+    result.score = rr.combined;
+    result.confidence = bandFor(rr.combined, thresholds);
+    if (explanationsEnabled) {
+      if (rr.reason) result.explanation = rr.reason;
+    } else {
+      result.explanation = '';
+    }
+    result.fromCache = rr.fromCache;
+
+    mutated.push(result);
+  }
+
+  // Re-apply the min-confidence floor AFTER rerank. Bucket multipliers can
+  // push a combined score below the pre-rerank threshold; without this step
+  // the UI would display results the user asked to hide.
+  const filtered =
+    minConfidence != null ? mutated.filter((r) => r.score >= minConfidence) : mutated;
+  filtered.sort((a, b) => b.score - a.score);
+  return filtered;
+}
+
+/**
+ * Pelican-only fallback when the cross-encoder model is unavailable. Applies
+ * the same min-confidence cutoff and MUST/SHOULD/MAY thresholds that the
+ * reranker path uses, but skips the semantic layer entirely. Keeps the rest
+ * of the UI identical so users can still ship a suggestion list.
+ */
+function pelicanOnly(
+  scored: IAnalyzeResult['suggestedTests'],
+  thresholds: { high: number; min: number },
+): IAnalyzeResult['suggestedTests'] {
+  const kept = scored
+    .filter((r) => r.score >= thresholds.min)
+    .map((r) => {
+      r.confidence = bandFor(r.score, thresholds);
+      return r;
+    });
+  kept.sort((a, b) => b.score - a.score);
+  return kept;
+}
+
 /**
  * Loads the registry from cache or builds it fresh.
  */
 async function loadOrBuildRegistry(
   config: Awaited<ReturnType<typeof loadProjectConfig>>,
   onPhaseChange: (phase: IAnalyzeState['phase']) => void,
+  debug = false,
 ): Promise<Registry> {
   const registry = new Registry();
 
@@ -75,7 +207,10 @@ async function loadOrBuildRegistry(
     const builtRegistry = await builder.buildFromDirectories({
       sourceDirs: config.sourceDirs,
       testPatterns: config.testPatterns,
+      excludePatterns: config.excludePatterns,
       projectRoot: process.cwd(),
+      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      debug,
     });
 
     // Save cache
@@ -95,9 +230,16 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
     changedFiles: [],
     results: [],
     progress: 0,
+    maxResults: options.all
+      ? Number.POSITIVE_INFINITY
+      : options.maxResults
+        ? Number.parseInt(options.maxResults)
+        : undefined,
+    expanded: options.expanded,
   });
 
   useEffect(() => {
+    const startTime = Date.now();
     async function run() {
       try {
         // Phase 1: Load config
@@ -119,12 +261,13 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let changedFiles: string[];
         if (options.files) {
-          changedFiles = options.files
-            .split(',')
-            .map((f) => f.trim())
-            .filter(Boolean);
+          const raw = Array.isArray(options.files) ? options.files : [options.files];
+          changedFiles = raw.flatMap((f) => f.split(',')).map((f) => f.trim()).filter(Boolean);
         } else {
-          throw new Error('No --files specified. Git auto-detection not yet implemented.');
+          changedFiles = await getChangedFiles(options.base, options.target);
+          if (changedFiles.length === 0) {
+            throw new Error('No changed files detected. Specify --files or make changes in git.');
+          }
         }
 
         setState((s) => ({ ...s, changedFiles }));
@@ -134,7 +277,70 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           return;
         }
 
-        // Phase 4: Score
+        // Phase 4: Warm up reranker model.
+        //
+        // We deliberately trigger model load BEFORE scoring so the UI can
+        // Phase 4: Check Ollama reranker.
+        // Non-blocking — if unavailable, .pelican.lock cache still works.
+        setState((s) => ({ ...s, phase: 'checking-reranker' }));
+
+        const reranker = new SemanticReranker({
+          debug: options.debug,
+          ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
+          ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
+          ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+          ...(config.rerank?.explanations !== undefined && {
+            explanations: config.rerank.explanations,
+          }),
+          ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
+          ...(config.rerank?.pelicanWeight !== undefined && {
+            pelicanWeight: config.rerank.pelicanWeight,
+          }),
+          ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
+            biEncoderPrefilter: false,
+          }),
+          ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
+          ...(config.rerank?.biEncoderTopK !== undefined && {
+            biEncoderTopK: config.rerank.biEncoderTopK,
+          }),
+          ...(options.base && { base: options.base }),
+          ...(options.target && { target: options.target }),
+          useCache: options.cache !== false,
+          onProgress: (info) => {
+            if (info.status === 'scoring') {
+              setState((s) => ({
+                ...s,
+                rerankScored: info.scored,
+                rerankTotal: info.total,
+              }));
+            }
+          },
+        });
+
+        let rerankerUnavailable = false;
+        let rerankerError: string | undefined;
+        if (options.rerank !== false) {
+          try {
+            await reranker.warmUp();
+          } catch (err) {
+            rerankerUnavailable = true;
+            rerankerError =
+              err instanceof ModelUnavailableError
+                ? err.message
+                : err instanceof Error
+                  ? err.message
+                  : String(err);
+            setState((s) => ({
+              ...s,
+              rerankerUnavailable: true,
+              rerankerError,
+            }));
+          }
+        } else {
+          rerankerUnavailable = true;
+        }
+
+        // Phase 5: Score
         setState((s) => ({ ...s, phase: 'scoring' }));
 
         const scoringConfig = toScoringConfig(config);
@@ -142,34 +348,103 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         registerScorers(engine, config.scoring.enabledScorers);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
-        const maxResults = parseInt(options.maxResults) || 10;
-        const results: Array<{
-          changedFile: string;
-          suggestedTests: ReturnType<typeof engine.evaluateTests>;
-        }> = [];
+        const maxResults = options.all
+          ? Number.POSITIVE_INFINITY
+          : parseInt(options.maxResults) || config.scoring.maxResults || 10;
+        const thresholds = {
+          high: config.scoring.highConfidence ?? 0.8,
+          min: config.scoring.minConfidence ?? 0.4,
+        };
+        // Score files sequentially. Structural scoring is sync/fast; reranking
+        // is GPU-bound and Ollama serializes requests on single-GPU setups
+        // anyway. Sequential processing keeps Ollama's KV prefix cache hot for
+        // each source file's test batch — huge win over interleaved requests
+        // that evict each other's cache.
+        const rerankThreshold = config.scoring.minConfidence;
 
-        for (let i = 0; i < changedFiles.length; i++) {
-          const changedFile = changedFiles[i];
+        async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           setState((s) => ({
             ...s,
-            currentFile: changedFile,
-            progress: ((i + 1) / changedFiles.length) * 100,
+            activeFiles: [...(s.activeFiles ?? []), changedFile],
           }));
-
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
           const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+          const preRerankCount = relevant.length;
 
-          results.push({
+          const onFileProgress = (info: { status: string; scored?: number; total?: number }): void => {
+            if (info.status !== 'scoring' || info.scored == null || info.total == null) return;
+            setState((s) => ({
+              ...s,
+              rerankProgress: {
+                ...(s.rerankProgress ?? {}),
+                [changedFile]: { scored: info.scored!, total: info.total! },
+              },
+            }));
+          };
+
+          let finalResults: IAnalyzeResult['suggestedTests'];
+          if (rerankerUnavailable) {
+            finalResults = pelicanOnly(relevant, thresholds);
+          } else {
+            const rerankCandidates = relevant.filter((r) => r.score >= rerankThreshold);
+            try {
+              finalResults = await applyReranker(
+                reranker,
+                changedFile,
+                rerankCandidates,
+                registry,
+                thresholds,
+                config.rerank?.explanations === true,
+                onFileProgress,
+                config.scoring.minConfidence,
+              );
+            } catch (err) {
+              rerankerUnavailable = true;
+              rerankerError = err instanceof Error ? err.message : String(err);
+              setState((s) => ({
+                ...s,
+                rerankerUnavailable: true,
+                rerankerError,
+              }));
+              finalResults = pelicanOnly(relevant, thresholds);
+            }
+          }
+
+          setState((s) => ({
+            ...s,
+            completedFiles: [...(s.completedFiles ?? []), changedFile],
+            activeFiles: (s.activeFiles ?? []).filter((f) => f !== changedFile),
+            progress:
+              (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
+          }));
+
+          return {
             changedFile,
-            suggestedTests: relevant.slice(0, maxResults),
-          });
+            suggestedTests: finalResults.slice(0, maxResults),
+            totalCandidates: finalResults.length,
+            preRerankCount,
+            postRerankCount: finalResults.length,
+          };
         }
+
+        // Cross-file parallelism. Each source file has a different prefix
+        // (its own source block), so we can't share KV cache across files
+        // anyway — running them serially just leaves Ollama's parallel
+        // slots idle. With OLLAMA_NUM_PARALLEL>=fileConcurrency, wall-clock
+        // divides by ~fileConcurrency. Keep it modest (2) so per-source
+        // KV prefix reuse inside `rerankPairs` still wins within each slot.
+        const fileConcurrency = Math.min(2, changedFiles.length);
+        const fileLimit = pLimit(fileConcurrency);
+        const results = await Promise.all(
+          changedFiles.map((f) => fileLimit(() => processFile(f))),
+        );
 
         // Phase 5: Done
         setState((s) => ({
           ...s,
           phase: 'done',
           results,
+          elapsedMs: Date.now() - startTime,
           registryStats: {
             totalFiles: registry.files.size,
             sourceFiles: registry.getFilesByType('source').length,
@@ -206,38 +481,203 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
  *   // { "results": [...], "stats": { ... } }
  */
 export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
+  const debug = options.debug ?? false;
   const config = await loadProjectConfig(options.config);
   if (options.minConfidence) {
     config.scoring.minConfidence = parseFloat(options.minConfidence);
   }
 
-  const registry = new Registry();
-  const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
-  registry.deserialize(cacheData);
+  if (debug) {
+    debugLog(`config loaded: enabledScorers=${config.scoring.enabledScorers.join(',')}`);
+    debugLog(`pathAliases: ${JSON.stringify(config.analyzers.cypressExtractor.pathAliases ?? {})}`);
+  }
 
-  const changedFiles = options.files
-    ? options.files
-        .split(',')
-        .map((f) => f.trim())
-        .filter(Boolean)
-    : [];
+  const registry = new Registry();
+  try {
+    const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
+    registry.deserialize(cacheData);
+    if (debug) {
+      debugLog(`registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`);
+    }
+  } catch {
+    if (debug) {
+      debugLog('registry cache not found, building fresh...');
+    }
+    const builder = new RegistryBuilder();
+    const builtRegistry = await builder.buildFromDirectories({
+      sourceDirs: config.sourceDirs,
+      testPatterns: config.testPatterns,
+      excludePatterns: config.excludePatterns,
+      projectRoot: process.cwd(),
+      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      debug,
+    });
+    const dir = path.dirname(REGISTRY_CACHE_PATH);
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(REGISTRY_CACHE_PATH, builtRegistry.serialize(), 'utf-8');
+    registry.deserialize(builtRegistry.serialize());
+  }
+
+  let changedFiles: string[];
+  if (options.files) {
+    changedFiles = (Array.isArray(options.files) ? options.files : [options.files])
+      .flatMap((f: string) => f.split(','))
+      .map((f: string) => f.trim())
+      .filter(Boolean);
+  } else {
+    changedFiles = await getChangedFiles(options.base, options.target);
+    if (changedFiles.length === 0) {
+      process.stderr.write('[pelican] No changed files detected. Specify --files or make changes in git.\n');
+      console.log(JSON.stringify({ results: [] }, null, 2));
+      return;
+    }
+    if (debug) {
+      debugLog(`auto-detected ${changedFiles.length} changed file(s): ${changedFiles.join(', ')}`);
+    }
+  }
 
   const scoringConfig = toScoringConfig(config);
   const engine = new ScoringEngine(scoringConfig, registry);
   registerScorers(engine, config.scoring.enabledScorers);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
-  const maxResults = parseInt(options.maxResults) || 10;
+  const maxResults = options.all
+    ? Number.POSITIVE_INFINITY
+    : parseInt(options.maxResults) || config.scoring.maxResults || 10;
 
-  const results = changedFiles.map((changedFile) => {
-    const scoreResults = engine.evaluateTests(changedFile, testFiles);
-    const relevant = scoreResults
-      .filter((r) => r.score >= config.scoring.minConfidence)
-      .slice(0, maxResults);
-    return { changedFile, suggestedTests: relevant };
+  if (debug) {
+    debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
+  }
+
+  // Headless progress: write to stderr with a throttled once-per-5%-per-file
+  // line so JSON on stdout stays clean. CI logs capture stderr; users don't
+  // see Ink TUI in this mode.
+  const reranker = new SemanticReranker({
+    debug,
+    ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
+    ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
+    ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
+    ...(config.rerank?.explanations !== undefined && {
+      explanations: config.rerank.explanations,
+    }),
+    ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
+    ...(config.rerank?.pelicanWeight !== undefined && {
+      pelicanWeight: config.rerank.pelicanWeight,
+    }),
+    ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
+      biEncoderPrefilter: false,
+    }),
+    ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
+    ...(config.rerank?.biEncoderTopK !== undefined && {
+      biEncoderTopK: config.rerank.biEncoderTopK,
+    }),
+    ...(options.base && { base: options.base }),
+    ...(options.target && { target: options.target }),
+    useCache: options.cache !== false,
+    onProgress: (info) => {
+      if (info.status === 'scoring' && info.scored != null && info.total != null) {
+        process.stderr.write(`[pelican] reranking ${info.scored}/${info.total}\n`);
+      } else if (info.status === 'ready') {
+        process.stderr.write('[pelican] reranker ready\n');
+      }
+    },
   });
 
+  let rerankerUnavailable = options.rerank === false;
+  if (!rerankerUnavailable) {
+    try {
+      await reranker.warmUp();
+    } catch (err) {
+      rerankerUnavailable = true;
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[pelican] WARNING: Ollama reranker unavailable: ${msg}\n` +
+          `[pelican] using pelican structural scoring + .pelican.lock cache only.\n`,
+      );
+    }
+  }
+
+  const thresholds = {
+    high: config.scoring.highConfidence ?? 0.8,
+    min: config.scoring.minConfidence ?? 0.4,
+  };
+
+  async function processFileHeadless(changedFile: string): Promise<IAnalyzeResult> {
+    if (debug) {
+      const entry = registry.getFile(changedFile);
+      debugLog(`\n─── scoring: ${changedFile} ───`);
+      if (entry) {
+        debugLog(`  selectors: ${JSON.stringify(entry.selectors ?? [])}`);
+        debugLog(`  translationKeys: ${(entry.translationKeys ?? []).length}`);
+        debugLog(`  imports: ${entry.imports.length}`);
+      } else {
+        debugLog(`  ⚠ file not found in registry!`);
+      }
+    }
+
+    const scoreResults = engine.evaluateTests(changedFile, testFiles);
+
+    if (debug) {
+      const top = scoreResults.slice(0, 5);
+      for (const r of top) {
+        debugLog(`  → ${r.testFile}`);
+        debugLog(`    score=${r.score.toFixed(3)} confidence=${r.confidence}`);
+        for (const s of r.signals) {
+          debugLog(`    ${s.matched ? '✓' : '✗'} ${s.source} (${s.weight}) — ${s.reason}`);
+        }
+      }
+    }
+
+    const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+    const rerankThreshold = config.scoring.minConfidence;
+    const preRerankCount = relevant.length;
+    let reranked: IAnalyzeResult['suggestedTests'];
+    if (rerankerUnavailable) {
+      reranked = pelicanOnly(relevant, thresholds);
+    } else {
+      const rerankCandidates = relevant.filter((r) => r.score >= rerankThreshold);
+      try {
+        reranked = await applyReranker(
+          reranker,
+          changedFile,
+          rerankCandidates,
+          registry,
+          thresholds,
+          config.rerank?.explanations === true,
+          undefined,
+          config.scoring.minConfidence,
+        );
+      } catch (err) {
+        rerankerUnavailable = true;
+        const msg = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[pelican] rerank failed mid-run: ${msg}\n`);
+        reranked = pelicanOnly(relevant, thresholds);
+      }
+    }
+    if (debug) {
+      debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
+    }
+    return {
+      changedFile,
+      suggestedTests: reranked.slice(0, maxResults),
+      totalCandidates: reranked.length,
+      preRerankCount,
+      postRerankCount: reranked.length,
+    };
+  }
+
+  // Sequential — see comment on the interactive path. Parallel Ollama calls
+  // interleave and evict each other's KV prefix cache.
+  const results: IAnalyzeResult[] = [];
+  for (const changedFile of changedFiles) {
+    results.push(await processFileHeadless(changedFile));
+  }
+
   console.log(JSON.stringify({ results }, null, 2));
+}
+
+function debugLog(msg: string): void {
+  process.stderr.write(`[debug] ${msg}\n`);
 }
 
 // ─── Commander Action ────────────────────────────────────────────
@@ -247,11 +687,20 @@ export const analyzeCommand = new Command('analyze')
   .description('Analyze changes and suggest tests to run')
   .option('-b, --base <ref>', 'Base git reference (default: HEAD~1)')
   .option('-t, --target <ref>', 'Target git reference (default: HEAD)')
-  .option('-f, --files <paths>', 'Comma-separated list of changed files')
+  .option('-f, --files <paths...>', 'Space- or comma-separated list of changed files')
   .option('-o, --output <format>', 'Output format: tui, json, list', 'tui')
   .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
   .option('--max-results <number>', 'Maximum number of results', '10')
+  .option('--all', 'Show all suggestions (overrides --max-results)')
+  .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
+  .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
+  .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
+  .option(
+    '--no-bi-encoder',
+    'Skip embedding cosine prefilter; pelican structural rank acts as the prefilter (faster, often better recall on naming-strong repos)',
+  )
+  .option('--debug', 'Print detailed extraction and scoring info to stderr')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {
     // --ci is shorthand for --output json

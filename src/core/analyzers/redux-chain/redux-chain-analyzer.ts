@@ -129,6 +129,12 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
       chain.files.slice = extraction.filePath;
       chain.files.reducer = extraction.filePath;
       chain.files.actions = chain.files.actions ?? extraction.filePath;
+      // RTK slice files almost always co-locate selectors as
+      //   `export const selectFoo = (state: { bar: State }) => ...`
+      // The param type is usually `{ slice: State }`, NOT `RootState`, so
+      // detectSelectorOrReducer doesn't mark them. Claim the slice file as
+      // the selectors file so Pass-2 can resolve consumers via import.
+      chain.files.selectors = chain.files.selectors ?? extraction.filePath;
     } else if (extraction.role === EReduxRole.REDUCER) {
       chain.files.reducer = extraction.filePath;
     }
