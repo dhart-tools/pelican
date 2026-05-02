@@ -316,7 +316,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let rerankerUnavailable = false;
         let rerankerError: string | undefined;
-        if (options.rerank !== false) {
+        if (options.rerank === true) {
           try {
             await reranker.warmUp();
           } catch (err) {
@@ -587,7 +587,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     },
   });
 
-  let rerankerUnavailable = options.rerank === false;
+  let rerankerUnavailable = options.rerank !== true;
   if (!rerankerUnavailable) {
     try {
       await reranker.warmUp();
@@ -698,7 +698,10 @@ export const analyzeCommand = new Command('analyze')
   .option('--all', 'Show all suggestions (overrides --max-results)')
   .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
-  .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
+  .option(
+    '--rerank',
+    'Enable Ollama semantic reranking (off by default — pelican structural scoring + .pelican.lock cache only)',
+  )
   .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
   .option(
     '--no-bi-encoder',
