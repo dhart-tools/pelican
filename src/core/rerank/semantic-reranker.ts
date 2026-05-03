@@ -129,7 +129,7 @@ export const DEFAULT_RERANKER_CONFIG: IRerankerConfig = {
   biEncoderModel: DEFAULT_BI_ENCODER_CONFIG.model,
   biEncoderTopK: DEFAULT_BI_ENCODER_CONFIG.topK, // 30 — safety ceiling only
   biEncoderCachePath: DEFAULT_BI_ENCODER_CONFIG.cachePath,
-  explanations: false,
+  explanations: true,
   useCache: true,
   promptVersion: 'v2',
   pelicanWeight: 0.4,

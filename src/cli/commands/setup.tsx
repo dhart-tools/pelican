@@ -349,9 +349,39 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         const { config, steps } = await detectProjectConfig();
         setState((s) => ({ ...s, phase: 'saving', steps, detectedConfig: config }));
 
-        // Phase 2: Save config
+        // Phase 2: Save config — merge with existing to preserve user settings
+        // (e.g. "explanations", pathAliases, rerank, etc.)
         const configPath = options.config || '.pelicanrc.json';
-        await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+        let existingConfig: Record<string, unknown> = {};
+        try {
+          const raw = await fs.readFile(configPath, 'utf-8');
+          existingConfig = JSON.parse(raw);
+        } catch {
+          // File doesn't exist yet — start fresh
+        }
+        // Deep-merge: detected config is the base, but top-level user keys win.
+        // For nested objects (analyzers, scoring, rerank) we do a shallow merge
+        // so that user sub-keys (pathAliases, ollamaModel, explanations …) survive.
+        const mergedConfig: Record<string, unknown> = { ...config };
+        for (const key of Object.keys(existingConfig)) {
+          const existingVal = existingConfig[key];
+          const detectedVal = (config as unknown as Record<string, unknown>)[key];
+          if (
+            existingVal !== null &&
+            typeof existingVal === 'object' &&
+            !Array.isArray(existingVal) &&
+            detectedVal !== null &&
+            typeof detectedVal === 'object' &&
+            !Array.isArray(detectedVal)
+          ) {
+            // Shallow-merge nested objects so user sub-keys are preserved
+            mergedConfig[key] = { ...(detectedVal as object), ...(existingVal as object) };
+          } else {
+            // Scalar / array user values always win
+            mergedConfig[key] = existingVal;
+          }
+        }
+        await fs.writeFile(configPath, JSON.stringify(mergedConfig, null, 2));
         setState((s) => ({
           ...s,
           steps: [
