@@ -9,6 +9,7 @@ import { useInput } from 'ink';
 import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
+import { loadProjectConfig } from '@/cli/config-loader';
 import { SETUP_MODELS } from '@/cli/setup-models';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
@@ -410,13 +411,19 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ],
         }));
 
+        // Re-read the merged config so user-provided top-level pathAliases
+        // (which `detectProjectConfig` doesn't know about) get hoisted into
+        // analyzers.cypressExtractor.pathAliases. Otherwise the registry built
+        // here resolves fewer imports than the one analyze rebuilds on a cold
+        // cache, and the two diverge on result counts.
+        const effectiveConfig = await loadProjectConfig(configPath);
         const builder = new RegistryBuilder();
         const registry = await builder.buildFromDirectories({
-          sourceDirs: config.sourceDirs,
-          testPatterns: config.testPatterns,
-          excludePatterns: config.excludePatterns,
+          sourceDirs: effectiveConfig.sourceDirs,
+          testPatterns: effectiveConfig.testPatterns,
+          excludePatterns: effectiveConfig.excludePatterns,
           projectRoot: process.cwd(),
-          pathAliases: config.analyzers.cypressExtractor.pathAliases,
+          pathAliases: effectiveConfig.analyzers.cypressExtractor.pathAliases,
         });
         const registryDir = path.dirname(REGISTRY_CACHE_PATH);
         await fs.mkdir(registryDir, { recursive: true });
