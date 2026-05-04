@@ -117,6 +117,27 @@ function ingestTsConfig(
     }
   }
 
+  // Follow `extends` chain. Common pattern: tsconfig.json extends
+  // tsconfig.paths.json so the alias map lives in its own file. Without
+  // this we miss every alias defined in the base config.
+  // Process AFTER current's paths/baseUrl so the if-undefined guard above
+  // gives the current file precedence on conflicts (TS semantics).
+  const extendsField = (config as { extends?: string | string[] }).extends;
+  const extendsList = Array.isArray(extendsField)
+    ? extendsField
+    : typeof extendsField === 'string'
+      ? [extendsField]
+      : [];
+  for (const ext of extendsList) {
+    const resolvedExt = resolveExtendsPath(ext, configDir);
+    if (!resolvedExt) {
+      if (debug) debug(`tsconfig extends unresolved: ${ext} (from ${configPath})`);
+      continue;
+    }
+    if (visited.has(resolvedExt)) continue;
+    ingestTsConfig(resolvedExt, projectRoot, aliases, baseUrlRoots, visited, debug);
+  }
+
   // Follow project references one level — enough for the common monorepo
   // layout (mattermost: channels references platform/*). Deeper chains are
   // rare and can be added later if a real repo hits that case.
@@ -128,6 +149,24 @@ function ingestTsConfig(
     if (visited.has(refResolved)) continue;
     ingestTsConfig(refResolved, projectRoot, aliases, baseUrlRoots, visited, debug);
   }
+}
+
+/**
+ * Resolves a tsconfig `extends` value to an absolute path.
+ * Handles relative paths (`./foo`, `../bar/tsconfig.json`) — by far the most
+ * common form. Bare specifiers (`@tsconfig/node18/tsconfig.json`) are not
+ * supported yet; add when a real repo needs it.
+ */
+function resolveExtendsPath(ext: string, configDir: string): string | null {
+  if (!ext.startsWith('.') && !path.isAbsolute(ext)) return null;
+  const abs = path.resolve(configDir, ext);
+  const candidates = abs.endsWith('.json')
+    ? [abs]
+    : [abs, `${abs}.json`, path.join(abs, 'tsconfig.json')];
+  for (const c of candidates) {
+    if (fsSync.existsSync(c) && fsSync.statSync(c).isFile()) return c;
+  }
+  return null;
 }
 
 function normalizePathsEntry(
