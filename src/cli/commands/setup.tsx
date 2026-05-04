@@ -15,6 +15,7 @@ import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/ty
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 
 const execFileP = promisify(execFile);
 
@@ -382,6 +383,23 @@ function SetupApp({ options }: { options: ISetupOptions }) {
             mergedConfig[key] = existingVal;
           }
         }
+        // Scaffold defaults the user can't recover from a deleted rc file:
+        //   - pathAliases auto-detected from tsconfig.json (analyze rebuilds
+        //     them at runtime anyway, but writing them lets users see/edit).
+        //   - rerank.explanations: true (sane default; persistModelChoice
+        //     later spreads this through, so model-pull doesn't drop it).
+        const detectedAliases = loadTsConfigAliases(
+          process.cwd(),
+          (mergedConfig.sourceDirs as string[] | undefined) ?? config.sourceDirs,
+        );
+        if (mergedConfig.pathAliases == null && Object.keys(detectedAliases.aliases).length > 0) {
+          mergedConfig.pathAliases = detectedAliases.aliases;
+        }
+        const existingRerank = (mergedConfig.rerank as Record<string, unknown> | undefined) ?? {};
+        if (!('explanations' in existingRerank)) {
+          mergedConfig.rerank = { ...existingRerank, explanations: true };
+        }
+
         await fs.writeFile(configPath, JSON.stringify(mergedConfig, null, 2));
         setState((s) => ({
           ...s,
