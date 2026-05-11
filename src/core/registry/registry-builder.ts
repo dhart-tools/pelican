@@ -246,13 +246,29 @@ export class RegistryBuilder {
 
     this.registry.buildFromFileEntries(fileEntries);
 
-    // Route map publication — runs against the same file entries the registry
-    // just indexed. buildRouteMap dedupes by path (last writer wins) so files
-    // with overlapping route definitions don't collide silently.
+    // Route map publication — MERGE with what the registry already populated
+    // from `entry.routesDefined` (shallow source-extractor path). The standalone
+    // RouteAnalyzer is more capable (data-routers, lazy imports, alias
+    // resolution), so its entries win on path collisions, but we keep any
+    // routes the simpler pipeline already found.
     try {
-      const routeMap = routeAnalyzer.buildRouteMap(routeExtractions);
-      this.registry.setRouteMap(routeMap);
-      if (this.debug) this.log(`route map built: ${routeMap.size} entries`);
+      const externalRouteMap = routeAnalyzer.buildRouteMap(routeExtractions);
+      if (externalRouteMap.size > 0) {
+        const merged = new Map(this.registry.getRouteMap());
+        const before = merged.size;
+        let overrides = 0;
+        for (const [routePath, componentPath] of externalRouteMap) {
+          if (merged.has(routePath) && merged.get(routePath) !== componentPath) overrides++;
+          merged.set(routePath, componentPath);
+        }
+        this.registry.setRouteMap(merged);
+        if (this.debug)
+          this.log(
+            `route map merged: ${before} existing + ${externalRouteMap.size} from RouteAnalyzer = ${merged.size} total (${overrides} overridden)`,
+          );
+      } else if (this.debug) {
+        this.log(`route map: RouteAnalyzer found 0 routes; keeping ${this.registry.getRouteMap().size} from source-extractor`);
+      }
     } catch (e) {
       if (this.debug) this.log(`route map build failed: ${e}`);
     }
