@@ -448,6 +448,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           excludePatterns: effectiveConfig.excludePatterns,
           projectRoot: process.cwd(),
           pathAliases: effectiveConfig.analyzers.cypressExtractor.pathAliases,
+          debug: options.debug,
         });
         const registryDir = path.dirname(REGISTRY_CACHE_PATH);
         await fs.mkdir(registryDir, { recursive: true });
@@ -670,6 +671,7 @@ export const setupCommand = new Command('setup')
   .description('Run setup wizard to configure Test Suggestor')
   .option('--auto', 'Skip interactive prompts, use auto-detection only')
   .option('-c, --config <path>', 'Path to save config file')
+  .option('--debug', 'Stream registry-build diagnostics to stderr')
   .action(async (opts: ISetupOptions) => {
     await loadTheme();
     const { waitUntilExit } = render(<SetupApp options={opts} />);

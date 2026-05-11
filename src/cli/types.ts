@@ -271,7 +271,7 @@ export interface IAnalyzeOptions {
   config?: string;
   ci?: boolean;
   debug?: boolean;
-  /** Set to false by --no-rerank flag. Skips Ollama reranking; still uses .pelican.lock cache. */
+  /** Set to true by --rerank flag. Off by default — pelican structural scoring + .pelican.lock cache only. */
   rerank?: boolean;
   /** Set to false by --no-cache flag. Bypasses .pelican.lock for this run; nothing read or written. */
   cache?: boolean;
@@ -293,6 +293,7 @@ export interface IRegistryBuildOptions {
 export interface ISetupOptions {
   auto?: boolean;
   config?: string;
+  debug?: boolean;
 }
 
 // Re-export EConfidenceLevel for use within this module
