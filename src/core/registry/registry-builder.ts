@@ -7,12 +7,13 @@ import * as ts from 'typescript';
 
 import { CypressExtractorAnalyzer } from '@/core/analyzers/cypress-extractor';
 import { ReduxChainAnalyzer } from '@/core/analyzers/redux-chain/redux-chain-analyzer';
+import { RouteAnalyzer } from '@/core/analyzers/route-analyzer/route-analyzer';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
 import { normalizePath } from '@/core/registry/path-utils';
 import { createRegistry } from '@/core/registry/registry';
 import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
-import { IReduxExtractionResult } from '@/types/analyzers';
+import { IReduxExtractionResult, IRouteExtractionResult } from '@/types/analyzers';
 import { IRegistry, IFileEntry } from '@/types/registry';
 
 export interface RegistryBuilderConfig {
@@ -100,6 +101,12 @@ export class RegistryBuilder {
     const cypressExtractor = new CypressExtractorAnalyzer();
     const reduxChainAnalyzer = new ReduxChainAnalyzer();
     const reduxExtractions: IReduxExtractionResult[] = [];
+    const routeAnalyzer = new RouteAnalyzer();
+    const routeExtractions: IRouteExtractionResult[] = [];
+    const routeAliasConfig = {
+      projectRoot: this.projectRoot,
+      aliases: this.pathAliases,
+    };
 
     if (this.debug) {
       this.log(`projectRoot: ${this.projectRoot}`);
@@ -138,6 +145,25 @@ export class RegistryBuilder {
           reduxExtractions.push(redux);
         } catch (e) {
           if (this.debug) this.log(`redux-chain extract failed for ${filePath}: ${e}`);
+        }
+
+        // Run route-analyzer on every source file — JSX <Route>, data-routers,
+        // and lazy() imports can live anywhere, not just App.tsx. Cheap to skip
+        // files with no routes (extractor produces an empty result).
+        try {
+          const routeResult = await routeAnalyzer.extract({
+            filePath,
+            sourceCode,
+            aliasConfig: routeAliasConfig,
+          });
+          if (routeResult.routes.length > 0) {
+            for (const r of routeResult.routes) {
+              if (r.componentPath) r.componentPath = normalizePath(r.componentPath, this.projectRoot);
+            }
+            routeExtractions.push(routeResult);
+          }
+        } catch (e) {
+          if (this.debug) this.log(`route-analyzer extract failed for ${filePath}: ${e}`);
         }
 
         if (this.debug) {
@@ -219,6 +245,17 @@ export class RegistryBuilder {
     }
 
     this.registry.buildFromFileEntries(fileEntries);
+
+    // Route map publication — runs against the same file entries the registry
+    // just indexed. buildRouteMap dedupes by path (last writer wins) so files
+    // with overlapping route definitions don't collide silently.
+    try {
+      const routeMap = routeAnalyzer.buildRouteMap(routeExtractions);
+      this.registry.setRouteMap(routeMap);
+      if (this.debug) this.log(`route map built: ${routeMap.size} entries`);
+    } catch (e) {
+      if (this.debug) this.log(`route map build failed: ${e}`);
+    }
 
     // Redux chain reconciliation — after file entries are in the registry so
     // the chain's action-type strings can also be surfaced through the

@@ -162,6 +162,12 @@ export async function detectProjectConfig(): Promise<{
 
     if (pkg.dependencies?.['react-router-dom'] || pkg.dependencies?.['react-router']) {
       config.analyzers.routeAnalyzer.enabled = true;
+      if (!config.analyzers.enabled.includes('route-analyzer')) {
+        config.analyzers.enabled.push('route-analyzer');
+      }
+      if (!config.scoring.enabledScorers.includes('route-match')) {
+        config.scoring.enabledScorers.push('route-match');
+      }
 
       const possibleFiles = ['src/App.tsx', 'src/router.tsx', 'src/routes.tsx', 'src/Router.tsx'];
       for (const file of possibleFiles) {
