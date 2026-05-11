@@ -107,6 +107,12 @@ export class RegistryBuilder {
       projectRoot: this.projectRoot,
       aliases: this.pathAliases,
     };
+    // Counters so the summary log can distinguish "RouteAnalyzer never ran on
+    // anything" from "RouteAnalyzer ran on N files but every file produced 0
+    // routes". The two cases imply very different next steps for debugging.
+    let routeFilesScanned = 0;
+    let routeFilesContributed = 0;
+    let routeFilesFailed = 0;
 
     if (this.debug) {
       this.log(`projectRoot: ${this.projectRoot}`);
@@ -151,6 +157,7 @@ export class RegistryBuilder {
         // and lazy() imports can live anywhere, not just App.tsx. Cheap to skip
         // files with no routes (extractor produces an empty result).
         try {
+          routeFilesScanned++;
           const routeResult = await routeAnalyzer.extract({
             filePath,
             sourceCode,
@@ -161,8 +168,23 @@ export class RegistryBuilder {
               if (r.componentPath) r.componentPath = normalizePath(r.componentPath, this.projectRoot);
             }
             routeExtractions.push(routeResult);
+            routeFilesContributed++;
+            // Per-file log — the most useful breadcrumb when the summary line
+            // shows zero contributions: which files DID produce routes, with
+            // a peek at the first three paths so it's obvious whether the
+            // target's real router files were touched.
+            if (this.debug) {
+              const sample = routeResult.routes
+                .slice(0, 3)
+                .map((r) => r.path + (r.componentPath ? ` → ${r.componentPath}` : ''))
+                .join(', ');
+              this.log(
+                `route-analyzer: ${filePath} → ${routeResult.routes.length} route(s)${sample ? ` [${sample}${routeResult.routes.length > 3 ? ', …' : ''}]` : ''}`,
+              );
+            }
           }
         } catch (e) {
+          routeFilesFailed++;
           if (this.debug) this.log(`route-analyzer extract failed for ${filePath}: ${e}`);
         }
 
@@ -252,6 +274,13 @@ export class RegistryBuilder {
     // resolution), so its entries win on path collisions, but we keep any
     // routes the simpler pipeline already found.
     try {
+      const sourceExtractorRoutes = this.registry.getRouteMap().size;
+      if (this.debug) {
+        this.log(
+          `route-analyzer summary: scanned=${routeFilesScanned}, contributed=${routeFilesContributed}, failed=${routeFilesFailed}; source-extractor pipeline produced ${sourceExtractorRoutes} entries before merge`,
+        );
+      }
+
       const externalRouteMap = routeAnalyzer.buildRouteMap(routeExtractions);
       if (externalRouteMap.size > 0) {
         const merged = new Map(this.registry.getRouteMap());
@@ -262,12 +291,35 @@ export class RegistryBuilder {
           merged.set(routePath, componentPath);
         }
         this.registry.setRouteMap(merged);
-        if (this.debug)
+        if (this.debug) {
           this.log(
             `route map merged: ${before} existing + ${externalRouteMap.size} from RouteAnalyzer = ${merged.size} total (${overrides} overridden)`,
           );
+          // Sample of final route map so the user can grep for specific paths
+          // (e.g. /managedevices) without dumping the whole registry.json.
+          const sample: string[] = [];
+          let i = 0;
+          for (const [p, c] of merged) {
+            sample.push(`${p} → ${c}`);
+            if (++i >= 15) break;
+          }
+          this.log(
+            `route map sample (first ${sample.length}/${merged.size}): ${sample.join(' | ')}`,
+          );
+        }
       } else if (this.debug) {
-        this.log(`route map: RouteAnalyzer found 0 routes; keeping ${this.registry.getRouteMap().size} from source-extractor`);
+        this.log(
+          `route map: RouteAnalyzer found 0 routes across ${routeFilesScanned} files (${routeFilesFailed} failed); keeping ${sourceExtractorRoutes} from source-extractor`,
+        );
+        if (sourceExtractorRoutes > 0) {
+          const sample: string[] = [];
+          let i = 0;
+          for (const [p, c] of this.registry.getRouteMap()) {
+            sample.push(`${p} → ${c}`);
+            if (++i >= 15) break;
+          }
+          this.log(`route map sample (source-extractor only): ${sample.join(' | ')}`);
+        }
       }
     } catch (e) {
       if (this.debug) this.log(`route map build failed: ${e}`);
@@ -277,9 +329,30 @@ export class RegistryBuilder {
     // the chain's action-type strings can also be surfaced through the
     // file-level actionTypeStrings index (used by ActionTypeScorer).
     try {
+      // Count distinct slice names BEFORE buildChains so a "0 chains" outcome
+      // points at the right place. If extractions had slice names but the
+      // chain build still returned empty, that's a reconciliation bug, not
+      // a detection bug.
+      const slicesSeen = new Set<string>();
+      let extractionsWithRole = 0;
+      for (const ext of reduxExtractions) {
+        if (ext.sliceName) slicesSeen.add(ext.sliceName);
+        if (ext.role && ext.role !== 'unknown') extractionsWithRole++;
+      }
+      if (this.debug) {
+        this.log(
+          `redux-chain summary: ${reduxExtractions.length} extractions, ${extractionsWithRole} with a redux role, ${slicesSeen.size} distinct slice names`,
+        );
+      }
       const chains = await reduxChainAnalyzer.buildChains(reduxExtractions);
       this.registry.setReduxChains(chains);
-      if (this.debug) this.log(`redux chains built: ${chains.size}`);
+      if (this.debug) {
+        this.log(`redux chains built: ${chains.size}`);
+        if (chains.size > 0) {
+          const names = Array.from(chains.keys()).slice(0, 10);
+          this.log(`redux chain names (first ${names.length}/${chains.size}): ${names.join(', ')}`);
+        }
+      }
 
       // Promote chain.actionTypes back onto the slice file's
       // actionTypeStrings list so ActionTypeScorer sees them.
