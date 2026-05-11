@@ -162,6 +162,10 @@ export class RegistryBuilder {
             filePath,
             sourceCode,
             aliasConfig: routeAliasConfig,
+            // Lets the analyzer resolve `path={RouterPath.MANAGE_DEVICES}` by
+            // reading the imported const-object file. Same plumbing as
+            // cypressExtractor uses for action-type literals.
+            resolveConstImport: (importPath) => this.resolveTsConstImport(importPath, filePath),
           });
           if (routeResult.routes.length > 0) {
             for (const r of routeResult.routes) {
