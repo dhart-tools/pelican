@@ -165,7 +165,20 @@ export class RegistryBuilder {
             // Lets the analyzer resolve `path={RouterPath.MANAGE_DEVICES}` by
             // reading the imported const-object file. Same plumbing as
             // cypressExtractor uses for action-type literals.
-            resolveConstImport: (importPath) => this.resolveTsConstImport(importPath, filePath),
+            resolveConstImport: async (importPath) => {
+              if (this.debug) {
+                this.log(`route-analyzer: requesting const resolve for "${importPath}" from ${filePath}`);
+              }
+              const r = await this.resolveTsConstImport(importPath, filePath);
+              if (this.debug) {
+                this.log(
+                  `route-analyzer: const resolve for "${importPath}" returned ${
+                    r === null ? 'null' : `${r.size} const-object(s)`
+                  }`,
+                );
+              }
+              return r;
+            },
           });
           if (routeResult.routes.length > 0) {
             for (const r of routeResult.routes) {
@@ -552,44 +565,100 @@ export class RegistryBuilder {
 
         const result = new Map<string, Record<string, string>>();
         for (const stmt of sourceFile.statements) {
-          if (!ts.isVariableStatement(stmt)) continue;
+          if (!ts.canHaveModifiers(stmt)) continue;
           const isExported = ts
             .getModifiers(stmt)
             ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
           if (!isExported) continue;
 
-          for (const decl of stmt.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name)) continue;
-            if (!decl.initializer || !ts.isObjectLiteralExpression(decl.initializer)) continue;
+          // Pattern 1: `export const X = { ... }` — also handles
+          //   `export const X = { ... } as const`        (AsExpression)
+          //   `export const X = Object.freeze({ ... })`  (CallExpression)
+          if (ts.isVariableStatement(stmt)) {
+            for (const decl of stmt.declarationList.declarations) {
+              if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+              const obj = this.extractStringMapFromExpression(decl.initializer, sourceFile);
+              if (obj && Object.keys(obj).length > 0) result.set(decl.name.text, obj);
+            }
+            continue;
+          }
 
+          // Pattern 2: `export enum X { FOO = '/foo', BAR = '/bar' }`
+          //   and     `export const enum X { ... }`
+          // String-valued enums extract cleanly; numeric/heterogeneous enums are
+          // skipped on a per-member basis.
+          if (ts.isEnumDeclaration(stmt)) {
             const obj: Record<string, string> = {};
-            for (const prop of decl.initializer.properties) {
-              if (!ts.isPropertyAssignment(prop)) continue;
-              const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
-              if (ts.isStringLiteral(prop.initializer)) {
-                obj[key] = prop.initializer.text;
-              } else if (ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
-                obj[key] = prop.initializer.text;
+            for (const member of stmt.members) {
+              if (!ts.isIdentifier(member.name) && !ts.isStringLiteral(member.name)) continue;
+              const key = ts.isIdentifier(member.name) ? member.name.text : member.name.text;
+              if (!member.initializer) continue;
+              if (ts.isStringLiteral(member.initializer)) {
+                obj[key] = member.initializer.text;
+              } else if (ts.isNoSubstitutionTemplateLiteral(member.initializer)) {
+                obj[key] = member.initializer.text;
               }
             }
-            if (Object.keys(obj).length > 0) result.set(decl.name.text, obj);
+            if (Object.keys(obj).length > 0) result.set(stmt.name.text, obj);
+            continue;
           }
         }
 
-        if (result.size > 0) {
-          if (this.debug) {
-            this.log(
-              `resolveTsConstImport: ${candidate} exports [${[...result.keys()].join(', ')}]`,
-            );
-          }
-          return result;
+        if (this.debug) {
+          this.log(
+            `resolveTsConstImport: ${candidate} → ${result.size} const-objects [${[...result.keys()].join(', ') || '(empty)'}]`,
+          );
         }
+        if (result.size > 0) return result;
       } catch {
         // try next candidate
       }
     }
 
+    if (this.debug) {
+      this.log(`resolveTsConstImport: ${importPath} (from ${fromFile}) → no candidates matched`);
+    }
     return null;
+  }
+
+  /**
+   * Pulls string key→value pairs out of an expression that's expected to be
+   * an object literal — directly, behind `as const`, or wrapped in
+   * `Object.freeze(...)`. Returns null when the shape isn't one we recognise.
+   */
+  private extractStringMapFromExpression(
+    expr: ts.Expression,
+    sourceFile: ts.SourceFile,
+  ): Record<string, string> | null {
+    // Unwrap `({...} as const)` and `({...} as Readonly<...>)`
+    let inner: ts.Expression = expr;
+    while (ts.isAsExpression(inner) || ts.isParenthesizedExpression(inner)) {
+      inner = inner.expression;
+    }
+    // Unwrap `Object.freeze({...})`
+    if (
+      ts.isCallExpression(inner) &&
+      ts.isPropertyAccessExpression(inner.expression) &&
+      ts.isIdentifier(inner.expression.expression) &&
+      inner.expression.expression.text === 'Object' &&
+      inner.expression.name.text === 'freeze' &&
+      inner.arguments.length === 1
+    ) {
+      inner = inner.arguments[0];
+    }
+    if (!ts.isObjectLiteralExpression(inner)) return null;
+
+    const obj: Record<string, string> = {};
+    for (const prop of inner.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
+      if (ts.isStringLiteral(prop.initializer)) {
+        obj[key] = prop.initializer.text;
+      } else if (ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+        obj[key] = prop.initializer.text;
+      }
+    }
+    return obj;
   }
 
   private candidateFilePathsForImport(importPath: string, fromFile: string): string[] {
