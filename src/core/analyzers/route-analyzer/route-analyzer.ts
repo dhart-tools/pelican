@@ -659,6 +659,14 @@ export class RouteAnalyzer extends BaseAnalyzer<
           importMap[element.name.text] = absoluteSpecifier;
         }
       }
+
+      // Namespace import: `import * as Containers from '@/containers'`
+      // Lets us resolve `<Containers.ManageDevicesContainer />` to the barrel
+      // file. The route-match scorer's transitive search then walks the barrel
+      // to reach the actual page component.
+      if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+        importMap[clause.namedBindings.name.text] = absoluteSpecifier;
+      }
     }
 
     return importMap;
@@ -974,6 +982,18 @@ export class RouteAnalyzer extends BaseAnalyzer<
       return importMap[componentName].replace(/\.tsx?$/, '') + '.ts';
     }
 
+    // Strategy 1b: Dotted name — `Containers.ManageDevicesContainer`.
+    // Look up the namespace (left of the first dot) in the import map.
+    // The namespace import (`import * as X from '@/path/to/barrel'`) registers
+    // X at its barrel file path; the route-match scorer's transitive search
+    // climbs through the barrel to reach the real page component.
+    if (componentName && componentName.includes('.')) {
+      const [head] = componentName.split('.');
+      if (head && importMap[head]) {
+        return importMap[head].replace(/\.tsx?$/, '') + '.ts';
+      }
+    }
+
     // Strategy 2: Inline import() call
     if (expr && ts.isCallExpression(expr) && this.isImportCall(expr) && expr.arguments.length > 0) {
       const arg = expr.arguments[0];
@@ -1011,11 +1031,74 @@ export class RouteAnalyzer extends BaseAnalyzer<
     );
   }
 
+  /**
+   * Known wrapper components that pass children through transparently
+   * (auth/permission gates, layouts, error boundaries). When a route element
+   * matches one of these, prefer to surface the WRAPPED inner component as
+   * the route's real target so the route-match scorer can climb the right
+   * dependency cone.
+   */
+  private static readonly WRAPPER_COMPONENT_NAMES = new Set([
+    'ProtectedRoute',
+    'PrivateRoute',
+    'PublicRoute',
+    'AuthRoute',
+    'RequireAuth',
+    'GuardedRoute',
+    'Layout',
+    'AppLayout',
+    'PageLayout',
+    'ProtectedLayout',
+    'AuthLayout',
+    'ErrorBoundary',
+    'Suspense',
+  ]);
+
+  /**
+   * Returns the inner JSX child of a wrapper element, if there's exactly one
+   * meaningful (non-whitespace) JSX child. Used to look past
+   *   <ProtectedRoute ...><RealPage /></ProtectedRoute>
+   * and treat `<RealPage />` as the route's actual target.
+   */
+  private unwrapWrapperChildren(node: ts.JsxElement): ts.Expression | null {
+    const jsxChildren: ts.Expression[] = [];
+    for (const child of node.children) {
+      if (ts.isJsxSelfClosingElement(child) || ts.isJsxElement(child)) {
+        jsxChildren.push(child as unknown as ts.Expression);
+      } else if (ts.isJsxExpression(child) && child.expression) {
+        let inner: ts.Expression = child.expression;
+        while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+        if (ts.isJsxSelfClosingElement(inner) || ts.isJsxElement(inner) || ts.isIdentifier(inner)) {
+          jsxChildren.push(inner);
+        }
+      }
+      // JsxText is ignored — pure whitespace between tags.
+    }
+    return jsxChildren.length === 1 ? jsxChildren[0] : null;
+  }
+
   private extractComponentName(expr: ts.Expression | undefined): string | null {
     if (!expr) return null;
-    if (ts.isJsxSelfClosingElement(expr)) return expr.tagName.getText();
-    if (ts.isJsxElement(expr)) return expr.openingElement.tagName.getText();
-    if (ts.isIdentifier(expr)) return expr.text;
+    // Peel off `({...})` wrappers — common when the element is multi-line:
+    //   element={(<Foo>...</Foo>)}   ← ParenthesizedExpression around JSX
+    let inner: ts.Expression = expr;
+    while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+
+    // If the outer element is a known wrapper (ProtectedRoute, Layout, etc.)
+    // with exactly one JSX child, return the inner child's name instead.
+    // This is what makes `<ProtectedRoute><DMContainers.X/></ProtectedRoute>`
+    // resolve to `DMContainers.X` (whose namespace `DMContainers` lives in
+    // importMap), not to the wrapper barrel.
+    if (ts.isJsxElement(inner)) {
+      const wrapperTag = inner.openingElement.tagName.getText();
+      if (RouteAnalyzer.WRAPPER_COMPONENT_NAMES.has(wrapperTag)) {
+        const innerChild = this.unwrapWrapperChildren(inner);
+        if (innerChild) return this.extractComponentName(innerChild);
+      }
+      return wrapperTag;
+    }
+    if (ts.isJsxSelfClosingElement(inner)) return inner.tagName.getText();
+    if (ts.isIdentifier(inner)) return inner.text;
     return null;
   }
 
@@ -1023,7 +1106,12 @@ export class RouteAnalyzer extends BaseAnalyzer<
     node: ts.JsxExpression | ts.StringLiteral | undefined,
   ): ts.Expression | undefined {
     if (!node) return undefined;
-    return ts.isJsxExpression(node) ? node.expression : undefined;
+    if (!ts.isJsxExpression(node)) return undefined;
+    let inner: ts.Expression | undefined = node.expression;
+    // Strip any parenthesized wrappers so downstream consumers see the real
+    // JSX/Identifier/CallExpression node directly.
+    while (inner && ts.isParenthesizedExpression(inner)) inner = inner.expression;
+    return inner;
   }
 
   private isDynamicRoute(routePath: string): boolean {
