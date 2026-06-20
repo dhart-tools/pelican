@@ -68,6 +68,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     minConfidence: 0.4,
     highConfidence: 0.8,
     maxResults: 10,
+    requireAnchor: true,
   },
 };
 
@@ -114,6 +115,8 @@ interface IUserConfig {
     enabledScorers?: string[];
     scorerWeights?: Record<string, number>;
     ubiquityThreshold?: number;
+    /** Drop candidates with no file-identity anchor signal. Default true. */
+    requireAnchor?: boolean;
     routerFile?: string;
     storeDirs?: string[];
     selectorStrategy?: string[];
@@ -258,6 +261,9 @@ function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfi
       ...(user.advanced?.scorerWeights && { scorerWeights: user.advanced.scorerWeights }),
       ...(user.advanced?.ubiquityThreshold !== undefined && {
         ubiquityThreshold: user.advanced.ubiquityThreshold,
+      }),
+      ...(user.advanced?.requireAnchor !== undefined && {
+        requireAnchor: user.advanced.requireAnchor,
       }),
       ...(user.minConfidence !== undefined && { minConfidence: user.minConfidence }),
       ...(user.highConfidence !== undefined && { highConfidence: user.highConfidence }),

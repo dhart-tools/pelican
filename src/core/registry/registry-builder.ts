@@ -11,6 +11,7 @@ import { RouteAnalyzer } from '@/core/analyzers/route-analyzer/route-analyzer';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
 import { normalizePath } from '@/core/registry/path-utils';
 import { createRegistry } from '@/core/registry/registry';
+import { partitionSuggestableTests } from '@/core/registry/suggestion-exclusions';
 import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
 import { IReduxExtractionResult, IRouteExtractionResult } from '@/types/analyzers';
@@ -219,8 +220,26 @@ export class RegistryBuilder {
     }
 
     // --- Process test files ---
-    const testFiles = await this.findTestFiles(config.testPatterns, ignoreDirs, excludePatterns);
-    if (this.debug) this.log(`Found ${testFiles.length} test files.`);
+    const discoveredTestFiles = await this.findTestFiles(
+      config.testPatterns,
+      ignoreDirs,
+      excludePatterns,
+    );
+
+    // Drop specs that must never be suggested (separate-cadence suites such as
+    // InterOps and dmSanity). Centralized in `suggestion-exclusions.ts` — add
+    // new rules there, not here. Excluded here (registry build) rather than at
+    // scoring time so these specs never enter the candidate pool at all.
+    const { kept: testFiles, excluded } = partitionSuggestableTests(discoveredTestFiles);
+    if (this.debug) {
+      this.log(
+        `Found ${discoveredTestFiles.length} test files; ` +
+          `${excluded.length} excluded from suggestions, ${testFiles.length} kept.`,
+      );
+      for (const { path: excludedPath, rule } of excluded) {
+        this.log(`  excluded ${excludedPath} (${rule.id})`);
+      }
+    }
 
     for (const filePath of testFiles) {
       try {

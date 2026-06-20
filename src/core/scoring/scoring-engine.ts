@@ -8,6 +8,9 @@ import {
 } from '@/types';
 import { EConfidenceLevel } from '@/utils/enums';
 
+import { applyAnchorGate } from './anchor-gate';
+import { isHubFile } from './hub-file';
+
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
   private config: ISuggestorConfig;
@@ -37,6 +40,12 @@ export class ScoringEngine {
     if (!changedFileEntry) {
       return results;
     }
+
+    // Hub status depends only on the changed file, so compute it once here
+    // rather than per-candidate. Used by the anchor gate to demote a hub's
+    // broad (medium-tier) signals.
+    const requireAnchor = this.config.scoring.requireAnchor ?? true;
+    const changedIsHub = isHubFile(changedFileEntry);
 
     for (const testFilePath of testFiles) {
       const testFileEntry = this.registry.getFile(testFilePath);
@@ -89,8 +98,18 @@ export class ScoringEngine {
         }
       }
 
+      // Anchor gate — require at least one file-identity signal (direct-import,
+      // filename, colocation; plus route/selector/transitive when the changed
+      // file isn't a hub). Candidates matched only by broad domain signals
+      // (redux, describe-block) are suppressed here. This is the main precision
+      // lever against hub-file floods; recall is preserved because every true
+      // positive carries a narrow anchor.
+      const gatedSignals = requireAnchor
+        ? applyAnchorGate(signals, { changedIsHub })
+        : signals;
+
       // Apply ubiquity dampener
-      const dampenedSignals = this.applyUbiquityDampener(changedFile, signals);
+      const dampenedSignals = this.applyUbiquityDampener(changedFile, gatedSignals);
 
       // Calculate final score
       const score = this.calculateScore(dampenedSignals);

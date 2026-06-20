@@ -202,6 +202,8 @@ export interface IProjectConfig {
     highConfidence: number;
     scorerWeights?: Record<string, number>;
     maxResults?: number;
+    /** Drop candidates with no file-identity anchor signal. Default true. */
+    requireAnchor?: boolean;
   };
   rerank?: {
     /** Enable Ollama LLM reranking. Default true. */
