@@ -295,7 +295,17 @@ export class AliasResolver {
   }
 
   private mergeAliases(incoming: IAliasMap): void {
-    Object.assign(this.aliasMap, incoming);
+    // Normalize keys by stripping a trailing slash. resolve() matches a prefix
+    // as either an exact hit or `prefix + '/'`, so a key stored WITH its slash
+    // (e.g. user config `{"@dm/": "src/dm/"}`) would be tested as `@dm//` and
+    // never match `@dm/components`. Strip it once here so both `@dm` and `@dm/`
+    // configs behave identically. Targets keep no trailing slash so path.join
+    // in resolve() produces clean paths.
+    for (const [key, value] of Object.entries(incoming)) {
+      const normKey = key.endsWith('/') ? key.slice(0, -1) : key;
+      const normValue = value.endsWith('/') ? value.slice(0, -1) : value;
+      this.aliasMap[normKey] = normValue;
+    }
   }
 }
 
@@ -330,6 +340,16 @@ export type ResolveConstImport = (
   importPath: string,
 ) => Promise<Map<string, Record<string, string>> | null>;
 
+/**
+ * One `export … from './x'` declaration in a barrel file.
+ *  - `{ star: true, from }`           → `export * from './x'`
+ *  - `{ exported, local, from }`      → `export { local as exported } from './x'`
+ *    (`local` is `'default'` for `export { default as Foo } from './x'`)
+ */
+type IReExport =
+  | { star: true; from: string }
+  | { star: false; exported: string; local: string; from: string };
+
 export class RouteAnalyzer extends BaseAnalyzer<
   {
     filePath: string;
@@ -349,6 +369,16 @@ export class RouteAnalyzer extends BaseAnalyzer<
   // happen. Keyed by raw specifier (the import path before alias expansion)
   // because that's what the AST nodes carry.
   private constCache = new Map<string, Map<string, Record<string, string>>>();
+
+  // Per-extraction caches for barrel resolution (cleared each extract()):
+  //   realFileCache: absPathNoExt → first existing on-disk file (or null)
+  //   reExportCache: realFile → parsed `export … from` declarations
+  private realFileCache = new Map<string, string | null>();
+  private reExportCache = new Map<string, IReExport[]>();
+
+  // Depth ceiling for following barrel re-export chains
+  // (barrel → sub-barrel → component). Cycles are also guarded via a visited set.
+  private static readonly MAX_BARREL_DEPTH = 5;
 
   /**
    * Orchestrates the extraction of routes from a source file.
@@ -372,6 +402,8 @@ export class RouteAnalyzer extends BaseAnalyzer<
     const { filePath, sourceCode, aliasConfig, resolveConstImport } = input;
     this.processedNodes.clear();
     this.constCache.clear();
+    this.realFileCache.clear();
+    this.reExportCache.clear();
 
     const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
@@ -485,10 +517,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
    *      in the constCache populated during pre-resolution.
    * Returns null if the path can't be resolved statically.
    */
-  private resolvePathExpression(
-    expr: ts.Expression,
-    sourceFile: ts.SourceFile,
-  ): string | null {
+  private resolvePathExpression(expr: ts.Expression, sourceFile: ts.SourceFile): string | null {
     if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
       return expr.text;
     }
@@ -977,20 +1006,32 @@ export class RouteAnalyzer extends BaseAnalyzer<
     importMap: IImportMap,
     _isLazy: boolean,
   ): string | undefined {
-    // Strategy 1: Import map (absolute path, alias already expanded)
+    // Strategy 1: named/default import resolved via the import map.
+    // `import { ManageDevices } from '@dm/components'` registers ManageDevices
+    // at the barrel; resolveExportedSymbol follows the barrel's
+    // `export … from './ManageDevices'` chain to the REAL page file so the
+    // route points at the page, not the catch-all barrel (which transitively
+    // imports the whole app and makes route-match match everything).
     if (componentName && importMap[componentName]) {
-      return importMap[componentName].replace(/\.tsx?$/, '') + '.ts';
+      const moduleNoExt = importMap[componentName].replace(/\.tsx?$/, '');
+      const real = this.resolveExportedSymbol(moduleNoExt, componentName, new Set(), 0);
+      if (real) return real;
+      // No on-disk file backs the module (e.g. virtual unit-test sources) —
+      // fall back to the legacy string-based path so those tests still resolve.
+      return moduleNoExt + '.ts';
     }
 
-    // Strategy 1b: Dotted name — `Containers.ManageDevicesContainer`.
-    // Look up the namespace (left of the first dot) in the import map.
-    // The namespace import (`import * as X from '@/path/to/barrel'`) registers
-    // X at its barrel file path; the route-match scorer's transitive search
-    // climbs through the barrel to reach the real page component.
+    // Strategy 1b: namespace member — `DMContainers.ManageDevicesContainer`.
+    // Look up the namespace (left of the first dot) in the import map, then
+    // resolve the member through the barrel the namespace points at.
     if (componentName && componentName.includes('.')) {
-      const [head] = componentName.split('.');
-      if (head && importMap[head]) {
-        return importMap[head].replace(/\.tsx?$/, '') + '.ts';
+      const [head, ...rest] = componentName.split('.');
+      const member = rest.join('.');
+      if (head && member && importMap[head]) {
+        const moduleNoExt = importMap[head].replace(/\.tsx?$/, '');
+        const real = this.resolveExportedSymbol(moduleNoExt, member, new Set(), 0);
+        if (real) return real;
+        return moduleNoExt + '.ts';
       }
     }
 
@@ -998,11 +1039,118 @@ export class RouteAnalyzer extends BaseAnalyzer<
     if (expr && ts.isCallExpression(expr) && this.isImportCall(expr) && expr.arguments.length > 0) {
       const arg = expr.arguments[0];
       if (ts.isStringLiteral(arg)) {
-        return path.resolve(baseDir, arg.text).replace(/\.tsx?$/, '') + '.ts';
+        const absNoExt = path.resolve(baseDir, arg.text).replace(/\.tsx?$/, '');
+        return this.findRealFile(absNoExt) ?? absNoExt + '.ts';
       }
     }
 
     return undefined;
+  }
+
+  /**
+   * Resolves the extensionless module path `absNoExt` to the first matching
+   * file on disk, trying `.ts`, `.tsx`, then `index.ts` / `index.tsx` for a
+   * directory import. Returns null when nothing exists (the caller then keeps
+   * the legacy string path so virtual-source unit tests are unaffected).
+   * Cached per extract().
+   */
+  private findRealFile(absNoExt: string): string | null {
+    const cached = this.realFileCache.get(absNoExt);
+    if (cached !== undefined) return cached;
+    const candidates = [
+      absNoExt + '.ts',
+      absNoExt + '.tsx',
+      path.join(absNoExt, 'index.ts'),
+      path.join(absNoExt, 'index.tsx'),
+    ];
+    let found: string | null = null;
+    for (const c of candidates) {
+      try {
+        if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+          found = c;
+          break;
+        }
+      } catch {
+        // unreadable candidate — keep trying
+      }
+    }
+    this.realFileCache.set(absNoExt, found);
+    return found;
+  }
+
+  /**
+   * Parses the `export … from './x'` declarations of a real file. Files with
+   * none are leaf modules (the component itself); files with them are barrels.
+   * Cached per extract().
+   */
+  private getReExports(realFile: string): IReExport[] {
+    const cached = this.reExportCache.get(realFile);
+    if (cached) return cached;
+    const out: IReExport[] = [];
+    try {
+      const src = fs.readFileSync(realFile, 'utf-8');
+      const sf = ts.createSourceFile(realFile, src, ts.ScriptTarget.Latest, true);
+      for (const stmt of sf.statements) {
+        if (!ts.isExportDeclaration(stmt)) continue;
+        if (!stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+        const from = stmt.moduleSpecifier.text;
+        if (!stmt.exportClause) {
+          out.push({ star: true, from }); // export * from './x'
+        } else if (ts.isNamedExports(stmt.exportClause)) {
+          for (const el of stmt.exportClause.elements) {
+            const exported = el.name.text; // re-exported name (after `as`)
+            const local = el.propertyName?.text ?? exported; // original name in target
+            out.push({ star: false, exported, local, from });
+          }
+        }
+      }
+    } catch {
+      // unreadable — treat as a leaf with no re-exports
+    }
+    this.reExportCache.set(realFile, out);
+    return out;
+  }
+
+  /**
+   * Resolves `symbol`, exported by the module at `absNoExt`, to the real source
+   * file that defines it, following barrel `export … from` chains (named and
+   * `export *`). Returns null only when no file backs `absNoExt` on disk, so
+   * the caller can fall back to legacy string resolution. Depth- and
+   * cycle-guarded.
+   */
+  private resolveExportedSymbol(
+    absNoExt: string,
+    symbol: string,
+    visited: Set<string>,
+    depth: number,
+  ): string | null {
+    const realFile = this.findRealFile(absNoExt);
+    if (!realFile) return null;
+    if (visited.has(realFile) || depth >= RouteAnalyzer.MAX_BARREL_DEPTH) return realFile;
+    visited.add(realFile);
+
+    const reExports = this.getReExports(realFile);
+    // Leaf module (no `export … from`): this file defines the component.
+    if (reExports.length === 0) return realFile;
+
+    // 1) Direct named re-export of the symbol → follow it to the target.
+    for (const re of reExports) {
+      if (re.star || re.exported !== symbol) continue;
+      const targetNoExt = path.resolve(path.dirname(realFile), re.from);
+      const resolved = this.resolveExportedSymbol(targetNoExt, re.local, visited, depth + 1);
+      return resolved ?? this.findRealFile(targetNoExt) ?? realFile;
+    }
+
+    // 2) `export * from './x'` — search each star-barrel for the symbol.
+    for (const re of reExports) {
+      if (!re.star) continue;
+      const targetNoExt = path.resolve(path.dirname(realFile), re.from);
+      const resolved = this.resolveExportedSymbol(targetNoExt, symbol, visited, depth + 1);
+      if (resolved) return resolved;
+    }
+
+    // Symbol not found behind this barrel — best effort: the barrel file itself.
+    return realFile;
   }
 
   private extractLazyComponentPath(

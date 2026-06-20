@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 import { RouteAnalyzer, AliasResolver } from '@/core/analyzers/route-analyzer/route-analyzer';
@@ -502,9 +503,7 @@ describe('RouteAnalyzer — dm-web pattern (enum path + wrapper + namespace impo
     // The wrapper-drill should surface the inner component name.
     expect(manageDevices?.component).toBe('DMContainers.ManageDevicesContainer');
     // Namespace lookup → resolved to the barrel file via the namespace import.
-    expect(manageDevices?.componentPath).toBe(
-      path.resolve('/project/src/dm/containers.ts'),
-    );
+    expect(manageDevices?.componentPath).toBe(path.resolve('/project/src/dm/containers.ts'));
   });
 
   test('falls back to declaring file when component cannot be resolved', async () => {
@@ -646,5 +645,118 @@ describe('RouteAnalyzer — dm-web pattern (enum path + wrapper + namespace impo
 
     const routeMap = analyzer.buildRouteMap([result]);
     expect(routeMap.get('/managedevices')).toBeDefined();
+  });
+});
+
+/**
+ * Barrel re-export resolution against REAL on-disk files.
+ *
+ * The dm-web Router imports page components from catch-all barrels
+ * (`@dm/components`, `@dm/containers`). Before this fix, routes resolved to the
+ * barrel (or, with trailing-slash alias keys, to nothing → the Router file),
+ * making route-match match the entire app. These tests write a minimal but
+ * real file tree to a temp dir and assert each route resolves to the actual
+ * leaf page file, following named-default and nested-barrel re-export chains.
+ */
+describe('RouteAnalyzer — barrel re-export resolution (real files)', () => {
+  let analyzer: RouteAnalyzer;
+  let root: string;
+
+  const write = (rel: string, contents: string) => {
+    const full = path.join(root, rel);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, contents);
+  };
+
+  beforeAll(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'pelican-route-'));
+
+    // components barrel → named-default re-export → leaf component
+    write(
+      'src/dm/components/index.ts',
+      `export { default as ManageDevices } from './ManageDevices'\n`,
+    );
+    write(
+      'src/dm/components/ManageDevices/index.tsx',
+      `export default function ManageDevices() { return null }\n`,
+    );
+
+    // Routing wrapper (named import, not a page)
+    write(
+      'src/dm/components/Routing/index.ts',
+      `export const ProtectedRoute = (p: any) => p.children\n`,
+    );
+
+    // containers barrel → nested barrel → leaf
+    write(
+      'src/dm/containers/index.ts',
+      `export { FirmwarePackagesContainer } from './firmwarePackages'\n`,
+    );
+    write(
+      'src/dm/containers/firmwarePackages/index.ts',
+      `export { FirmwarePackagesContainer } from './firmwarePackages'\n`,
+    );
+    write(
+      'src/dm/containers/firmwarePackages/firmwarePackages.tsx',
+      `export const FirmwarePackagesContainer = () => null\n`,
+    );
+
+    write(
+      'src/dm/Router.tsx',
+      `
+      import { Route, Routes } from 'react-router-dom'
+      import * as DMContainers from '@dm/containers'
+      import { ManageDevices } from '@dm/components'
+      import { ProtectedRoute } from '@dm/components/Routing'
+
+      export default function Router() {
+        return (
+          <Routes>
+            <Route path="/managedevices" element={(<ProtectedRoute><ManageDevices /></ProtectedRoute>)} />
+            <Route path="/firmwarepackages" element={(<ProtectedRoute><DMContainers.FirmwarePackagesContainer /></ProtectedRoute>)} />
+          </Routes>
+        )
+      }
+      `,
+    );
+  });
+
+  afterAll(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  beforeEach(() => {
+    analyzer = new RouteAnalyzer();
+  });
+
+  const extractWithTrailingSlashAlias = () =>
+    analyzer.extract({
+      filePath: path.join(root, 'src/dm/Router.tsx'),
+      sourceCode: fs.readFileSync(path.join(root, 'src/dm/Router.tsx'), 'utf-8'),
+      // Trailing-slash key — the exact real-config shape that produced 0 resolutions.
+      aliasConfig: { projectRoot: root, configFiles: [], aliases: { '@dm/': 'src/dm/' } },
+    });
+
+  test('named barrel import resolves through `export { default as X }` to the leaf component', async () => {
+    const result = await extractWithTrailingSlashAlias();
+    const route = result.routes.find((r) => r.path === '/managedevices');
+    expect(route?.componentPath).toBe(path.join(root, 'src/dm/components/ManageDevices/index.tsx'));
+  });
+
+  test('namespace member resolves through a NESTED barrel chain to the leaf file', async () => {
+    const result = await extractWithTrailingSlashAlias();
+    const route = result.routes.find((r) => r.path === '/firmwarepackages');
+    expect(route?.componentPath).toBe(
+      path.join(root, 'src/dm/containers/firmwarePackages/firmwarePackages.tsx'),
+    );
+  });
+
+  test('routes resolve to distinct page files, not a single shared barrel', async () => {
+    const result = await extractWithTrailingSlashAlias();
+    const paths = result.routes
+      .filter((r) => r.path === '/managedevices' || r.path === '/firmwarepackages')
+      .map((r) => r.componentPath);
+    expect(new Set(paths).size).toBe(2);
+    expect(paths.some((p) => /\/(components|containers)\/index\.tsx?$/.test(p ?? ''))).toBe(false);
   });
 });
