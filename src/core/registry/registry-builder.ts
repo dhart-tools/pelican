@@ -366,6 +366,21 @@ export class RegistryBuilder {
       if (this.debug) this.log(`route map build failed: ${e}`);
     }
 
+    // Top test selectors by frequency — calibration data for
+    // `scoring.ubiquitousSelectorThreshold`. A selector at share > threshold is
+    // disqualified as a match, so this table is where the threshold is set from
+    // real data. Emitted here (setup path) so it's captured without needing a
+    // headless analyze run.
+    if (this.debug) {
+      const totalTests = this.registry.getTestFileCount();
+      const top = this.registry.getTopTestSelectors(30);
+      this.log(`top test selectors (of ${totalTests} specs) — share% · count · value:`);
+      for (const { value, count } of top) {
+        const share = totalTests > 0 ? ((100 * count) / totalTests).toFixed(0) : '0';
+        this.log(`  ${share.padStart(3)}%  ${count}  ${value}`);
+      }
+    }
+
     // Redux chain reconciliation — after file entries are in the registry so
     // the chain's action-type strings can also be surfaced through the
     // file-level actionTypeStrings index (used by ActionTypeScorer).

@@ -666,7 +666,11 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
       // After alias resolution, any import that is still not a local path
       // (absolute or relative) is a third-party package — skip it.
-      if (!resolvedSpecifier.startsWith('.') && !resolvedSpecifier.startsWith('/')) continue;
+      // Use path.isAbsolute, not startsWith('/'): a resolved alias on Windows is
+      // an absolute path like `C:\…\src\dm\components`, which starts with neither
+      // '.' nor '/'. The old check discarded every aliased component import on
+      // Windows, leaving importMap empty so every route fell back to Router.tsx.
+      if (!resolvedSpecifier.startsWith('.') && !path.isAbsolute(resolvedSpecifier)) continue;
 
       // Convert to absolute path so resolveComponentPath can use it directly
       // without needing baseDir again.
