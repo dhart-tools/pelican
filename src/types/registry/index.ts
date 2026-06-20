@@ -79,6 +79,8 @@ export interface IRegistry {
   getDependents(filePath: string): Set<string>;
   getTestSelectorFrequency(value: string): number;
   getTestFileCount(): number;
+  /** Most-queried test selectors, descending. For --debug threshold calibration. */
+  getTopTestSelectors(limit: number): Array<{ value: string; count: number }>;
 
   // Build methods
   buildFromFileEntries(entries: IFileEntry[]): void;

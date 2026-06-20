@@ -16,6 +16,7 @@ import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
 import { IReduxExtractionResult, IRouteExtractionResult } from '@/types/analyzers';
 import { IRegistry, IFileEntry } from '@/types/registry';
+import { formatBuildLine } from '@/utils/build-info';
 
 export interface RegistryBuilderConfig {
   /**
@@ -116,6 +117,7 @@ export class RegistryBuilder {
     let routeFilesFailed = 0;
 
     if (this.debug) {
+      this.log(formatBuildLine());
       this.log(`projectRoot: ${this.projectRoot}`);
       this.log(`pathAliases (merged): ${JSON.stringify(this.pathAliases)}`);
       this.log(`baseUrlRoots (tsconfig): ${JSON.stringify(this.baseUrlRoots)}`);
@@ -168,7 +170,9 @@ export class RegistryBuilder {
             // cypressExtractor uses for action-type literals.
             resolveConstImport: async (importPath) => {
               if (this.debug) {
-                this.log(`route-analyzer: requesting const resolve for "${importPath}" from ${filePath}`);
+                this.log(
+                  `route-analyzer: requesting const resolve for "${importPath}" from ${filePath}`,
+                );
               }
               const r = await this.resolveTsConstImport(importPath, filePath);
               if (this.debug) {
@@ -183,7 +187,8 @@ export class RegistryBuilder {
           });
           if (routeResult.routes.length > 0) {
             for (const r of routeResult.routes) {
-              if (r.componentPath) r.componentPath = normalizePath(r.componentPath, this.projectRoot);
+              if (r.componentPath)
+                r.componentPath = normalizePath(r.componentPath, this.projectRoot);
             }
             routeExtractions.push(routeResult);
             routeFilesContributed++;

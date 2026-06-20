@@ -204,6 +204,9 @@ export interface IProjectConfig {
     maxResults?: number;
     /** Drop candidates with no file-identity anchor signal. Default true. */
     requireAnchor?: boolean;
+    /** Share (0..1) above which a test selector is treated as ubiquitous and
+     * disqualified as a match/anchor. Default 0.1. */
+    ubiquitousSelectorThreshold?: number;
   };
   rerank?: {
     /** Enable Ollama LLM reranking. Default true. */

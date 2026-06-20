@@ -30,6 +30,7 @@ import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
+import { formatBuildLine } from '@/utils/build-info';
 import { EConfidenceLevel } from '@/utils/enums';
 
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
@@ -486,8 +487,10 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   }
 
   if (debug) {
+    debugLog(formatBuildLine());
     debugLog(`config loaded: enabledScorers=${config.scoring.enabledScorers.join(',')}`);
     debugLog(`pathAliases: ${JSON.stringify(config.analyzers.cypressExtractor.pathAliases ?? {})}`);
+    debugLog(`ubiquitousSelectorThreshold=${config.scoring.ubiquitousSelectorThreshold ?? 0.1}`);
   }
 
   const registry = new Registry();
@@ -551,6 +554,16 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     debugLog(
       `scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`,
     );
+    // Top test selectors by frequency — calibrate ubiquitousSelectorThreshold
+    // against this (a selector at share > threshold is disqualified as a match).
+    const totalTests = registry.getTestFileCount();
+    const top = registry.getTopTestSelectors(30);
+    debugLog(`top test selectors (of ${totalTests} specs) — share% · count · value:`);
+    for (const { value, count } of top) {
+      debugLog(
+        `  ${((100 * count) / Math.max(1, totalTests)).toFixed(0).padStart(3)}%  ${count}  ${value}`,
+      );
+    }
   }
 
   // Headless progress: write to stderr with a throttled once-per-5%-per-file
@@ -622,12 +635,15 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const scoreResults = engine.evaluateTests(changedFile, testFiles);
 
     if (debug) {
-      const top = scoreResults.slice(0, 5);
-      for (const r of top) {
-        debugLog(`  → ${r.testFile}`);
-        debugLog(`    score=${r.score.toFixed(3)} confidence=${r.confidence}`);
-        for (const s of r.signals) {
-          debugLog(`    ${s.matched ? '✓' : '✗'} ${s.source} (${s.weight}) — ${s.reason}`);
+      // Dump every candidate that clears minConfidence (i.e. every suggested
+      // test) with its matched signals — this is what we read back to see which
+      // scorer/selector anchored each result and why the count is what it is.
+      const kept = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+      debugLog(`  ${kept.length} candidate(s) ≥ minConfidence ${config.scoring.minConfidence}:`);
+      for (const r of kept) {
+        debugLog(`  → ${r.testFile}  score=${r.score.toFixed(3)} (${r.confidence})`);
+        for (const s of r.signals.filter((sg) => sg.matched)) {
+          debugLog(`      ✓ ${s.source} w=${s.weight.toFixed(3)} — ${s.reason}`);
         }
       }
     }

@@ -130,6 +130,14 @@ export class Registry implements IRegistry {
     return this.testFileCountCache || 0;
   }
 
+  getTopTestSelectors(limit: number): Array<{ value: string; count: number }> {
+    this.ensureTestSelectorFreq();
+    return [...this.testSelectorFreq!.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([value, count]) => ({ value, count }));
+  }
+
   // ========== Build Methods ==========
 
   buildFromFileEntries(entries: IFileEntry[]): void {

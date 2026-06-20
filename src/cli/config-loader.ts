@@ -69,6 +69,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     highConfidence: 0.8,
     maxResults: 10,
     requireAnchor: true,
+    ubiquitousSelectorThreshold: 0.1,
   },
 };
 
