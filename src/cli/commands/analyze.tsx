@@ -1,3 +1,4 @@
+import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -479,8 +480,12 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
  *   suggestor analyze --files src/Button.tsx --json
  *   // { "results": [...], "stats": { ... } }
  */
-export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
+export async function runHeadless(
+  options: IAnalyzeOptions,
+  runOptions: { debugFileOnly?: boolean } = {},
+): Promise<void> {
   const debug = options.debug ?? false;
+  if (debug) initAnalyzeDebugFile();
   const config = await loadProjectConfig(options.config);
   if (options.minConfidence) {
     config.scoring.minConfidence = parseFloat(options.minConfidence);
@@ -693,11 +698,37 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     results.push(await processFileHeadless(changedFile));
   }
 
-  console.log(JSON.stringify({ results }, null, 2));
+  // In TUI mode we run this path only to populate analyze-debug.log; the JSON
+  // belongs on stdout only for a real headless/json invocation.
+  if (!runOptions.debugFileOnly) {
+    console.log(JSON.stringify({ results }, null, 2));
+  }
+  if (debug) {
+    debugLog(
+      `done — ${results.reduce((n, r) => n + (r.totalCandidates ?? 0), 0)} total suggestions`,
+    );
+  }
+}
+
+const ANALYZE_DEBUG_LOG = 'analyze-debug.log';
+let debugSink: ((msg: string) => void) | null = null;
+
+// When --debug is set, route debug to ./analyze-debug.log (auto-created and
+// truncated per run) rather than stderr. The TUI renders on stdout and the
+// headless debug code never ran in TUI mode, so `2> analyze-debug.log` only
+// captured TUI frames. A dedicated file is captured consistently either way.
+function initAnalyzeDebugFile(): void {
+  try {
+    fsSync.writeFileSync(ANALYZE_DEBUG_LOG, '');
+    debugSink = (m) => fsSync.appendFileSync(ANALYZE_DEBUG_LOG, `[debug] ${m}\n`);
+  } catch {
+    debugSink = null; // fall back to stderr
+  }
 }
 
 function debugLog(msg: string): void {
-  process.stderr.write(`[debug] ${msg}\n`);
+  if (debugSink) debugSink(msg);
+  else process.stderr.write(`[debug] ${msg}\n`);
 }
 
 // ─── Commander Action ────────────────────────────────────────────
@@ -723,7 +754,7 @@ export const analyzeCommand = new Command('analyze')
     '--no-bi-encoder',
     'Skip embedding cosine prefilter; pelican structural rank acts as the prefilter (faster, often better recall on naming-strong repos)',
   )
-  .option('--debug', 'Print detailed extraction and scoring info to stderr')
+  .option('--debug', 'Write detailed scoring diagnostics to ./analyze-debug.log (any output mode)')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {
     // --ci is shorthand for --output json
@@ -732,6 +763,19 @@ export const analyzeCommand = new Command('analyze')
     if (opts.output === 'json') {
       await runHeadless(opts);
       return;
+    }
+
+    // TUI mode: the interactive view doesn't emit debug, so when --debug is set
+    // run the headless scoring pass first purely to write analyze-debug.log
+    // (no stdout), then render the TUI as usual. Keeps `--debug` consistent
+    // with setup — you always get a debug log file, regardless of output mode.
+    if (opts.debug) {
+      try {
+        await runHeadless(opts, { debugFileOnly: true });
+        process.stderr.write(`[pelican] wrote analyze-debug.log\n`);
+      } catch (e) {
+        process.stderr.write(`[pelican] debug log generation failed: ${e}\n`);
+      }
     }
 
     await loadTheme();
