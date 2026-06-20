@@ -207,6 +207,9 @@ export interface IProjectConfig {
     /** Share (0..1) above which a test selector is treated as ubiquitous and
      * disqualified as a match/anchor. Default 0.1. */
     ubiquitousSelectorThreshold?: number;
+    /** Strength of route-traffic damping on transitive route-match signals
+     * (scaled by (1 - routeShare)^exponent). 0 disables. Default 1. */
+    routeTrafficDampingExponent?: number;
   };
   rerank?: {
     /** Enable Ollama LLM reranking. Default true. */

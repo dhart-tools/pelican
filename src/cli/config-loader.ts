@@ -70,6 +70,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     maxResults: 10,
     requireAnchor: true,
     ubiquitousSelectorThreshold: 0.1,
+    routeTrafficDampingExponent: 1,
   },
 };
 
