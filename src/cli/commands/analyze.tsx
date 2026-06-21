@@ -7,7 +7,7 @@ import { render } from 'ink';
 import pLimit from 'p-limit';
 import React, { useState, useEffect } from 'react';
 
-import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
+import { loadProjectConfig, toScoringConfig, getMergedAliases } from '@/cli/config-loader';
 import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
@@ -36,15 +36,8 @@ import { EConfidenceLevel } from '@/utils/enums';
 
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 
-/**
- * Registers all scorer instances that are enabled in config.
- *
- * @example
- *   const engine = new ScoringEngine(config, registry);
- *   registerScorers(engine, config.scoring.enabledScorers);
- *   // All enabled scorers now registered
- */
-function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void {
+/** Registers every scorer (all scorers are always on). */
+function registerScorers(engine: ScoringEngine): void {
   const allScorers = [
     new DirectImportScorer(),
     new RouteMatchScorer(),
@@ -62,12 +55,7 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new ActionTypeScorer(),
     new UsageSiteScorer(),
   ];
-
-  for (const scorer of allScorers) {
-    if (enabledScorers.includes(scorer.name)) {
-      engine.register(scorer);
-    }
-  }
+  for (const scorer of allScorers) engine.register(scorer);
 }
 
 function bandFor(score: number, thresholds: { high: number; min: number }): EConfidenceLevel {
@@ -201,11 +189,12 @@ async function loadOrBuildRegistry(
 
     const builder = new RegistryBuilder();
     const builtRegistry = await builder.buildFromDirectories({
-      sourceDirs: config.sourceDirs,
-      testPatterns: config.testPatterns,
-      excludePatterns: config.excludePatterns,
-      projectRoot: process.cwd(),
-      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      sourceDirs: config.source.dirs,
+      testPatterns: config.test.patterns,
+      excludePatterns: config.test.exclude,
+      sourceRoot: config.source.root,
+      testRoot: config.test.root ?? config.source.root,
+      pathAliases: getMergedAliases(config),
       debug,
     });
 
@@ -243,7 +232,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         // Apply CLI overrides
         if (options.minConfidence) {
-          config.scoring.minConfidence = parseFloat(options.minConfidence);
+          config.behaviour.minConfidence = parseFloat(options.minConfidence);
         }
 
         // Phase 2: Load/build registry
@@ -285,23 +274,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const reranker = new SemanticReranker({
           debug: options.debug,
-          ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
-          ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
-          ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
-          ...(config.rerank?.explanations !== undefined && {
-            explanations: config.rerank.explanations,
-          }),
-          ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
-          ...(config.rerank?.pelicanWeight !== undefined && {
-            pelicanWeight: config.rerank.pelicanWeight,
-          }),
-          ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
-            biEncoderPrefilter: false,
-          }),
-          ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
-          ...(config.rerank?.biEncoderTopK !== undefined && {
-            biEncoderTopK: config.rerank.biEncoderTopK,
-          }),
+          ...(options.biEncoder === false && { biEncoderPrefilter: false }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
           useCache: options.cache !== false,
@@ -344,22 +317,22 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const scoringConfig = toScoringConfig(config);
         const engine = new ScoringEngine(scoringConfig, registry);
-        registerScorers(engine, config.scoring.enabledScorers);
+        registerScorers(engine);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
         const maxResults = options.all
           ? Number.POSITIVE_INFINITY
-          : parseInt(options.maxResults) || config.scoring.maxResults || 10;
+          : parseInt(options.maxResults) || config.behaviour.maxResults || 10;
         const thresholds = {
-          high: config.scoring.highConfidence ?? 0.8,
-          min: config.scoring.minConfidence ?? 0.4,
+          high: config.behaviour.highConfidence ?? 0.8,
+          min: config.behaviour.minConfidence ?? 0.4,
         };
         // Score files sequentially. Structural scoring is sync/fast; reranking
         // is GPU-bound and Ollama serializes requests on single-GPU setups
         // anyway. Sequential processing keeps Ollama's KV prefix cache hot for
         // each source file's test batch — huge win over interleaved requests
         // that evict each other's cache.
-        const rerankThreshold = config.scoring.minConfidence;
+        const rerankThreshold = config.behaviour.minConfidence;
 
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           setState((s) => ({
@@ -367,7 +340,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             activeFiles: [...(s.activeFiles ?? []), changedFile],
           }));
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
-          const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+          const relevant = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
           const preRerankCount = relevant.length;
 
           const onFileProgress = (info: {
@@ -397,9 +370,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 rerankCandidates,
                 registry,
                 thresholds,
-                config.rerank?.explanations === true,
+                false,
                 onFileProgress,
-                config.scoring.minConfidence,
+                config.behaviour.minConfidence,
               );
             } catch (err) {
               rerankerUnavailable = true;
@@ -488,14 +461,16 @@ export async function runHeadless(
   if (debug) initAnalyzeDebugFile();
   const config = await loadProjectConfig(options.config);
   if (options.minConfidence) {
-    config.scoring.minConfidence = parseFloat(options.minConfidence);
+    config.behaviour.minConfidence = parseFloat(options.minConfidence);
   }
 
   if (debug) {
     debugLog(formatBuildLine());
-    debugLog(`config loaded: enabledScorers=${config.scoring.enabledScorers.join(',')}`);
-    debugLog(`pathAliases: ${JSON.stringify(config.analyzers.cypressExtractor.pathAliases ?? {})}`);
-    debugLog(`ubiquitousSelectorThreshold=${config.scoring.ubiquitousSelectorThreshold ?? 0.1}`);
+    debugLog(
+      `config: minConfidence=${config.behaviour.minConfidence} maxResults=${config.behaviour.maxResults}`,
+    );
+    debugLog(`pathAliases: ${JSON.stringify(getMergedAliases(config) ?? {})}`);
+    debugLog(`ubiquitousSelectorThreshold=${config.behaviour.ubiquitousSelectorThreshold ?? 0.1}`);
   }
 
   const registry = new Registry();
@@ -513,11 +488,12 @@ export async function runHeadless(
     }
     const builder = new RegistryBuilder();
     const builtRegistry = await builder.buildFromDirectories({
-      sourceDirs: config.sourceDirs,
-      testPatterns: config.testPatterns,
-      excludePatterns: config.excludePatterns,
-      projectRoot: process.cwd(),
-      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      sourceDirs: config.source.dirs,
+      testPatterns: config.test.patterns,
+      excludePatterns: config.test.exclude,
+      sourceRoot: config.source.root,
+      testRoot: config.test.root ?? config.source.root,
+      pathAliases: getMergedAliases(config),
       debug,
     });
     const dir = path.dirname(REGISTRY_CACHE_PATH);
@@ -548,12 +524,12 @@ export async function runHeadless(
 
   const scoringConfig = toScoringConfig(config);
   const engine = new ScoringEngine(scoringConfig, registry);
-  registerScorers(engine, config.scoring.enabledScorers);
+  registerScorers(engine);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
   const maxResults = options.all
     ? Number.POSITIVE_INFINITY
-    : parseInt(options.maxResults) || config.scoring.maxResults || 10;
+    : parseInt(options.maxResults) || config.behaviour.maxResults || 10;
 
   if (debug) {
     debugLog(
@@ -576,23 +552,7 @@ export async function runHeadless(
   // see Ink TUI in this mode.
   const reranker = new SemanticReranker({
     debug,
-    ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
-    ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
-    ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
-    ...(config.rerank?.explanations !== undefined && {
-      explanations: config.rerank.explanations,
-    }),
-    ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
-    ...(config.rerank?.pelicanWeight !== undefined && {
-      pelicanWeight: config.rerank.pelicanWeight,
-    }),
-    ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
-      biEncoderPrefilter: false,
-    }),
-    ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
-    ...(config.rerank?.biEncoderTopK !== undefined && {
-      biEncoderTopK: config.rerank.biEncoderTopK,
-    }),
+    ...(options.biEncoder === false && { biEncoderPrefilter: false }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
     useCache: options.cache !== false,
@@ -620,8 +580,8 @@ export async function runHeadless(
   }
 
   const thresholds = {
-    high: config.scoring.highConfidence ?? 0.8,
-    min: config.scoring.minConfidence ?? 0.4,
+    high: config.behaviour.highConfidence ?? 0.8,
+    min: config.behaviour.minConfidence ?? 0.4,
   };
 
   async function processFileHeadless(changedFile: string): Promise<IAnalyzeResult> {
@@ -643,8 +603,8 @@ export async function runHeadless(
       // Dump every candidate that clears minConfidence (i.e. every suggested
       // test) with its matched signals — this is what we read back to see which
       // scorer/selector anchored each result and why the count is what it is.
-      const kept = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
-      debugLog(`  ${kept.length} candidate(s) ≥ minConfidence ${config.scoring.minConfidence}:`);
+      const kept = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
+      debugLog(`  ${kept.length} candidate(s) ≥ minConfidence ${config.behaviour.minConfidence}:`);
       for (const r of kept) {
         debugLog(`  → ${r.testFile}  score=${r.score.toFixed(3)} (${r.confidence})`);
         for (const s of r.signals.filter((sg) => sg.matched)) {
@@ -653,8 +613,8 @@ export async function runHeadless(
       }
     }
 
-    const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
-    const rerankThreshold = config.scoring.minConfidence;
+    const relevant = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
+    const rerankThreshold = config.behaviour.minConfidence;
     const preRerankCount = relevant.length;
     let reranked: IAnalyzeResult['suggestedTests'];
     if (rerankerUnavailable) {
@@ -668,9 +628,9 @@ export async function runHeadless(
           rerankCandidates,
           registry,
           thresholds,
-          config.rerank?.explanations === true,
+          false,
           undefined,
-          config.scoring.minConfidence,
+          config.behaviour.minConfidence,
         );
       } catch (err) {
         rerankerUnavailable = true;

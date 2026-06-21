@@ -58,18 +58,10 @@ export class ScoringEngine {
         testFile: testFileEntry,
       };
 
-      // Collect signals from all enabled scorers
+      // Collect signals from every registered scorer (all scorers are always on).
       const signals: ISignal[] = [];
 
       for (const scorer of this.scorers.values()) {
-        if (!this.config.scoring.enabledScorers.includes(scorer.name)) continue;
-
-        // Apply config weight override
-        const weightOverride = this.config.scoring.scorerWeights?.[scorer.name];
-        if (weightOverride !== undefined) {
-          (scorer as unknown as { __effectiveWeight?: number }).__effectiveWeight = weightOverride;
-        }
-
         const scorerSignals = scorer.evaluate(changedFile, testFilePath, context);
         signals.push(...scorerSignals);
 
@@ -104,9 +96,7 @@ export class ScoringEngine {
       // (redux, describe-block) are suppressed here. This is the main precision
       // lever against hub-file floods; recall is preserved because every true
       // positive carries a narrow anchor.
-      const gatedSignals = requireAnchor
-        ? applyAnchorGate(signals, { changedIsHub })
-        : signals;
+      const gatedSignals = requireAnchor ? applyAnchorGate(signals, { changedIsHub }) : signals;
 
       // Apply ubiquity dampener
       const dampenedSignals = this.applyUbiquityDampener(changedFile, gatedSignals);

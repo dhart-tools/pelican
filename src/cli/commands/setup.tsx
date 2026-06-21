@@ -9,7 +9,7 @@ import { useInput } from 'ink';
 import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
-import { loadProjectConfig } from '@/cli/config-loader';
+import { loadProjectConfig, getMergedAliases } from '@/cli/config-loader';
 import { SETUP_MODELS } from '@/cli/setup-models';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
@@ -60,57 +60,46 @@ export async function detectProjectConfig(): Promise<{
   const steps: ISetupStep[] = [];
 
   const config: IProjectConfig = {
-    sourceDirs: ['src'],
-    testPatterns: [
-      '**/*.cy.ts',
-      '**/*.cy.tsx',
-      '**/*.test.ts',
-      '**/*.test.tsx',
-      '**/*.test.js',
-      '**/*.test.jsx',
-      '**/*.spec.ts',
-      '**/*.spec.tsx',
-      '**/*.spec.js',
-      '**/*.spec.jsx',
-      '**/*.e2e.ts',
-      '**/*.e2e.tsx',
-      '**/*.integration.ts',
-      '**/*.integration.tsx',
-      '**/*.int.ts',
-      '**/*.int.tsx',
-    ],
-    ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
-    analyzers: {
-      enabled: [
-        'source-extractor',
-        'cypress-extractor',
-        'import-graph-analyzer',
-        'route-analyzer',
-        'i18n-analyzer',
-      ],
-      sourceExtractor: { enabled: true, selectorStrategy: ['data-testid', 'data-cy'] },
-      cypressExtractor: { enabled: true },
-      reduxChain: { enabled: false, storeDirs: [] },
+    source: {
+      root: '.',
+      dirs: ['src'],
+      pathAliases: {},
+      selectorAttributes: ['data-testid', 'data-cy'],
+      imports: true,
+      routes: { enabled: true, routerFile: '' },
+      redux: { enabled: false, storeDirs: [] },
       i18n: { enabled: true, library: 'react-i18next', localesPath: '' },
-      routeAnalyzer: { enabled: true, routerFile: '' },
-      importGraph: { enabled: true },
     },
-    scoring: {
-      enabledScorers: [
-        'direct-import',
-        'selector-match',
-        'selector-id-match',
-        'filename-match',
-        'transitive-import',
-        'api-intercept',
-        'colocation',
-        'describe-block',
-        'translation-match',
-        'dependent-selector',
+    test: {
+      patterns: [
+        '**/*.cy.ts',
+        '**/*.cy.tsx',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.test.js',
+        '**/*.test.jsx',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        '**/*.spec.js',
+        '**/*.spec.jsx',
+        '**/*.e2e.ts',
+        '**/*.e2e.tsx',
+        '**/*.integration.ts',
+        '**/*.integration.tsx',
+        '**/*.int.ts',
+        '**/*.int.tsx',
       ],
-      ubiquityThreshold: 0.7,
+      pathAliases: { '@fixtures/': 'cypress/fixtures/' },
+      exclude: [],
+    },
+    behaviour: {
       minConfidence: 0.6,
       highConfidence: 0.8,
+      maxResults: 10,
+      requireAnchor: true,
+      ubiquityThreshold: 0.7,
+      ubiquitousSelectorThreshold: 0.1,
+      routeTrafficDampingExponent: 1,
     },
   };
 
@@ -124,22 +113,10 @@ export async function detectProjectConfig(): Promise<{
         detail: 'cypress-extractor',
         section: 'detected',
       });
-      if (!config.scoring.enabledScorers.includes('selector-match')) {
-        config.scoring.enabledScorers.push('selector-match');
-      }
     }
 
     if (pkg.dependencies?.['@reduxjs/toolkit'] || pkg.dependencies?.redux) {
-      config.analyzers.reduxChain.enabled = true;
-      if (!config.analyzers.enabled.includes('redux-chain-analyzer')) {
-        config.analyzers.enabled.push('redux-chain-analyzer');
-      }
-      if (!config.scoring.enabledScorers.includes('redux-chain')) {
-        config.scoring.enabledScorers.push('redux-chain');
-      }
-      if (!config.scoring.enabledScorers.includes('redux-consumer')) {
-        config.scoring.enabledScorers.push('redux-consumer');
-      }
+      config.source.redux.enabled = true;
 
       const possibleDirs = ['src/store', 'src/redux', 'src/state'];
       const existingDirs: string[] = [];
@@ -151,7 +128,7 @@ export async function detectProjectConfig(): Promise<{
           // dir not found
         }
       }
-      config.analyzers.reduxChain.storeDirs = existingDirs;
+      config.source.redux.storeDirs = existingDirs;
       steps.push({
         name: 'redux toolkit',
         status: 'success',
@@ -161,19 +138,13 @@ export async function detectProjectConfig(): Promise<{
     }
 
     if (pkg.dependencies?.['react-router-dom'] || pkg.dependencies?.['react-router']) {
-      config.analyzers.routeAnalyzer.enabled = true;
-      if (!config.analyzers.enabled.includes('route-analyzer')) {
-        config.analyzers.enabled.push('route-analyzer');
-      }
-      if (!config.scoring.enabledScorers.includes('route-match')) {
-        config.scoring.enabledScorers.push('route-match');
-      }
+      config.source.routes.enabled = true;
 
       const possibleFiles = ['src/App.tsx', 'src/router.tsx', 'src/routes.tsx', 'src/Router.tsx'];
       for (const file of possibleFiles) {
         try {
           await fs.access(file);
-          config.analyzers.routeAnalyzer.routerFile = file;
+          config.source.routes.routerFile = file;
           break;
         } catch {
           // file not found
@@ -182,14 +153,14 @@ export async function detectProjectConfig(): Promise<{
       steps.push({
         name: 'react router',
         status: 'success',
-        detail: config.analyzers.routeAnalyzer.routerFile || 'router file not found',
+        detail: config.source.routes.routerFile || 'router file not found',
         section: 'detected',
       });
     }
 
     if (pkg.dependencies?.['react-i18next'] || pkg.dependencies?.['i18next']) {
-      config.analyzers.i18n.enabled = true;
-      config.analyzers.i18n.library = 'react-i18next';
+      config.source.i18n.enabled = true;
+      config.source.i18n.library = 'react-i18next';
 
       const possiblePaths = [
         'public/locales/en/translation.json',
@@ -199,7 +170,7 @@ export async function detectProjectConfig(): Promise<{
       for (const p of possiblePaths) {
         try {
           await fs.access(p);
-          config.analyzers.i18n.localesPath = p.replace('/en/', '/{locale}/');
+          config.source.i18n.localesPath = p.replace('/en/', '/{locale}/');
           break;
         } catch {
           // path not found
@@ -208,7 +179,7 @@ export async function detectProjectConfig(): Promise<{
       steps.push({
         name: 'react-i18next',
         status: 'success',
-        detail: config.analyzers.i18n.localesPath || 'locales path not found',
+        detail: config.source.i18n.localesPath || 'locales path not found',
         section: 'detected',
       });
     }
@@ -394,16 +365,14 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         //     them at runtime anyway, but writing them lets users see/edit).
         //   - rerank.explanations: true (sane default; persistModelChoice
         //     later spreads this through, so model-pull doesn't drop it).
+        const mergedSource =
+          (mergedConfig.source as { dirs?: string[]; pathAliases?: Record<string, string> }) ?? {};
         const detectedAliases = loadTsConfigAliases(
           process.cwd(),
-          (mergedConfig.sourceDirs as string[] | undefined) ?? config.sourceDirs,
+          mergedSource.dirs ?? config.source.dirs,
         );
-        if (mergedConfig.pathAliases == null && Object.keys(detectedAliases.aliases).length > 0) {
-          mergedConfig.pathAliases = detectedAliases.aliases;
-        }
-        const existingRerank = (mergedConfig.rerank as Record<string, unknown> | undefined) ?? {};
-        if (!('explanations' in existingRerank)) {
-          mergedConfig.rerank = { ...existingRerank, explanations: true };
+        if (mergedSource.pathAliases == null && Object.keys(detectedAliases.aliases).length > 0) {
+          mergedConfig.source = { ...mergedSource, pathAliases: detectedAliases.aliases };
         }
 
         await fs.writeFile(configPath, JSON.stringify(mergedConfig, null, 2));
@@ -443,11 +412,12 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         const effectiveConfig = await loadProjectConfig(configPath);
         const builder = new RegistryBuilder();
         const registry = await builder.buildFromDirectories({
-          sourceDirs: effectiveConfig.sourceDirs,
-          testPatterns: effectiveConfig.testPatterns,
-          excludePatterns: effectiveConfig.excludePatterns,
-          projectRoot: process.cwd(),
-          pathAliases: effectiveConfig.analyzers.cypressExtractor.pathAliases,
+          sourceDirs: effectiveConfig.source.dirs,
+          testPatterns: effectiveConfig.test.patterns,
+          excludePatterns: effectiveConfig.test.exclude,
+          sourceRoot: effectiveConfig.source.root,
+          testRoot: effectiveConfig.test.root ?? effectiveConfig.source.root,
+          pathAliases: getMergedAliases(effectiveConfig),
           debug: options.debug,
         });
         const registryDir = path.dirname(REGISTRY_CACHE_PATH);

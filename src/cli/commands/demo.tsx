@@ -453,7 +453,7 @@ function DemoApp() {
         new ActionTypeScorer(),
         new UsageSiteScorer(),
       ]) {
-        if (config.scoring.enabledScorers.includes(scorer.name)) engine.register(scorer);
+        engine.register(scorer);
       }
       const testFiles = registry.getFilesByType('test').map((f) => f.path);
       const scoreResults = engine
@@ -524,10 +524,11 @@ function DemoApp() {
       const start = Date.now();
       const builder = new RegistryBuilder();
       const iReg = await builder.buildFromDirectories({
-        sourceDirs: config.sourceDirs,
-        testPatterns: config.testPatterns,
-        excludePatterns: config.excludePatterns,
-        projectRoot: process.cwd(),
+        sourceDirs: config.source.dirs,
+        testPatterns: config.test.patterns,
+        excludePatterns: config.test.exclude,
+        sourceRoot: config.source.root,
+        testRoot: config.test.root ?? config.source.root,
       });
       clearInterval(timer);
       const registry = iReg as unknown as Registry;

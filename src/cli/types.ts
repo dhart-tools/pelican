@@ -167,103 +167,59 @@ export interface ISetupState {
 // ─── Config ──────────────────────────────────────────────────────
 
 /**
- * Full project config — superset of what lives in .pelicanrc.json.
- * This is NOT the same as ISuggestorConfig from @/types/config
- * which only contains the `scoring` block.
- *
- * ISuggestorConfig is embedded within IProjectConfig.scoring.
+ * Full project config — exactly what lives in .pelicanrc.json, organized into
+ * three blocks: SOURCE (how app code is found & read), TEST (how specs are found
+ * & read), and BEHAVIOUR (how pelican scores & decides what to return).
  */
 export interface IProjectConfig {
-  sourceDirs: string[];
-  testPatterns: string[];
-  ignorePatterns: string[];
-  excludePatterns?: string[];
-  analyzers: {
-    enabled: string[];
-    sourceExtractor: { enabled: boolean; selectorStrategy: string[] };
-    cypressExtractor: {
-      enabled: boolean;
-      /**
-       * Path alias mappings for resolving test imports (e.g. JSON fixture files).
-       * Keys are the alias prefix, values are the directory they map to (relative to project root).
-       * Example: { "@fixtures/": "cypress/fixtures/", "@support/": "cypress/support/" }
-       */
-      pathAliases?: Record<string, string>;
-    };
-    reduxChain: { enabled: boolean; storeDirs: string[] };
+  /** How pelican finds your application code and what it extracts from it. */
+  source: {
+    /** Absolute or relative path to the source repository root. REQUIRED.
+     * Relative paths are resolved against cwd at load time. */
+    root: string;
+    /** Directories to scan for source files, relative to `root`. */
+    dirs: string[];
+    /** Alias map for resolving source→source imports (e.g. `@dm/` → `src/dm/`). */
+    pathAliases?: Record<string, string>;
+    /** Attributes treated as selectors when extracting from source. */
+    selectorAttributes: string[];
+    /** Build the import graph. */
+    imports: boolean;
+    /** Extract React Router routes. `routerFile` "" = auto-detect. */
+    routes: { enabled: boolean; routerFile?: string };
+    /** Extract Redux slices/actions/selectors. */
+    redux: { enabled: boolean; storeDirs: string[] };
+    /** Extract i18n translation keys. */
     i18n: { enabled: boolean; library: string; localesPath: string };
-    routeAnalyzer: { enabled: boolean; routerFile: string };
-    importGraph: { enabled: boolean };
   };
-  scoring: {
-    enabledScorers: string[];
-    ubiquityThreshold: number;
+  /** How pelican finds your tests and what it extracts from them. */
+  test: {
+    /** Absolute or relative path to the test repository root. Optional —
+     * defaults to `source.root` (single-repo). Relative paths resolved at load. */
+    root?: string;
+    /** Glob patterns that match your spec files, relative to `root`. */
+    patterns: string[];
+    /** Alias map for resolving spec→fixture/support imports (e.g. `@fixtures/`). */
+    pathAliases?: Record<string, string>;
+    /** Specs/suites pelican must never suggest (globs or basenames). */
+    exclude: string[];
+  };
+  /** How pelican scores candidates and decides what to return. All scorers are
+   * always on; tune only the thresholds and result cap here. */
+  behaviour: {
     minConfidence: number;
     highConfidence: number;
-    scorerWeights?: Record<string, number>;
-    maxResults?: number;
+    maxResults: number;
     /** Drop candidates with no file-identity anchor signal. Default true. */
-    requireAnchor?: boolean;
+    requireAnchor: boolean;
+    /** Component-fanout dampener threshold. Default 0.7. */
+    ubiquityThreshold: number;
     /** Share (0..1) above which a test selector is treated as ubiquitous and
      * disqualified as a match/anchor. Default 0.1. */
-    ubiquitousSelectorThreshold?: number;
+    ubiquitousSelectorThreshold: number;
     /** Strength of route-traffic damping on transitive route-match signals
      * (scaled by (1 - routeShare)^exponent). 0 disables. Default 1. */
-    routeTrafficDampingExponent?: number;
-  };
-  rerank?: {
-    /** Enable Ollama LLM reranking. Default true. */
-    enabled: boolean;
-    /** Ollama model to use. Default: qwen2.5-coder:7b */
-    ollamaModel: string;
-    /** Ollama host. Default: http://localhost:11434 */
-    ollamaHost: string;
-    /**
-     * Embedding-based prefilter (cosine cut before LLM). Default true.
-     * Disable when filename/identifier overlap matters more than
-     * semantic similarity (e.g. large Cypress repos with strong naming
-     * conventions); pelican's structural rank is then the prefilter.
-     */
-    biEncoder?: boolean;
-    /** Embedding model name when biEncoder is on. */
-    biEncoderModel?: string;
-    /** Cap on candidates surviving the bi-encoder. */
-    biEncoderTopK?: number;
-    fileContent?: {
-      /**
-       * Number of equal-width regions to sample from the file. Default: 8.
-       * Higher = more coverage, larger prompt.
-       */
-      segments?: number;
-      /**
-       * Lines captured per region. Default: 30.
-       * Higher = more context per region, larger prompt.
-       */
-      linesPerWindow?: number;
-      /**
-       * JS/TS keyword tokens stripped from each line before sending to the LLM.
-       * Reduces boilerplate noise while preserving identifiers and structure.
-       * Set to [] to disable filtering entirely.
-       * Defaults to a broad set of JS/TS syntactic and modifier keywords.
-       */
-      stripKeywords?: string[];
-    };
-    /**
-     * Ask the LLM for a short explanation per test. Default: false.
-     * When false, results show files only, reranker runs much faster since
-     * decode shrinks from ~25 tokens to ~3 per call.
-     */
-    explanations?: boolean;
-    /**
-     * Prompt template version. Default 'v2' — neutral SOURCE+TEST prompt with
-     * late-fusion blend. Set to 'v1' to fall back to the legacy R/A rubric.
-     */
-    promptVersion?: 'v1' | 'v2';
-    /**
-     * Weight on pelican structural prior in the v2 late-fusion blend
-     * (`combined = w·pelican + (1-w)·(confidence/5)`). Default 0.4.
-     */
-    pelicanWeight?: number;
+    routeTrafficDampingExponent: number;
   };
 }
 

@@ -51,14 +51,22 @@ export interface RegistryBuilderConfig {
   excludePatterns?: string[];
 
   /**
-   * Absolute path to the project root.
-   * Default: process.cwd()
+   * Absolute path to the SOURCE repository root. Source files (and the import
+   * graph) are scanned and resolved relative to this. Required.
    */
-  projectRoot?: string;
+  sourceRoot: string;
 
   /**
-   * Path alias mappings for resolving imports in test files.
-   * Keys are the alias prefix (e.g. "@fixtures/"), values are directories relative to projectRoot.
+   * Absolute path to the TEST repository root. Cypress specs are scanned here;
+   * jest-style tests colocated in the source repo are also picked up. When the
+   * two repos are the same, pass the same value as sourceRoot. Required.
+   */
+  testRoot: string;
+
+  /**
+   * Path alias mappings for resolving imports. Keys are the alias prefix
+   * (e.g. "@dm/", "@fixtures/"), values are ABSOLUTE target directories
+   * (see config-loader.getMergedAliases).
    */
   pathAliases?: Record<string, string>;
 
@@ -70,7 +78,10 @@ export interface RegistryBuilderConfig {
 
 export class RegistryBuilder {
   private registry: IRegistry;
+  /** Source repo root. Doubles as the import-resolution base (imports point at
+   * source) and the `projectRoot` the resolver helpers reference. */
   private projectRoot: string;
+  private testRoot: string;
   private pathAliases: Record<string, string> = {};
   private baseUrlRoots: string[] = [];
   private debug = false;
@@ -78,10 +89,12 @@ export class RegistryBuilder {
   constructor() {
     this.registry = createRegistry();
     this.projectRoot = process.cwd();
+    this.testRoot = process.cwd();
   }
 
   async buildFromDirectories(config: RegistryBuilderConfig): Promise<IRegistry> {
-    this.projectRoot = config.projectRoot ?? process.cwd();
+    this.projectRoot = config.sourceRoot;
+    this.testRoot = config.testRoot;
     this.debug = config.debug ?? false;
 
     // Auto-detect aliases + baseUrl from tsconfig.json in each source tree.
@@ -224,7 +237,7 @@ export class RegistryBuilder {
       }
     }
 
-    // --- Process test files ---
+    // --- Process test files (from both repos; each tagged with its root) ---
     const discoveredTestFiles = await this.findTestFiles(
       config.testPatterns,
       ignoreDirs,
@@ -235,7 +248,9 @@ export class RegistryBuilder {
     // InterOps and dmSanity). Centralized in `suggestion-exclusions.ts` — add
     // new rules there, not here. Excluded here (registry build) rather than at
     // scoring time so these specs never enter the candidate pool at all.
-    const { kept: testFiles, excluded } = partitionSuggestableTests(discoveredTestFiles);
+    const { excluded } = partitionSuggestableTests(discoveredTestFiles.map((t) => t.abs));
+    const excludedSet = new Set(excluded.map((e) => e.path));
+    const testFiles = discoveredTestFiles.filter((t) => !excludedSet.has(t.abs));
     if (this.debug) {
       this.log(
         `Found ${discoveredTestFiles.length} test files; ` +
@@ -246,7 +261,7 @@ export class RegistryBuilder {
       }
     }
 
-    for (const filePath of testFiles) {
+    for (const { abs: filePath, repoRoot } of testFiles) {
       try {
         const sourceCode = await fs.readFile(filePath, 'utf-8');
 
@@ -262,7 +277,7 @@ export class RegistryBuilder {
           resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
           resolveTsConstImport: (importPath) => this.resolveTsConstImport(importPath, filePath),
         });
-        const entry = this.convertCypressExtractionToFileEntry(result, filePath);
+        const entry = this.convertCypressExtractionToFileEntry(result, filePath, repoRoot);
         fileEntries.push(entry);
         if (this.debug) {
           this.logExtraction('test', filePath, {
@@ -541,14 +556,14 @@ export class RegistryBuilder {
     const patterns = sourceDirs.map((dir) => `${dir}/**/*${extPattern}`);
     const ignorePatterns = [...ignoreDirs.map((d) => `**/${d}/**`), ...excludePatterns];
 
-    const files = await glob(patterns, {
+    // Absolute paths: reads and relative-import resolution then work regardless
+    // of process.cwd() (essential when source/test live in different repos).
+    return glob(patterns, {
       cwd: this.projectRoot,
       ignore: ignorePatterns,
-      absolute: false, // return relative paths (we normalize them ourselves)
-      nodir: true, // onlyFiles equivalent in glob
+      absolute: true,
+      nodir: true,
     });
-
-    return files.map((f) => normalizePath(f, this.projectRoot));
   }
 
   /**
@@ -564,25 +579,36 @@ export class RegistryBuilder {
     testPatterns: string[],
     ignoreDirs: string[],
     excludePatterns: string[] = [],
-  ): Promise<string[]> {
+  ): Promise<Array<{ abs: string; repoRoot: string }>> {
     const ignorePatterns = [...ignoreDirs.map((d) => `**/${d}/**`), ...excludePatterns];
 
     // Fallback: if user didn't configure any testPatterns, sweep common layouts
-    // (`**/*.cy.ts`, `**/*.spec.ts`, `**/*.test.ts`, `**/*.e2e.ts`, plus .tsx/.js/.jsx variants)
     // so pelican isn't silently blind on default installs.
     const effectivePatterns =
       testPatterns.length > 0
         ? testPatterns
         : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
 
-    const files = await glob(effectivePatterns, {
-      cwd: this.projectRoot,
-      ignore: ignorePatterns,
-      absolute: false,
-      nodir: true,
-    });
-
-    return files.map((f) => normalizePath(f, this.projectRoot));
+    // Tests can live in BOTH repos: jest-style specs colocated in the source
+    // repo, Cypress specs in the test repo. Scan both roots and tag each file
+    // with the root it came from (deduping when the two roots are the same).
+    const roots = [...new Set([this.projectRoot, this.testRoot])];
+    const seen = new Set<string>();
+    const out: Array<{ abs: string; repoRoot: string }> = [];
+    for (const repoRoot of roots) {
+      const files = await glob(effectivePatterns, {
+        cwd: repoRoot,
+        ignore: ignorePatterns,
+        absolute: true,
+        nodir: true,
+      });
+      for (const abs of files) {
+        if (seen.has(abs)) continue;
+        seen.add(abs);
+        out.push({ abs, repoRoot });
+      }
+    }
+    return out;
   }
 
   /**
@@ -873,6 +899,7 @@ export class RegistryBuilder {
       name: path.basename(filePath),
       type: 'source',
       path: normalizePath(filePath, this.projectRoot),
+      repoRoot: this.projectRoot,
       exports: result.exports ?? [],
       imports: this.resolveImports(result.imports ?? [], filePath),
       classes: result.classes ?? [],
@@ -893,11 +920,15 @@ export class RegistryBuilder {
   private convertCypressExtractionToFileEntry(
     result: ICypressExtractionResult,
     filePath: string,
+    repoRoot: string,
   ): IFileEntry {
     return {
       name: path.basename(filePath),
       type: 'test',
-      path: normalizePath(filePath, this.projectRoot),
+      // A spec's registry key is relative to ITS OWN repo root, so cross-repo
+      // specs don't collapse into "../.." paths.
+      path: normalizePath(filePath, repoRoot),
+      repoRoot,
       exports: [],
       // Cypress spec files import page objects, helpers, fixtures, and custom command modules.
       // These imports are needed so the import graph knows what shared helpers a test depends on.

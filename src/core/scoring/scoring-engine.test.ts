@@ -28,7 +28,6 @@ describe('ScoringEngine', () => {
   beforeEach(() => {
     mockConfig = {
       scoring: {
-        enabledScorers: ['direct-import'],
         ubiquityThreshold: 0.7,
         minConfidence: 0.4,
         highConfidence: 0.8,
@@ -155,7 +154,6 @@ describe('ScoringEngine', () => {
       return undefined;
     });
 
-    mockConfig.scoring.enabledScorers = ['redux-chain'];
     engine.register(makeFakeScorer('redux-chain', 0.75));
 
     const results = engine.evaluateTests(changedFile, [testFile]);
@@ -179,7 +177,6 @@ describe('ScoringEngine', () => {
       return undefined;
     });
 
-    mockConfig.scoring.enabledScorers = ['redux-chain', 'filename-match'];
     engine.register(makeFakeScorer('redux-chain', 0.75));
     engine.register(makeFakeScorer('filename-match', 0.82));
 
@@ -201,15 +198,14 @@ describe('ScoringEngine', () => {
       return undefined;
     });
 
-    mockConfig.scoring.enabledScorers = ['redux-chain'];
     engine.register(makeFakeScorer('redux-chain', 0.75));
 
     const results = engine.evaluateTests(changedFile, [testFile]);
     expect(results[0].score).toBeCloseTo(0.75);
   });
 
-  test('evaluateTests(): should only use enabled scorers from config', () => {
-    mockConfig.scoring.enabledScorers = []; // Disable all
+  test('evaluateTests(): runs only registered scorers (none → no signals)', () => {
+    engine.unregister('direct-import'); // beforeEach registered it; remove → nothing runs
 
     const changedFile = 'src/Button.tsx';
     const testFile = 'src/__tests__/Button.test.tsx';
