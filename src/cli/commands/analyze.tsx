@@ -707,8 +707,13 @@ export const analyzeCommand = new Command('analyze')
   .option('-t, --target <ref>', 'Target git reference (default: HEAD)')
   .option('-f, --files <paths...>', 'Space- or comma-separated list of changed files')
   .option('-o, --output <format>', 'Output format: tui, json, list', 'tui')
-  .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
-  .option('--max-results <number>', 'Maximum number of results', '10')
+  // No CLI defaults here on purpose: a hardcoded default makes commander
+  // always populate the option, which then clobbers the value from
+  // .pelicanrc.json on every run. Leaving them unset means the flag overrides
+  // config ONLY when the user actually passes it; otherwise config wins
+  // (falling back to DEFAULT_CONFIG: minConfidence 0.4, maxResults 10).
+  .option('--min-confidence <number>', 'Minimum confidence threshold (default: from config)')
+  .option('--max-results <number>', 'Maximum number of results (default: from config)')
   .option('--all', 'Show all suggestions (overrides --max-results)')
   .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
