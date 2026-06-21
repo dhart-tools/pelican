@@ -1,7 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-import { ISuggestorConfig } from '@/types/config';
+import { ISuggestorConfig, ITemporalConfig } from '@/types/config';
 
 import { IProjectConfig } from './types';
 
@@ -54,6 +54,12 @@ const DEFAULT_CONFIG: IProjectConfig = {
     ubiquityThreshold: 0.7,
     ubiquitousSelectorThreshold: 0.1,
     routeTrafficDampingExponent: 1,
+    temporal: {
+      creationWindowSoftDays: 14,
+      creationWindowHardDays: 28,
+      updateWindowDays: 14,
+      maxWeight: 0.45,
+    },
   },
 };
 
@@ -72,7 +78,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
 interface IUserConfig {
   source?: DeepPartial<IProjectConfig['source']>;
   test?: DeepPartial<IProjectConfig['test']>;
-  behaviour?: Partial<IProjectConfig['behaviour']>;
+  behaviour?: DeepPartial<IProjectConfig['behaviour']>;
 }
 
 type DeepPartial<T> = {
@@ -191,6 +197,7 @@ export function toScoringConfig(config: IProjectConfig): ISuggestorConfig {
       requireAnchor: config.behaviour.requireAnchor,
       ubiquitousSelectorThreshold: config.behaviour.ubiquitousSelectorThreshold,
       routeTrafficDampingExponent: config.behaviour.routeTrafficDampingExponent,
+      temporal: config.behaviour.temporal,
     },
   };
 }
@@ -211,6 +218,13 @@ function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfi
     behaviour: {
       ...defaults.behaviour,
       ...user.behaviour,
+      // Deep-merge temporal so a user can override one knob without dropping
+      // the rest of the defaults. DEFAULT_CONFIG always supplies a full block,
+      // so the spread is complete at runtime.
+      temporal: {
+        ...defaults.behaviour.temporal,
+        ...user.behaviour?.temporal,
+      } as ITemporalConfig,
     },
   };
 }

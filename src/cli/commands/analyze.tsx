@@ -13,9 +13,10 @@ import {
   getMergedAliases,
   getIgnoreDirs,
 } from '@/cli/config-loader';
-import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
+import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult, IProjectConfig } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
+import { GitHistoryProvider } from '@/core/git/git-history-provider';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { getChangedFiles } from '@/core/rerank/diff-extractor';
@@ -32,14 +33,65 @@ import { ReduxConsumerScorer } from '@/core/scoring/scorers/redux-consumer-score
 import { RouteMatchScorer } from '@/core/scoring/scorers/route-match-scorer';
 import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-scorer';
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
+import { TemporalCoherenceScorer } from '@/core/scoring/scorers/temporal-coherence-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
+import { IRepoGitHistory } from '@/types/git';
 import { formatBuildLine } from '@/utils/build-info';
 import { EConfidenceLevel } from '@/utils/enums';
 
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
+
+/**
+ * Mines git history for the source repo and (if separate) the test repo, keyed
+ * by absolute repo root for the temporal-coherence scorer. Always resolves to a
+ * map (possibly with unavailable entries) — never throws — so scoring proceeds
+ * regardless. Emits rich `--debug` lines: per repo availability, file counts,
+ * shallow/no-git reasons, and a sample of mined timestamps.
+ */
+async function mineGitHistories(
+  config: IProjectConfig,
+  debug: boolean,
+): Promise<Map<string, IRepoGitHistory>> {
+  const sourceRoot = config.source.root;
+  const testRoot = config.test.root ?? config.source.root;
+  const roots = [...new Set([sourceRoot, testRoot])];
+
+  const provider = new GitHistoryProvider(undefined, debug ? (m) => debugLog(m) : undefined);
+  const out = new Map<string, IRepoGitHistory>();
+
+  if (debug)
+    debugLog(`temporal: mining git history for ${roots.length} repo(s): ${roots.join(', ')}`);
+
+  for (const root of roots) {
+    const started = Date.now();
+    const history = await provider.getHistory(root);
+    out.set(history.repoRoot, history);
+
+    if (!debug) continue;
+    const ms = Date.now() - started;
+    const label = root === sourceRoot ? 'source' : 'test';
+    if (!history.available) {
+      debugLog(`temporal: [${label}] ${history.repoRoot} → UNAVAILABLE (no signal) in ${ms}ms`);
+      continue;
+    }
+    debugLog(`temporal: [${label}] ${history.repoRoot} → ${history.files.size} files in ${ms}ms`);
+    // Sample a few entries so the timestamps can be eyeballed against reality.
+    let shown = 0;
+    for (const [p, h] of history.files) {
+      const created = new Date(h.createdAt * 1000).toISOString().slice(0, 10);
+      const updated = new Date(h.updatedAt * 1000).toISOString().slice(0, 10);
+      debugLog(
+        `temporal:   ${p} — created ${created}, updated ${updated}, ${h.commitTimes.length} commit(s)`,
+      );
+      if (++shown >= 5) break;
+    }
+  }
+
+  return out;
+}
 
 /** Registers every scorer (all scorers are always on). */
 function registerScorers(engine: ScoringEngine): void {
@@ -59,6 +111,7 @@ function registerScorers(engine: ScoringEngine): void {
     new DependentSelectorScorer(),
     new ActionTypeScorer(),
     new UsageSiteScorer(),
+    new TemporalCoherenceScorer(),
   ];
   for (const scorer of allScorers) engine.register(scorer);
 }
@@ -321,8 +374,12 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // Phase 5: Score
         setState((s) => ({ ...s, phase: 'scoring' }));
 
+        // Mine without debug spam — the TUI path has no debug file sink, so
+        // logging would corrupt the rendered frames. Read temporal debug from
+        // a headless `--debug`/`--ci` run instead.
+        const gitHistories = await mineGitHistories(config, false);
         const scoringConfig = toScoringConfig(config);
-        const engine = new ScoringEngine(scoringConfig, registry);
+        const engine = new ScoringEngine(scoringConfig, registry, gitHistories);
         registerScorers(engine);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
@@ -529,8 +586,9 @@ export async function runHeadless(
     }
   }
 
+  const gitHistories = await mineGitHistories(config, debug);
   const scoringConfig = toScoringConfig(config);
-  const engine = new ScoringEngine(scoringConfig, registry);
+  const engine = new ScoringEngine(scoringConfig, registry, gitHistories);
   registerScorers(engine);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);

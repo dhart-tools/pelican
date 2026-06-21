@@ -1,5 +1,6 @@
 import { ISignal } from '@/types/analyzers';
 import { ISuggestorConfig } from '@/types/config';
+import { IRepoGitHistory } from '@/types/git';
 import { IRegistry, IFileEntry } from '@/types/registry';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -20,6 +21,10 @@ export interface IScorerContext {
   config: ISuggestorConfig;
   changedFile: IFileEntry;
   testFile: IFileEntry;
+  /** Per-repo git history, keyed by absolute repo root (path.resolve'd). Mined
+   * once and shared across all pairs. Absent when git history wasn't gathered
+   * (e.g. cache-only runs) — temporal scorer no-ops, keeping it recall-safe. */
+  gitHistories?: Map<string, IRepoGitHistory>;
 }
 
 export interface IScoreResult {

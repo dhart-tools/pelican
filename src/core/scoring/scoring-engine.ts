@@ -6,6 +6,7 @@ import {
   IRegistry,
   ISuggestorConfig,
 } from '@/types';
+import { IRepoGitHistory } from '@/types/git';
 import { EConfidenceLevel } from '@/utils/enums';
 
 import { applyAnchorGate } from './anchor-gate';
@@ -15,10 +16,16 @@ export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
   private config: ISuggestorConfig;
   private registry: IRegistry;
+  private gitHistories: Map<string, IRepoGitHistory>;
 
-  constructor(config: ISuggestorConfig, registry: IRegistry) {
+  constructor(
+    config: ISuggestorConfig,
+    registry: IRegistry,
+    gitHistories: Map<string, IRepoGitHistory> = new Map(),
+  ) {
     this.config = config;
     this.registry = registry;
+    this.gitHistories = gitHistories;
   }
 
   register(scorer: IScorer): void {
@@ -56,6 +63,7 @@ export class ScoringEngine {
         config: this.config,
         changedFile: changedFileEntry,
         testFile: testFileEntry,
+        gitHistories: this.gitHistories,
       };
 
       // Collect signals from every registered scorer (all scorers are always on).
@@ -80,7 +88,12 @@ export class ScoringEngine {
       // share a noun with the spec). Keep the signal lit only when some
       // structural scorer (import, route, redux, selector, etc.) also
       // backs the pair.
-      const hasStructuralMatch = signals.some((s) => s.matched && s.type !== 'describe-block');
+      // Temporal coherence is a corroborator, not structural evidence, so it
+      // does not by itself rescue a describe-only match here (the anchor gate
+      // would suppress such a pair anyway — this just keeps the intent clear).
+      const hasStructuralMatch = signals.some(
+        (s) => s.matched && s.type !== 'describe-block' && s.type !== 'temporal-coherence',
+      );
       if (!hasStructuralMatch) {
         for (const s of signals) {
           if (s.matched && s.type === 'describe-block') {
@@ -230,6 +243,9 @@ export class ScoringEngine {
 
       case 'describe-block':
         return "This test's describe/it blocks reference the changed component by name";
+
+      case 'temporal-coherence':
+        return 'This test was created/changed alongside the changed file in git history';
 
       default:
         return reason || 'This test is connected to the changed file';

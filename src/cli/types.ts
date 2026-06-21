@@ -1,3 +1,4 @@
+import { ITemporalConfig } from '@/types/config';
 import { IScoreResult } from '@/types/scorers';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -224,6 +225,10 @@ export interface IProjectConfig {
     /** Strength of route-traffic damping on transitive route-match signals
      * (scaled by (1 - routeShare)^exponent). 0 disables. Default 1. */
     routeTrafficDampingExponent: number;
+    /** Temporal-coherence scorer tunables (git creation/update timing).
+     * Populated from defaults by the config loader; the scorer also falls back
+     * to built-in defaults if absent. */
+    temporal?: ITemporalConfig;
   };
 }
 

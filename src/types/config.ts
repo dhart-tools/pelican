@@ -1,3 +1,23 @@
+/**
+ * Tunables for the temporal-coherence scorer. All knobs live here so behaviour
+ * is data-driven, not hardcoded in the scorer.
+ */
+export interface ITemporalConfig {
+  /** Creation gap (days) within which two files are treated as fully co-created.
+   * Full creation weight inside this window. Default 14. */
+  creationWindowSoftDays: number;
+  /** Creation gap (days) at which the creation signal decays to zero on the
+   * "test created after source" side; the "before" side is tightened to half.
+   * Default 28. */
+  creationWindowHardDays: number;
+  /** Bucket size (days) for update-coupling: commits landing in the same bucket
+   * count as a co-update. Default 14. */
+  updateWindowDays: number;
+  /** Ceiling on the temporal signal weight. It corroborates — it must never
+   * dominate a real anchor. Default 0.45. */
+  maxWeight: number;
+}
+
 export interface ISuggestorConfig {
   scoring: {
     ubiquityThreshold: number; // default 0.7
@@ -13,5 +33,7 @@ export interface ISuggestorConfig {
     // Direct route matches (the route's page IS the changed file) are never
     // damped. Default 1.
     routeTrafficDampingExponent?: number;
+    // Temporal-coherence scorer tunables (git creation/update timing).
+    temporal?: ITemporalConfig;
   };
 }
