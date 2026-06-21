@@ -53,6 +53,9 @@ export interface IAnchorGateOptions {
 /** Does this matched signal qualify as an anchor under the given options? */
 function isAnchorSignal(signal: ISignal, options: IAnchorGateOptions): boolean {
   if (!signal.matched) return false;
+  // A scorer can opt a specific match out of anchoring (e.g. filename-match on
+  // ambiguous, corpus-ubiquitous tokens) even when its type is normally narrow.
+  if (signal.anchorEligible === false) return false;
   const narrow = options.narrowAnchorTypes ?? NARROW_ANCHOR_TYPES;
   const medium = options.mediumAnchorTypes ?? MEDIUM_ANCHOR_TYPES;
   if (narrow.has(signal.type)) return true;

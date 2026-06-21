@@ -40,5 +40,11 @@ export interface ISuggestorConfig {
     routeTrafficDampingExponent?: number;
     // Temporal-coherence scorer tunables (git creation/update timing).
     temporal?: ITemporalConfig;
+    // A filename token appearing in more than this share (0..1) of files is
+    // "ambiguous" (corpus-ubiquitous, e.g. `device`/`list` in a device app). A
+    // filename match resting ONLY on ambiguous tokens stops being a standalone
+    // anchor — it needs a real co-signal (route/selector/import) to survive.
+    // Distinctive-token matches (e.g. `provisioning`) still anchor. Default 0.1.
+    filenameAmbiguityShare?: number;
   };
 }

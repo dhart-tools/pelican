@@ -54,6 +54,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     ubiquityThreshold: 0.7,
     ubiquitousSelectorThreshold: 0.1,
     routeTrafficDampingExponent: 1,
+    filenameAmbiguityShare: 0.1,
     temporal: {
       creationWindowSoftDays: 14,
       creationWindowHardDays: 28,
@@ -199,6 +200,7 @@ export function toScoringConfig(config: IProjectConfig): ISuggestorConfig {
       ubiquitousSelectorThreshold: config.behaviour.ubiquitousSelectorThreshold,
       routeTrafficDampingExponent: config.behaviour.routeTrafficDampingExponent,
       temporal: config.behaviour.temporal,
+      filenameAmbiguityShare: config.behaviour.filenameAmbiguityShare,
     },
   };
 }

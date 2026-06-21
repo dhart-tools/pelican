@@ -229,6 +229,10 @@ export interface IProjectConfig {
      * Populated from defaults by the config loader; the scorer also falls back
      * to built-in defaults if absent. */
     temporal?: ITemporalConfig;
+    /** Filename token doc-frequency share (0..1) above which a token is treated
+     * as ambiguous/corpus-ubiquitous. A filename match on ambiguous tokens only
+     * loses anchor status (needs a co-signal). Default 0.1. */
+    filenameAmbiguityShare?: number;
   };
 }
 

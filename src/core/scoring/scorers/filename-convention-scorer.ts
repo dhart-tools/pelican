@@ -3,8 +3,10 @@ import path from 'path';
 import { BaseScorer } from '@/core/scoring/scorers/base';
 import { sharesFeatureDir } from '@/core/scoring/scorers/feature-dir';
 import { getScorerConfig } from '@/core/scoring/scoring-config';
-import { IScorerContext, ISignal } from '@/types';
+import { IScorerContext, ISignal, IRegistry } from '@/types';
 import { EScorerType } from '@/utils/enums';
+
+const DEFAULT_AMBIGUITY_SHARE = 0.1;
 
 const TEST_SUFFIX_RE = /\.(cy|spec|test|e2e|int|integration|unit|bench|stories)\.(ts|js)x?$/i;
 const SOURCE_EXT_RE = /\.(tsx?|jsx?|mts|cts|mjs|cjs|vue|svelte|astro)$/i;
@@ -104,7 +106,10 @@ export class FilenameConventionScorer extends BaseScorer {
     super(getScorerConfig(EScorerType.FILENAME_MATCH));
   }
 
-  evaluate(changedFile: string, testFile: string, _context: IScorerContext): ISignal[] {
+  /** Corpus token→doc-share, memoized per registry (built once per run). */
+  private readonly docShareCache = new WeakMap<IRegistry, Map<string, number>>();
+
+  evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {
     const changedBase = this.basenameTokens(changedFile, false);
     const testBase = this.basenameTokens(testFile, true);
 
@@ -235,9 +240,52 @@ export class FilenameConventionScorer extends BaseScorer {
       // tokens also agree (cart/CartSummary ↔ cart/summary).
       const parentBoost = allOverlapRatio > baseOverlapRatio ? 0.2 : 0;
       signal.weight = this.weight * Math.min(1, baseOverlapRatio + parentBoost);
+
+      // Ambiguity demotion: when the overlap rests ONLY on corpus-ubiquitous
+      // tokens (e.g. `device`/`list` in a device app), a shared name proves
+      // nothing on its own — strip anchor status so the candidate needs a real
+      // co-signal (route/selector/import) to survive. One distinctive token
+      // (e.g. `provisioning`) keeps it anchored. Recall-safe: no corpus → skip.
+      const shares = this.docShare(context?.registry);
+      if (shares) {
+        const threshold =
+          context?.config?.scoring?.filenameAmbiguityShare ?? DEFAULT_AMBIGUITY_SHARE;
+        const distinctive = baseIntersection.some((t) => (shares.get(t) ?? 0) < threshold);
+        if (!distinctive) {
+          signal.anchorEligible = false;
+          signal.reason = `${signal.reason} — ambiguous tokens only (corpus-ubiquitous); needs a co-signal`;
+          (signal.metadata as Record<string, unknown>).ambiguousTokensOnly = true;
+        }
+      }
     }
 
     return [signal];
+  }
+
+  /**
+   * Corpus token → document-frequency share (0..1): the fraction of all files
+   * whose tokenized basename contains the token. Built once per registry and
+   * memoized. Returns null when there's no registry/corpus (e.g. unit tests),
+   * so the caller skips ambiguity demotion entirely.
+   */
+  private docShare(registry: IRegistry | undefined): Map<string, number> | null {
+    if (!registry) return null;
+    const cached = this.docShareCache.get(registry);
+    if (cached) return cached;
+
+    const all = [...registry.getFilesByType('source'), ...registry.getFilesByType('test')];
+    const total = all.length;
+    if (total === 0) return null;
+
+    const counts = new Map<string, number>();
+    for (const f of all) {
+      const tokens = new Set(this.basenameTokens(f.path, f.type === 'test'));
+      for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const shares = new Map<string, number>();
+    for (const [t, c] of counts) shares.set(t, c / total);
+    this.docShareCache.set(registry, shares);
+    return shares;
   }
 
   private basenameTokens(filePath: string, isTest: boolean): string[] {
