@@ -9,8 +9,10 @@ import {
 import { IRepoGitHistory } from '@/types/git';
 import { EConfidenceLevel } from '@/utils/enums';
 
-import { applyAnchorGate } from './anchor-gate';
+import { applyAnchorGate, NARROW_ANCHOR_TYPES } from './anchor-gate';
 import { isHubFile } from './hub-file';
+
+const TEMPORAL_TYPE = 'temporal-coherence';
 
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
@@ -53,6 +55,15 @@ export class ScoringEngine {
     // broad (medium-tier) signals.
     const requireAnchor = this.config.scoring.requireAnchor ?? true;
     const changedIsHub = isHubFile(changedFileEntry);
+
+    // EXPERIMENT — temporal "front seat". Temporal becomes an anchor (so a
+    // co-change-coupled spec survives the gate on its own) and every other
+    // signal is scaled down, so the temporal signal drives the score.
+    const frontSeat = this.config.scoring.temporal?.frontSeat ?? false;
+    const othersWeight = this.config.scoring.temporal?.othersWeight ?? 0.15;
+    const narrowAnchorTypes = frontSeat
+      ? new Set<string>([...NARROW_ANCHOR_TYPES, TEMPORAL_TYPE])
+      : undefined;
 
     for (const testFilePath of testFiles) {
       const testFileEntry = this.registry.getFile(testFilePath);
@@ -109,24 +120,40 @@ export class ScoringEngine {
       // (redux, describe-block) are suppressed here. This is the main precision
       // lever against hub-file floods; recall is preserved because every true
       // positive carries a narrow anchor.
-      const gatedSignals = requireAnchor ? applyAnchorGate(signals, { changedIsHub }) : signals;
+      const gatedSignals = requireAnchor
+        ? applyAnchorGate(signals, { changedIsHub, narrowAnchorTypes })
+        : signals;
 
       // Apply ubiquity dampener
       const dampenedSignals = this.applyUbiquityDampener(changedFile, gatedSignals);
 
+      // Front seat: shrink every non-temporal matched signal so temporal leads.
+      const finalSignals = frontSeat
+        ? dampenedSignals.map((s) =>
+            s.matched && s.type !== TEMPORAL_TYPE
+              ? {
+                  ...s,
+                  originalWeight: s.originalWeight ?? s.weight,
+                  weight: s.weight * othersWeight,
+                  reason: `${s.reason || 'Unknown'} — front-seat: dampened ×${othersWeight}`,
+                }
+              : s,
+          )
+        : dampenedSignals;
+
       // Calculate final score
-      const score = this.calculateScore(dampenedSignals);
+      const score = this.calculateScore(finalSignals);
 
       // Calculate confidence
       const confidence = this.calculateConfidence(score);
 
       // Generate explanation
-      const explanation = this.generateExplanation(dampenedSignals);
+      const explanation = this.generateExplanation(finalSignals);
 
       results.push({
         testFile: testFilePath,
         score,
-        signals: dampenedSignals,
+        signals: finalSignals,
         confidence,
         explanation,
       });

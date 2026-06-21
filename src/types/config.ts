@@ -18,9 +18,18 @@ export interface ITemporalConfig {
    * they aren't logical co-changes and otherwise drown real coupling. Creation
    * and update timestamps still use all commits. Default 30. */
   maxCommitFiles: number;
-  /** Ceiling on the temporal signal weight. It corroborates — it must never
-   * dominate a real anchor. Default 0.45. */
+  /** Ceiling on the temporal signal weight. Default 0.45 (corroborator). Raise
+   * toward 1 to let temporal dominate (see frontSeat). */
   maxWeight: number;
+  /** EXPERIMENT — give temporal the front seat. When true, temporal becomes an
+   * anchor (co-change coupling alone can select a candidate) and every
+   * non-temporal matched signal is scaled down by `othersWeight`, so the score
+   * is driven by temporal. Trades recall for a pure co-change view. Default
+   * false. */
+  frontSeat?: boolean;
+  /** Multiplier applied to non-temporal matched weights when frontSeat is on.
+   * Default 0.15. */
+  othersWeight?: number;
 }
 
 export interface ISuggestorConfig {

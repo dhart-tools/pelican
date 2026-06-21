@@ -59,7 +59,12 @@ const DEFAULT_CONFIG: IProjectConfig = {
       creationWindowHardDays: 28,
       updateWindowDays: 14,
       maxCommitFiles: 30,
-      maxWeight: 0.45,
+      // EXPERIMENT: temporal front seat. Raise its ceiling and let it anchor,
+      // dampening every other signal. Revert this commit to restore the
+      // corroborator defaults (frontSeat off, maxWeight 0.45).
+      maxWeight: 0.9,
+      frontSeat: true,
+      othersWeight: 0.15,
     },
   },
 };

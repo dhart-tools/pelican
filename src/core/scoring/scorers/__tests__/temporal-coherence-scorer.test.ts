@@ -301,4 +301,33 @@ describe('temporal scorer inside the ScoringEngine', () => {
   it('cannot admit a candidate on its own — no anchor → suppressed despite coupling', () => {
     expect(scoreWith(false, coupled)).toBe(0);
   });
+
+  // ─── front-seat experiment ─────────────────────────────────────
+  describe('frontSeat mode', () => {
+    const fsConfig: ISuggestorConfig = {
+      scoring: {
+        ubiquityThreshold: 0.7,
+        minConfidence: 0.4,
+        highConfidence: 0.8,
+        requireAnchor: true,
+        temporal: { ...cfg, maxWeight: 0.9, frontSeat: true, othersWeight: 0.15 },
+      },
+    };
+    const scoreFS = (anchorFires: boolean, histories: Map<string, IRepoGitHistory>): number => {
+      const engine = new ScoringEngine(fsConfig, buildRegistry(), histories);
+      engine.register(new FakeAnchorScorer(anchorFires));
+      engine.register(new TemporalCoherenceScorer());
+      return engine.evaluateTests('src/a.ts', ['e2e/a.cy.ts'])[0].score;
+    };
+
+    it('temporal now anchors — a coupled candidate with NO structural match survives', () => {
+      // Without frontSeat this same case scored 0 (suppressed). Now it leads.
+      expect(scoreFS(false, coupled)).toBeGreaterThan(0.4);
+    });
+
+    it('dampens a structural-only match so temporal dominates', () => {
+      // anchor 0.5 dampened ×0.15 = 0.075, no temporal coupling (far apart)
+      expect(scoreFS(true, farApart)).toBeCloseTo(0.075, 5);
+    });
+  });
 });
