@@ -14,6 +14,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     // rejects an empty root with a clear message.
     root: '',
     dirs: ['src'],
+    ignoreDirs: [],
     pathAliases: {},
     selectorAttributes: ['data-testid', 'data-cy'],
     imports: true,
@@ -148,9 +149,14 @@ function validateConfig(config: IProjectConfig): void {
   }
 }
 
-/** Universal ignore dirs — exported so the registry-builder callers can pass them. */
-export function getIgnoreDirs(): string[] {
-  return [...UNIVERSAL_IGNORES];
+/**
+ * The effective list of directory names to skip while scanning: the always-on
+ * UNIVERSAL_IGNORES plus any extra `source.ignoreDirs` from config (deduped).
+ * Single source of truth — every registry-builder caller passes this so both
+ * repos honour the same ignore set (and `.git` is actually ignored).
+ */
+export function getIgnoreDirs(config: IProjectConfig): string[] {
+  return [...new Set([...UNIVERSAL_IGNORES, ...(config.source.ignoreDirs ?? [])])];
 }
 
 /**

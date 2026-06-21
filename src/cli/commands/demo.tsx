@@ -9,7 +9,7 @@ import { Panel } from '@/cli/components/Panel';
 import { ResultsTable } from '@/cli/components/ResultsTable';
 import { SectionDivider } from '@/cli/components/SectionDivider';
 import { StatusStep } from '@/cli/components/StatusStep';
-import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
+import { loadProjectConfig, toScoringConfig, getIgnoreDirs } from '@/cli/config-loader';
 import { palette } from '@/cli/theme';
 import { loadTheme } from '@/cli/user-config';
 import { Registry } from '@/core/registry/registry';
@@ -527,6 +527,7 @@ function DemoApp() {
         sourceDirs: config.source.dirs,
         testPatterns: config.test.patterns,
         excludePatterns: config.test.exclude,
+        ignoreDirs: getIgnoreDirs(config),
         sourceRoot: config.source.root,
         testRoot: config.test.root ?? config.source.root,
       });

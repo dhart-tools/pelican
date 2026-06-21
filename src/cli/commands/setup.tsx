@@ -9,7 +9,7 @@ import { useInput } from 'ink';
 import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
-import { loadProjectConfig, getMergedAliases } from '@/cli/config-loader';
+import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
 import { SETUP_MODELS } from '@/cli/setup-models';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
@@ -63,6 +63,7 @@ export async function detectProjectConfig(): Promise<{
     source: {
       root: '.',
       dirs: ['src'],
+      ignoreDirs: [],
       pathAliases: {},
       selectorAttributes: ['data-testid', 'data-cy'],
       imports: true,
@@ -415,6 +416,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           sourceDirs: effectiveConfig.source.dirs,
           testPatterns: effectiveConfig.test.patterns,
           excludePatterns: effectiveConfig.test.exclude,
+          ignoreDirs: getIgnoreDirs(effectiveConfig),
           sourceRoot: effectiveConfig.source.root,
           testRoot: effectiveConfig.test.root ?? effectiveConfig.source.root,
           pathAliases: getMergedAliases(effectiveConfig),

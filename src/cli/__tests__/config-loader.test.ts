@@ -5,6 +5,7 @@ import { jest } from '@jest/globals';
 import type {
   loadProjectConfig as LoadProjectConfigFn,
   toScoringConfig as ToScoringConfigFn,
+  getIgnoreDirs as GetIgnoreDirsFn,
 } from '../config-loader';
 
 // ESM-compatible mock for fs/promises
@@ -20,11 +21,13 @@ jest.unstable_mockModule('fs/promises', () => ({
 // Resolved after mock registration via beforeAll — avoids top-level await
 let loadProjectConfig: typeof LoadProjectConfigFn;
 let toScoringConfig: typeof ToScoringConfigFn;
+let getIgnoreDirs: typeof GetIgnoreDirsFn;
 
 beforeAll(async () => {
   const mod = await import('../config-loader');
   loadProjectConfig = mod.loadProjectConfig;
   toScoringConfig = mod.toScoringConfig;
+  getIgnoreDirs = mod.getIgnoreDirs;
 });
 
 /** Mock a .pelicanrc.json with the given user config (source.root supplied). */
@@ -106,6 +109,26 @@ describe('loadProjectConfig', () => {
     const config = await loadProjectConfig();
     expect(config.behaviour.ubiquitousSelectorThreshold).toBe(0.05);
     expect(config.behaviour.minConfidence).toBe(0.4); // default preserved
+  });
+});
+
+describe('getIgnoreDirs', () => {
+  it('always includes the universal ignores (including .git)', async () => {
+    mockConfig();
+    const config = await loadProjectConfig();
+    const dirs = getIgnoreDirs(config);
+    for (const d of ['node_modules', 'dist', 'build', '.next', 'coverage', '.git']) {
+      expect(dirs).toContain(d);
+    }
+  });
+
+  it('merges source.ignoreDirs on top of the universal set, deduped', async () => {
+    mockConfig({ source: { ignoreDirs: ['storybook-static', 'node_modules'] } });
+    const config = await loadProjectConfig();
+    const dirs = getIgnoreDirs(config);
+    expect(dirs).toContain('storybook-static'); // user addition
+    expect(dirs).toContain('.git'); // universal preserved
+    expect(dirs.filter((d) => d === 'node_modules')).toHaveLength(1); // deduped
   });
 });
 

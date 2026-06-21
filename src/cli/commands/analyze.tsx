@@ -7,7 +7,12 @@ import { render } from 'ink';
 import pLimit from 'p-limit';
 import React, { useState, useEffect } from 'react';
 
-import { loadProjectConfig, toScoringConfig, getMergedAliases } from '@/cli/config-loader';
+import {
+  loadProjectConfig,
+  toScoringConfig,
+  getMergedAliases,
+  getIgnoreDirs,
+} from '@/cli/config-loader';
 import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
@@ -192,6 +197,7 @@ async function loadOrBuildRegistry(
       sourceDirs: config.source.dirs,
       testPatterns: config.test.patterns,
       excludePatterns: config.test.exclude,
+      ignoreDirs: getIgnoreDirs(config),
       sourceRoot: config.source.root,
       testRoot: config.test.root ?? config.source.root,
       pathAliases: getMergedAliases(config),
@@ -491,6 +497,7 @@ export async function runHeadless(
       sourceDirs: config.source.dirs,
       testPatterns: config.test.patterns,
       excludePatterns: config.test.exclude,
+      ignoreDirs: getIgnoreDirs(config),
       sourceRoot: config.source.root,
       testRoot: config.test.root ?? config.source.root,
       pathAliases: getMergedAliases(config),

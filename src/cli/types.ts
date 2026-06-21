@@ -179,6 +179,10 @@ export interface IProjectConfig {
     root: string;
     /** Directories to scan for source files, relative to `root`. */
     dirs: string[];
+    /** Extra directory names never scanned (in EITHER repo), on top of the
+     * always-ignored set (node_modules, dist, build, .next, coverage, .git).
+     * e.g. ["storybook-static", "cypress/videos"]. */
+    ignoreDirs?: string[];
     /** Alias map for resolving source→source imports (e.g. `@dm/` → `src/dm/`). */
     pathAliases?: Record<string, string>;
     /** Attributes treated as selectors when extracting from source. */
