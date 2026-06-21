@@ -13,6 +13,11 @@ export interface ITemporalConfig {
   /** Bucket size (days) for update-coupling: commits landing in the same bucket
    * count as a co-update. Default 14. */
   updateWindowDays: number;
+  /** Commits touching more than this many files are treated as bulk/refactor
+   * passes (migrations, mass formatting) and excluded from update-coupling —
+   * they aren't logical co-changes and otherwise drown real coupling. Creation
+   * and update timestamps still use all commits. Default 30. */
+  maxCommitFiles: number;
   /** Ceiling on the temporal signal weight. It corroborates — it must never
    * dominate a real anchor. Default 0.45. */
   maxWeight: number;

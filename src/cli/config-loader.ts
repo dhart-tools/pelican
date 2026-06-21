@@ -58,6 +58,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
       creationWindowSoftDays: 14,
       creationWindowHardDays: 28,
       updateWindowDays: 14,
+      maxCommitFiles: 30,
       maxWeight: 0.45,
     },
   },

@@ -3,13 +3,22 @@
  * (committer date). Consumed by the temporal-coherence scorer to reason about
  * when files were created and how often they change together.
  */
+/** One commit that touched a file: when, and how many files it changed. */
+export interface IFileCommit {
+  /** Committer timestamp, unix seconds. */
+  ts: number;
+  /** Total files this commit touched. Lets coupling ignore bulk/refactor
+   * commits (migrations, mass formatting) that aren't logical co-changes. */
+  size: number;
+}
+
 export interface IFileGitHistory {
   /** Earliest commit touching this file, rename-followed. Unix seconds. */
   createdAt: number;
   /** Most recent commit touching this file. Unix seconds. */
   updatedAt: number;
-  /** Every commit timestamp that touched this file, newest first. Unix seconds. */
-  commitTimes: number[];
+  /** Every commit that touched this file, newest first. */
+  commits: IFileCommit[];
 }
 
 /**

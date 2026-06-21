@@ -16,10 +16,10 @@ const DAY = 86400;
 const BASE = 1_600_000_000; // fixed reference instant (unix secs)
 const cfg = TEMPORAL_DEFAULTS;
 
-const fh = (createdAt: number, updatedAt: number, commitTimes: number[]): IFileGitHistory => ({
+const fh = (createdAt: number, updatedAt: number, ts: number[], size = 1): IFileGitHistory => ({
   createdAt,
   updatedAt,
-  commitTimes,
+  commits: ts.map((t) => ({ ts: t, size })),
 });
 
 // ─── A. creation proximity ───────────────────────────────────────
@@ -79,6 +79,25 @@ describe('updateCoupling', () => {
     const test = fh(win(0), win(9), [win(0)]);
     const r = updateCoupling(changed, test, cfg);
     expect(r.weight).toBe(0);
+  });
+
+  it('excludes bulk/refactor commits so they cannot manufacture coupling', () => {
+    // Both files only ever co-changed in oversized (bulk) commits → no signal.
+    const bulk = cfg.maxCommitFiles + 1;
+    const changed = fh(win(0), win(5), [win(0), win(5)], bulk);
+    const test = fh(win(0), win(5), [win(0), win(5)], bulk);
+    const r = updateCoupling(changed, test, cfg);
+    expect(r.weight).toBe(0);
+    expect((r.metadata as { coWindows: number }).coWindows).toBe(0);
+    expect((r.metadata as { bulkExcluded: { changed: number } }).bulkExcluded.changed).toBe(2);
+
+    // The same timings in small commits DO couple — proves it's the size filter.
+    const small = updateCoupling(
+      fh(win(0), win(5), [win(0), win(5)], 1),
+      fh(win(0), win(5), [win(0), win(5)], 1),
+      cfg,
+    );
+    expect(small.weight).toBeGreaterThan(0);
   });
 });
 

@@ -1,4 +1,4 @@
-import { IFileGitHistory } from '@/types/git';
+import { IFileCommit, IFileGitHistory } from '@/types/git';
 
 /**
  * Arguments for the single `git log` that feeds {@link parseGitLog}.
@@ -44,12 +44,12 @@ export function parseGitLog(raw: string): Map<string, IFileGitHistory> {
     return cur;
   };
 
-  const times = new Map<string, number[]>();
-  const record = (p: string, ts: number) => {
+  const commits = new Map<string, IFileCommit[]>();
+  const record = (p: string, ts: number, size: number) => {
     const key = canonical(p);
-    const arr = times.get(key);
-    if (arr) arr.push(ts);
-    else times.set(key, [ts]);
+    const arr = commits.get(key);
+    if (arr) arr.push({ ts, size });
+    else commits.set(key, [{ ts, size }]);
   };
 
   for (const block of raw.split('\0')) {
@@ -58,6 +58,10 @@ export function parseGitLog(raw: string): Map<string, IFileGitHistory> {
     const ts = parseInt(lines[0], 10);
     if (!Number.isFinite(ts)) continue;
 
+    // Collect this commit's file changes first so `size` (files touched) is
+    // known before we attribute it to each file — that's what lets coupling
+    // later discount bulk/refactor commits.
+    const touched: string[] = [];
     for (let i = 1; i < lines.length; i++) {
       const line = lines[i];
       if (!line) continue;
@@ -67,27 +71,31 @@ export function parseGitLog(raw: string): Map<string, IFileGitHistory> {
 
       if (code === 'R' && parts.length >= 3) {
         // R<score>\t<old>\t<new>
-        record(parts[2], ts);
+        touched.push(parts[2]);
         if (!renameTo.has(parts[1])) renameTo.set(parts[1], parts[2]);
       } else if (code === 'C' && parts.length >= 3) {
         // C<score>\t<src>\t<dst> — copy creates a new file; src lives on
-        record(parts[2], ts);
+        touched.push(parts[2]);
       } else if (code === 'D') {
-        // deleted — not a current file, no entry to attribute it to
+        // deleted — counts toward commit size but has no current file to track
+        touched.push('');
       } else if (parts.length >= 2) {
         // A, M, T, … \t<path>
-        record(parts[1], ts);
+        touched.push(parts[1]);
       }
     }
+
+    const size = touched.length; // files this commit changed (incl. deletes)
+    for (const p of touched) if (p) record(p, ts, size);
   }
 
   const out = new Map<string, IFileGitHistory>();
-  for (const [path, ts] of times) {
-    ts.sort((a, b) => b - a); // newest first
+  for (const [path, list] of commits) {
+    list.sort((a, b) => b.ts - a.ts); // newest first
     out.set(path, {
-      createdAt: ts[ts.length - 1],
-      updatedAt: ts[0],
-      commitTimes: ts,
+      createdAt: list[list.length - 1].ts,
+      updatedAt: list[0].ts,
+      commits: list,
     });
   }
   return out;

@@ -93,7 +93,7 @@ describe('GitHistoryProvider — real synthetic git repo', () => {
 
     const b = h.files.get('b.ts');
     expect(b).toBeDefined();
-    expect(b!.commitTimes).toHaveLength(3); // add + edit + rename, all folded in
+    expect(b!.commits).toHaveLength(3); // add + edit + rename, all folded in
     expect(new Date(b!.createdAt * 1000).getUTCFullYear()).toBe(2021);
     expect(new Date(b!.updatedAt * 1000).getUTCFullYear()).toBe(2022);
     expect(b!.createdAt).toBeLessThan(b!.updatedAt);

@@ -84,7 +84,7 @@ async function mineGitHistories(
       const created = new Date(h.createdAt * 1000).toISOString().slice(0, 10);
       const updated = new Date(h.updatedAt * 1000).toISOString().slice(0, 10);
       debugLog(
-        `temporal:   ${p} — created ${created}, updated ${updated}, ${h.commitTimes.length} commit(s)`,
+        `temporal:   ${p} — created ${created}, updated ${updated}, ${h.commits.length} commit(s)`,
       );
       if (++shown >= 5) break;
     }

@@ -12,6 +12,7 @@ export const TEMPORAL_DEFAULTS: ITemporalConfig = {
   creationWindowSoftDays: 14,
   creationWindowHardDays: 28,
   updateWindowDays: 14,
+  maxCommitFiles: 30,
   maxWeight: 0.45,
 };
 
@@ -86,8 +87,17 @@ export function updateCoupling(
   const w = cfg.updateWindowDays * DAY;
   const bucket = (ts: number) => Math.floor(ts / w);
 
-  const cBuckets = new Set(changed.commitTimes.map(bucket));
-  const tBuckets = new Set(test.commitTimes.map(bucket));
+  // Drop bulk/refactor commits — they aren't logical co-changes and otherwise
+  // inflate both files' update rates, compressing every lift toward 1.
+  const usable = (h: IFileGitHistory) =>
+    h.commits.filter((c) => c.size <= cfg.maxCommitFiles).map((c) => c.ts);
+  const changedTs = usable(changed);
+  const testTs = usable(test);
+  const droppedChanged = changed.commits.length - changedTs.length;
+  const droppedTest = test.commits.length - testTs.length;
+
+  const cBuckets = new Set(changedTs.map(bucket));
+  const tBuckets = new Set(testTs.map(bucket));
   let co = 0;
   for (const b of cBuckets) if (tBuckets.has(b)) co++;
 
@@ -109,6 +119,7 @@ export function updateCoupling(
     expected: round(expected),
     lift: round(lift),
     weight: round(weight),
+    bulkExcluded: { changed: droppedChanged, test: droppedTest, threshold: cfg.maxCommitFiles },
   };
   const reason =
     weight > 0
