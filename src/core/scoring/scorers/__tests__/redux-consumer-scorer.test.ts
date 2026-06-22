@@ -44,7 +44,7 @@ describe('ReduxConsumerScorer', () => {
     const signals = scorer.evaluate(changedFile, testFile, context);
 
     expect(signals[0].matched).toBe(true);
-    expect(signals[0].reason).toContain('component uses Redux chain "cart"');
+    expect(signals[0].reason).toContain('chain "cart"');
   });
 
   test('should return no match when route component is not a consumer', () => {

@@ -61,22 +61,19 @@ describe('StatusStep', () => {
 });
 
 describe('SignalBadge', () => {
-  it('renders HIGH with score', () => {
-    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.HIGH} score={0.95} />);
-    expect(lastFrame()).toContain('HIGH');
-    expect(lastFrame()).toContain('0.95');
+  it('renders the HIGH action verb', () => {
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.HIGH} />);
+    expect(lastFrame()).toContain('Must Ensure');
   });
 
-  it('renders MED for medium confidence', () => {
-    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.MEDIUM} score={0.62} />);
-    expect(lastFrame()).toContain('MED');
-    expect(lastFrame()).toContain('0.62');
+  it('renders the MEDIUM action verb', () => {
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.MEDIUM} />);
+    expect(lastFrame()).toContain('Should Check');
   });
 
-  it('renders LOW for low confidence', () => {
-    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.LOW} score={0.35} />);
-    expect(lastFrame()).toContain('LOW');
-    expect(lastFrame()).toContain('0.35');
+  it('renders the LOW action verb', () => {
+    const { lastFrame } = render(<SignalBadge confidence={EConfidenceLevel.LOW} />);
+    expect(lastFrame()).toContain('Good to Have');
   });
 });
 

@@ -47,7 +47,8 @@ describe('AnalyzeView', () => {
       />,
     );
     expect(lastFrame()).toContain('button.cy.ts');
-    expect(lastFrame()).toContain('0.95');
+    // Confidence is shown as a tier now (no raw score).
+    expect(lastFrame()).toContain('MUST RUN');
   });
 
   it('shows "no changed files" message when done with empty list', () => {
@@ -136,7 +137,7 @@ describe('SetupView', () => {
     const { lastFrame } = render(
       <SetupView
         phase="detecting"
-        steps={[{ name: 'Scanning project...', status: 'loading' }]}
+        steps={[{ name: 'Scanning project...', status: 'loading', section: 'detected' }]}
         detectedConfig={null}
       />,
     );
@@ -144,18 +145,25 @@ describe('SetupView', () => {
   });
 
   it('shows all detected steps when saving', () => {
+    // Steps must carry a `section` and be non-idle to render (idle steps are
+    // intentionally hidden; SetupView groups by detected/installed).
     const { lastFrame } = render(
       <SetupView
         phase="saving"
         steps={[
-          { name: 'Cypress detected', status: 'success', detail: 'cypress-extractor enabled' },
-          { name: 'Redux', status: 'idle', detail: 'not found' },
+          {
+            name: 'Cypress detected',
+            status: 'success',
+            detail: 'cypress-extractor enabled',
+            section: 'detected',
+          },
+          { name: 'Redux detected', status: 'success', detail: 'enabled', section: 'detected' },
         ]}
         detectedConfig={null}
       />,
     );
     expect(lastFrame()).toContain('Cypress detected');
-    expect(lastFrame()).toContain('Redux');
+    expect(lastFrame()).toContain('Redux detected');
   });
 
   it('shows completion banner when done', () => {
@@ -163,14 +171,15 @@ describe('SetupView', () => {
       <SetupView
         phase="done"
         steps={[
-          { name: 'Cypress detected', status: 'success', detail: 'enabled' },
-          { name: 'Config saved', status: 'success' },
+          { name: 'Cypress detected', status: 'success', detail: 'enabled', section: 'detected' },
+          { name: 'Config saved', status: 'success', section: 'installed' },
         ]}
         detectedConfig={null}
       />,
     );
-    expect(lastFrame()).toContain('setup complete');
-    expect(lastFrame()).toContain('pelican registry build');
+    // Done banner now reads "ready" + the `pelican analyze` next step.
+    expect(lastFrame()).toContain('ready');
+    expect(lastFrame()).toContain('pelican analyze');
   });
 
   it('shows error message when phase is error', () => {
