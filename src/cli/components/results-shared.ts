@@ -11,6 +11,23 @@ export interface IResultEntry {
 
 export type TFlatTest = IScoreResult & { changedFile: string };
 
+/** Greedy word-wrap into lines no wider than maxWidth. Shared by result views. */
+export function wordWrap(text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) current = word;
+    else if (current.length + 1 + word.length <= maxWidth) current += ' ' + word;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 export const BAND_ORDER: EConfidenceLevel[] = [
   EConfidenceLevel.HIGH,
   EConfidenceLevel.MEDIUM,

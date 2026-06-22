@@ -208,6 +208,7 @@ async function applyLLMRerank(
         limiter,
       );
       const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
+      const verdictByFile = new Map(verdicts.map((v) => [v.testFile, v]));
 
       if (debug) {
         const judged = verdicts.filter((v) => v.judged).length;
@@ -219,7 +220,16 @@ async function applyLLMRerank(
         }
       }
 
-      const kept = result.suggestedTests.filter((t) => !dropped.has(t.testFile));
+      // Surface the model's own rationale on kept-AND-relevant candidates so the
+      // UI can show it as the reasoning line. (For a kept-but-low-confidence
+      // rejection the "why" argues against running, so we leave the structural
+      // explanation intact rather than show a contradictory note.)
+      const kept = result.suggestedTests
+        .filter((t) => !dropped.has(t.testFile))
+        .map((t) => {
+          const v = verdictByFile.get(t.testFile);
+          return v?.llmRelevant && v.why ? { ...t, explanation: v.why } : t;
+        });
       return {
         ...result,
         suggestedTests: kept,

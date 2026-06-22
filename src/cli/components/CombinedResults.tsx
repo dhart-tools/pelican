@@ -12,6 +12,7 @@ import {
   flattenAndSort,
   formatElapsed,
   summarizeRerank,
+  wordWrap,
 } from './results-shared';
 import { SectionDivider } from './SectionDivider';
 
@@ -83,17 +84,31 @@ function BandSection({ band, tests, startIndex }: BandSectionProps) {
       </Box>
       {tests.map((t, i) => {
         const idx = String(startIndex + i + 1).padStart(2, ' ');
+        // Reasoning line(s) — the model's rationale (or structural explanation).
+        // No raw confidence number: the tier (band header) IS the confidence.
+        const reason =
+          t.explanation && t.explanation.trim() !== 'No reason provided.'
+            ? t.explanation.trim()
+            : '';
+        const reasonLines = reason ? wordWrap(reason, PATH_WIDTH) : [];
         return (
-          <Box key={t.testFile}>
-            <Box width={7} flexShrink={0}>
-              <Text color={palette.muted}>{`   ${idx}  `}</Text>
+          <Box key={t.testFile} flexDirection="column">
+            <Box>
+              <Box width={7} flexShrink={0}>
+                <Text color={palette.muted}>{`   ${idx}  `}</Text>
+              </Box>
+              <Box flexShrink={1}>
+                <Text color={color}>{trimPath(t.testFile, PATH_WIDTH)}</Text>
+              </Box>
             </Box>
-            <Box width={PATH_WIDTH + 2} flexShrink={0}>
-              <Text color={color}>{trimPath(t.testFile, PATH_WIDTH)}</Text>
-            </Box>
-            <Box flexShrink={0}>
-              <Text color={palette.dim}>{t.score.toFixed(2)}</Text>
-            </Box>
+            {reasonLines.map((line, li) => (
+              <Box key={li}>
+                <Box width={7} flexShrink={0}>
+                  <Text> </Text>
+                </Box>
+                <Text color={palette.muted}>{line}</Text>
+              </Box>
+            ))}
           </Box>
         );
       })}

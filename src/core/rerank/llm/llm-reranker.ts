@@ -41,6 +41,9 @@ export interface IRerankVerdict {
   judged: boolean;
   llmRelevant?: boolean;
   llmConfidence?: number;
+  /** The model's own short rationale ("why"). Surfaced in the UI as the
+   * reasoning line for kept candidates. */
+  why?: string;
 }
 
 const hasProtectedAnchor = (signals: ISignal[]): boolean =>
@@ -72,15 +75,18 @@ export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandida
  * surrounding prose. Returns null when nothing parseable is found (caller then
  * fails open).
  */
-export function parseVerdict(raw: string): { relevant: boolean; confidence: number } | null {
+export function parseVerdict(
+  raw: string,
+): { relevant: boolean; confidence: number; why: string } | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
-    const obj = JSON.parse(match[0]) as { relevant?: unknown; confidence?: unknown };
+    const obj = JSON.parse(match[0]) as { relevant?: unknown; confidence?: unknown; why?: unknown };
     if (typeof obj.relevant !== 'boolean') return null;
     const confidence =
       typeof obj.confidence === 'number' ? Math.max(0, Math.min(1, obj.confidence)) : 0.5;
-    return { relevant: obj.relevant, confidence };
+    const why = typeof obj.why === 'string' ? obj.why.trim() : '';
+    return { relevant: obj.relevant, confidence, why };
   } catch {
     return null;
   }
@@ -207,6 +213,7 @@ export class LLMReranker {
         judged: true,
         llmRelevant: verdict.relevant,
         llmConfidence: verdict.confidence,
+        why: verdict.why,
         reason: kept
           ? verdict.relevant
             ? `LLM: relevant (conf ${verdict.confidence.toFixed(2)})`

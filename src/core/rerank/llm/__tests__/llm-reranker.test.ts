@@ -57,20 +57,32 @@ describe('parseVerdict', () => {
     expect(parseVerdict('{"relevant": true, "confidence": 0.9}')).toEqual({
       relevant: true,
       confidence: 0.9,
+      why: '',
     });
+  });
+  it('captures the model rationale (why)', () => {
+    expect(
+      parseVerdict('{"relevant": true, "confidence": 0.8, "why": "drives the move flow"}'),
+    ).toEqual({ relevant: true, confidence: 0.8, why: 'drives the move flow' });
   });
   it('tolerates code fences and prose', () => {
     expect(parseVerdict('Sure:\n```json\n{"relevant": false, "confidence": 0.2}\n```')).toEqual({
       relevant: false,
       confidence: 0.2,
+      why: '',
     });
   });
   it('clamps confidence and defaults when missing', () => {
     expect(parseVerdict('{"relevant": true, "confidence": 5}')).toEqual({
       relevant: true,
       confidence: 1,
+      why: '',
     });
-    expect(parseVerdict('{"relevant": true}')).toEqual({ relevant: true, confidence: 0.5 });
+    expect(parseVerdict('{"relevant": true}')).toEqual({
+      relevant: true,
+      confidence: 0.5,
+      why: '',
+    });
   });
   it('returns null on garbage', () => {
     expect(parseVerdict('no json here')).toBeNull();
