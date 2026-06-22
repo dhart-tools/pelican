@@ -24,7 +24,7 @@ import { createLimiter } from '@/core/rerank/llm/limiter';
 import { LLMReranker, IRerankCandidate } from '@/core/rerank/llm/llm-reranker';
 import { createProvider } from '@/core/rerank/llm/provider-factory';
 import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
-import { buildSourceHeader, buildTestPayload } from '@/core/rerank/test-payload';
+import { buildTestPayload } from '@/core/rerank/test-payload';
 import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
@@ -97,12 +97,36 @@ async function mineGitHistories(
   return out;
 }
 
+/** Max chars of raw source/test code sent to the model per file. */
+const RERANK_FILE_CHARS = 8000;
+
 /**
- * LLM rerank pass (config.rerank). For each changed file it builds a change
- * summary (diff + source header) and, per in-band candidate, asks the model
- * whether the spec actually exercises the change. Recall-safe: the reranker
- * auto-keeps strong/anchored candidates and fails open; here we only DROP specs
- * it explicitly rejected. Returns results with rejected specs removed.
+ * Read a file's RAW content (truncated) for the rerank prompt. Resolves the
+ * absolute path from the entry's repoRoot (two-repo aware). Returns null if it
+ * can't be read, so the caller can fall back.
+ */
+async function readFileExcerpt(
+  repoRoot: string | undefined,
+  relPath: string,
+): Promise<string | null> {
+  if (!repoRoot) return null;
+  try {
+    const content = await fs.readFile(path.join(repoRoot, relPath), 'utf-8');
+    return content.length > RERANK_FILE_CHARS
+      ? content.slice(0, RERANK_FILE_CHARS) + '\n…(truncated)'
+      : content;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * LLM rerank pass (config.rerank). For each changed file it sends the model the
+ * RAW change (diff) and each candidate's RAW spec source — the same shape as the
+ * hand-validated prompts, NOT a static-analysis summary — and asks whether the
+ * spec actually exercises the change. Recall-safe: the reranker auto-keeps
+ * strong/anchored candidates and fails open; here we only DROP specs it
+ * explicitly rejected.
  *
  * Fail-open at this layer too: any setup error (missing key, bad provider)
  * logs a warning and returns results untouched, so a misconfigured rerank never
@@ -143,20 +167,25 @@ async function applyLLMRerank(
   // Files run in parallel; the shared limiter bounds total concurrent LLM calls.
   return Promise.all(
     results.map(async (result) => {
-      const sourceEntry = registry.getFile(result.changedFile);
       const diff = await extractDiffPayload(result.changedFile, base, target);
-      const changeSummary =
-        (sourceEntry ? buildSourceHeader(sourceEntry) + '\n\n' : '') + `DIFF:\n${diff.text}`;
+      // RAW change — the diff is real code (or full file on fallback). No static
+      // summary; the model reasons about the actual change.
+      const changeSummary = `${diff.fallback ? 'FULL FILE' : 'DIFF'} — ${result.changedFile}\n${diff.text}`;
 
-      const candidates: IRerankCandidate[] = result.suggestedTests.map((t) => {
-        const entry = registry.getFile(t.testFile);
-        return {
-          testFile: t.testFile,
-          score: t.score,
-          signals: t.signals,
-          testExcerpt: entry ? buildTestPayload(entry) : t.testFile,
-        };
-      });
+      const candidates: IRerankCandidate[] = await Promise.all(
+        result.suggestedTests.map(async (t) => {
+          const entry = registry.getFile(t.testFile);
+          // Prefer the ACTUAL spec source (what the validated prompts used); fall
+          // back to the derived summary only if the file can't be read.
+          const realCode = entry ? await readFileExcerpt(entry.repoRoot, entry.path) : null;
+          return {
+            testFile: t.testFile,
+            score: t.score,
+            signals: t.signals,
+            testExcerpt: realCode ?? (entry ? buildTestPayload(entry) : t.testFile),
+          };
+        }),
+      );
 
       const verdicts = await reranker.rerank(
         { changedFile: result.changedFile, changeSummary },
