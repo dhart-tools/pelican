@@ -168,9 +168,24 @@ async function applyLLMRerank(
   return Promise.all(
     results.map(async (result) => {
       const diff = await extractDiffPayload(result.changedFile, base, target);
-      // RAW change — the diff is real code (or full file on fallback). No static
-      // summary; the model reasons about the actual change.
-      const changeSummary = `${diff.fallback ? 'FULL FILE' : 'DIFF'} — ${result.changedFile}\n${diff.text}`;
+      // highPrecision: lead with the WHOLE changed file (max context), then the
+      // diff of what changed, then the test (sent as the candidate excerpt). Off:
+      // just the diff. The diff is real code (or full file on fallback).
+      const changedEntry = registry.getFile(result.changedFile);
+      const fullSource = rc.highPrecision
+        ? await readFileExcerpt(changedEntry?.repoRoot ?? config.source.root, result.changedFile)
+        : null;
+      let changeSummary: string;
+      if (fullSource && !diff.fallback) {
+        changeSummary =
+          `FULL FILE — ${result.changedFile}\n${fullSource}\n\n` +
+          `DIFF (what changed) — ${result.changedFile}\n${diff.text}`;
+      } else if (fullSource) {
+        // diff unavailable → the full file already is the change context
+        changeSummary = `FULL FILE — ${result.changedFile}\n${fullSource}`;
+      } else {
+        changeSummary = `${diff.fallback ? 'FULL FILE' : 'DIFF'} — ${result.changedFile}\n${diff.text}`;
+      }
 
       const candidates: IRerankCandidate[] = await Promise.all(
         result.suggestedTests.map(async (t) => {

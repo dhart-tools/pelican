@@ -16,6 +16,7 @@ const cfg: IRerankConfig = {
   concurrency: 4,
   timeoutMs: 1000,
   maxRetries: 3,
+  highPrecision: false,
 };
 
 const sig = (type: string, over: Partial<ISignal> = {}): ISignal => ({

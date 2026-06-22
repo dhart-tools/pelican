@@ -79,6 +79,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     concurrency: 4,
     timeoutMs: 30000,
     maxRetries: 3,
+    highPrecision: false,
   },
 };
 

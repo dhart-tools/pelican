@@ -66,6 +66,10 @@ export interface IRerankConfig {
    * honouring any Retry-After header. After these are exhausted the call
    * fails open (candidate kept). Default 3. */
   maxRetries: number;
+  /** When true, the prompt includes the WHOLE changed source file (then the
+   * diff, then the test) — maximum context for the judge, at more tokens and
+   * slower/costlier calls. When false, only the diff is sent. Default false. */
+  highPrecision: boolean;
 }
 
 export interface ISuggestorConfig {
