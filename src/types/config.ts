@@ -39,9 +39,13 @@ export interface IRerankConfig {
   provider: RerankProvider;
   /** Provider model slug, e.g. 'anthropic/claude-sonnet-4.5' or 'z-ai/glm-4.6'. */
   model: string;
-  /** Name of the env var holding the API key. The key itself is NEVER stored in
-   * the config file. Default 'OPENROUTER_API_KEY'. */
+  /** Name of the env var holding the API key (preferred — keeps the secret out
+   * of the config file). Default 'OPENROUTER_API_KEY'. */
   apiKeyEnv: string;
+  /** API key inline. Convenient but RISKY — anything in the config file can be
+   * committed/shared/logged. Prefer apiKeyEnv. When set, this wins over the env
+   * var. Keep this config out of version control. */
+  apiKey?: string;
   /** Provider base URL (override for proxies/self-host). */
   baseUrl: string;
   /** Only candidates whose pelican score falls in [min, max) are sent to the
