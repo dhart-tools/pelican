@@ -66,7 +66,10 @@ const DEFAULT_CONFIG: IProjectConfig = {
   rerank: {
     enabled: false,
     provider: 'openrouter',
-    model: 'anthropic/claude-sonnet-4.5',
+    // Validated on the hard cases (case 05 + 10) at 8/8; a small MoE that's
+    // cheap/fast yet reasons about behaviour well enough to separate
+    // exercises-the-change from mentions-the-domain. Override per project.
+    model: 'nvidia/nemotron-nano-3-30b-a3b',
     apiKeyEnv: 'OPENROUTER_API_KEY',
     baseUrl: 'https://openrouter.ai/api/v1',
     candidateBand: { min: 0.4, max: 0.9 },
@@ -75,6 +78,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     maxCandidates: 40,
     concurrency: 4,
     timeoutMs: 30000,
+    maxRetries: 3,
   },
 };
 

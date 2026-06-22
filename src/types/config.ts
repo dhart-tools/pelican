@@ -55,11 +55,17 @@ export interface IRerankConfig {
   keepThreshold: number;
   /** Hard cap on candidates sent to the LLM per changed file (cost ceiling). */
   maxCandidates: number;
-  /** Concurrent LLM requests. */
+  /** GLOBAL concurrent LLM requests across the whole run (all changed files
+   * share this cap, so parallel files never multiply into rate-limit blowouts).
+   * Set to what the model's rate limit tolerates. */
   concurrency: number;
   /** Per-request timeout (ms). On timeout/error the candidate is KEPT (fail-open
    * → recall-safe). */
   timeoutMs: number;
+  /** Retries on a rate-limit (429) or transient 5xx, with exponential backoff
+   * honouring any Retry-After header. After these are exhausted the call
+   * fails open (candidate kept). Default 3. */
+  maxRetries: number;
 }
 
 export interface ISuggestorConfig {

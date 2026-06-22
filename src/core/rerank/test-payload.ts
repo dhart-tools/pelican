@@ -374,6 +374,14 @@ export function buildTestPayload(entry: IFileEntry): string {
     if (cy.itBlocks.length) {
       parts.push(`Tests: ${cy.itBlocks.slice(0, 15).join(' | ')}`);
     }
+    // The custom commands a spec invokes are the strongest behavioural signal
+    // for an LLM judge: `startProvisioningFromPCU` / `moveDevice` (drives the
+    // flow) reads very differently from a spec that only asserts on selectors.
+    // This is the discriminator that separates "exercises the change" from
+    // "merely shows the same screen".
+    if (cy.customCommandsUsed.length) {
+      parts.push(`Uses commands: ${cy.customCommandsUsed.slice(0, 25).join(', ')}`);
+    }
     if (cy.visitedRoutes.length) {
       parts.push(`Visits routes: ${cy.visitedRoutes.join(', ')}`);
     }

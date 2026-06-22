@@ -20,6 +20,7 @@ import { GitHistoryProvider } from '@/core/git/git-history-provider';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { extractDiffPayload, getChangedFiles } from '@/core/rerank/diff-extractor';
+import { createLimiter } from '@/core/rerank/llm/limiter';
 import { LLMReranker, IRerankCandidate } from '@/core/rerank/llm/llm-reranker';
 import { createProvider } from '@/core/rerank/llm/provider-factory';
 import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
@@ -128,55 +129,61 @@ async function applyLLMRerank(
   }
 
   const reranker = new LLMReranker(provider, rc, debug ? (m) => debugLog(m) : undefined);
+  // ONE limiter shared across every file → a single global in-flight cap, so the
+  // parallel files below never multiply into (files × candidates) requests.
+  const limiter = createLimiter(rc.concurrency);
   if (debug) {
     debugLog(
       `rerank: provider=${rc.provider} model=${rc.model} band=[${rc.candidateBand.min},${rc.candidateBand.max}) ` +
-        `protectAnchors=${rc.protectAnchors} keepThreshold=${rc.keepThreshold}`,
+        `protectAnchors=${rc.protectAnchors} keepThreshold=${rc.keepThreshold} ` +
+        `concurrency=${rc.concurrency} maxRetries=${rc.maxRetries}`,
     );
   }
 
-  const out: IAnalyzeResult[] = [];
-  for (const result of results) {
-    const sourceEntry = registry.getFile(result.changedFile);
-    const diff = await extractDiffPayload(result.changedFile, base, target);
-    const changeSummary =
-      (sourceEntry ? buildSourceHeader(sourceEntry) + '\n\n' : '') + `DIFF:\n${diff.text}`;
+  // Files run in parallel; the shared limiter bounds total concurrent LLM calls.
+  return Promise.all(
+    results.map(async (result) => {
+      const sourceEntry = registry.getFile(result.changedFile);
+      const diff = await extractDiffPayload(result.changedFile, base, target);
+      const changeSummary =
+        (sourceEntry ? buildSourceHeader(sourceEntry) + '\n\n' : '') + `DIFF:\n${diff.text}`;
 
-    const candidates: IRerankCandidate[] = result.suggestedTests.map((t) => {
-      const entry = registry.getFile(t.testFile);
-      return {
-        testFile: t.testFile,
-        score: t.score,
-        signals: t.signals,
-        testExcerpt: entry ? buildTestPayload(entry) : t.testFile,
-      };
-    });
+      const candidates: IRerankCandidate[] = result.suggestedTests.map((t) => {
+        const entry = registry.getFile(t.testFile);
+        return {
+          testFile: t.testFile,
+          score: t.score,
+          signals: t.signals,
+          testExcerpt: entry ? buildTestPayload(entry) : t.testFile,
+        };
+      });
 
-    const verdicts = await reranker.rerank(
-      { changedFile: result.changedFile, changeSummary },
-      candidates,
-    );
-    const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
-
-    if (debug) {
-      const judged = verdicts.filter((v) => v.judged).length;
-      debugLog(
-        `rerank: ${result.changedFile} — ${candidates.length} candidate(s), ${judged} judged, ${dropped.size} dropped`,
+      const verdicts = await reranker.rerank(
+        { changedFile: result.changedFile, changeSummary },
+        candidates,
+        limiter,
       );
-      for (const v of verdicts) {
-        debugLog(`    ${v.kept ? 'KEEP' : 'DROP'} ${v.testFile} — ${v.reason}`);
-      }
-    }
+      const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
 
-    const kept = result.suggestedTests.filter((t) => !dropped.has(t.testFile));
-    out.push({
-      ...result,
-      suggestedTests: kept,
-      totalCandidates: kept.length,
-      postRerankCount: kept.length,
-    });
-  }
-  return out;
+      if (debug) {
+        const judged = verdicts.filter((v) => v.judged).length;
+        debugLog(
+          `rerank: ${result.changedFile} — ${candidates.length} candidate(s), ${judged} judged, ${dropped.size} dropped`,
+        );
+        for (const v of verdicts) {
+          debugLog(`    ${v.kept ? 'KEEP' : 'DROP'} ${v.testFile} — ${v.reason}`);
+        }
+      }
+
+      const kept = result.suggestedTests.filter((t) => !dropped.has(t.testFile));
+      return {
+        ...result,
+        suggestedTests: kept,
+        totalCandidates: kept.length,
+        postRerankCount: kept.length,
+      };
+    }),
+  );
 }
 
 /** Registers every scorer (all scorers are always on). */

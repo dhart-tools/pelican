@@ -27,6 +27,7 @@ export function createProvider(
         baseUrl: config.baseUrl,
         referer: 'https://github.com/pelican',
         title: 'pelican',
+        maxRetries: config.maxRetries,
       });
     }
     default:

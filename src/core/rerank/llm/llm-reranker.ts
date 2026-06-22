@@ -2,6 +2,7 @@ import { ISignal } from '@/types/analyzers';
 import { IRerankConfig } from '@/types/config';
 import { EScorerType } from '@/utils/enums';
 
+import { createLimiter, Limiter } from './limiter';
 import { ILLMProvider } from './provider';
 
 /**
@@ -15,29 +16,6 @@ const PROTECTED_ANCHOR_TYPES: ReadonlySet<string> = new Set<string>([
   EScorerType.DIRECT_IMPORT,
   EScorerType.COLOCATION,
 ]);
-
-/**
- * Run `tasks` with at most `limit` in flight. Tiny inline pool — avoids an
- * ESM-only dependency and keeps the reranker self-contained/testable. Preserves
- * input order in the returned array.
- */
-async function mapWithConcurrency<T, R>(
-  items: T[],
-  limit: number,
-  fn: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) {
-      const i = next++;
-      results[i] = await fn(items[i]);
-    }
-  };
-  const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker);
-  await Promise.all(workers);
-  return results;
-}
 
 /** One candidate spec handed to the reranker for a single changed file. */
 export interface IRerankCandidate {
@@ -127,7 +105,16 @@ export class LLMReranker {
     private readonly log?: (msg: string) => void,
   ) {}
 
-  async rerank(input: IRerankInput, candidates: IRerankCandidate[]): Promise<IRerankVerdict[]> {
+  /**
+   * @param limiter shared concurrency limiter. Pass ONE limiter across all
+   * changed files so the global in-flight cap holds even when files are reranked
+   * in parallel. Defaults to a fresh per-call limiter (single-file use).
+   */
+  async rerank(
+    input: IRerankInput,
+    candidates: IRerankCandidate[],
+    limiter: Limiter = createLimiter(this.config.concurrency),
+  ): Promise<IRerankVerdict[]> {
     const { candidateBand, protectAnchors, maxCandidates } = this.config;
 
     const autoKept: IRerankVerdict[] = [];
@@ -179,9 +166,7 @@ export class LLMReranker {
       reason: `over maxCandidates cap — kept unjudged`,
     }));
 
-    const judged = await mapWithConcurrency(judging, this.config.concurrency, (c) =>
-      this.judge(input, c),
-    );
+    const judged = await Promise.all(judging.map((c) => limiter(() => this.judge(input, c))));
 
     return [...autoKept, ...overflowKept, ...judged];
   }
