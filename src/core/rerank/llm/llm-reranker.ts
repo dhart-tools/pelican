@@ -1,10 +1,10 @@
-import { ISignal } from '@/types/analyzers';
-import { IRerankConfig } from '@/types/config';
-import { IReasonPoint } from '@/types/scorers';
-import { EScorerType } from '@/utils/enums';
+import { ISignal } from "@/types/analyzers";
+import { IRerankConfig } from "@/types/config";
+import { IReasonPoint } from "@/types/scorers";
+import { EScorerType } from "@/utils/enums";
 
-import { createLimiter, Limiter } from './limiter';
-import { ILLMProvider } from './provider';
+import { createLimiter, Limiter } from "./limiter";
+import { ILLMProvider } from "./provider";
 
 /**
  * Anchors the LLM is NOT allowed to override when protectAnchors is on. Only the
@@ -53,43 +53,43 @@ const hasProtectedAnchor = (signals: ISignal[]): boolean =>
   );
 
 const JSON_INSTRUCTION =
-  'Respond with ONLY a JSON object: ' +
+  "Respond with ONLY a JSON object: " +
   '{"relevant": boolean, "confidence": number between 0 and 1, "why": array of points}. ' +
   'Each point is {"tag": short label, "file": the changed file it concerns, "point": one sentence}, ' +
   'where tag is a 1-3 word relationship (e.g. "Direct Impact", "Could Regress", "Shared State", ' +
   '"Setup Only", "Different Feature"), and point names what changed and which test step it affects. ' +
-  'Give 1-3 points. No prose, no code fences.';
+  "Give 1-3 points. No prose, no code fences.";
 
 // 'broad' — the original criterion: keep anything a regression COULD break.
 const BROAD_SYSTEM_PROMPT =
-  'You decide whether a test should run for a given code change in a CI test-selection tool. ' +
-  'A test is RELEVANT only if it actually exercises the changed behaviour — i.e. a regression in ' +
-  'the change could make this test fail. A test that merely mentions the same feature/domain but ' +
-  'does not drive the changed code path is NOT relevant. ' +
+  "You decide whether a test should run for a given code change in a CI test-selection tool. " +
+  "A test is RELEVANT only if it actually exercises the changed behaviour — i.e. a regression in " +
+  "the change could make this test fail. A test that merely mentions the same feature/domain but " +
+  "does not drive the changed code path is NOT relevant. " +
   JSON_INSTRUCTION;
 
 // 'strict' (default) — match a tester's targeted selection. Drops specs that
 // only touch the change incidentally even if a regression could affect them.
 const STRICT_SYSTEM_PROMPT =
-  'You select which tests a team runs for a code change in a CI test-selection tool. ' +
-  'A test should RUN only if it PRIMARILY exercises the changed behaviour — its main purpose ' +
+  "You select which tests a team runs for a code change in a CI test-selection tool. " +
+  "A test should RUN only if it PRIMARILY exercises the changed behaviour — its main purpose " +
   "drives the changed code path. If the test's main purpose is a DIFFERENT feature and it only " +
-  'touches the change incidentally — via setup/fixtures, or a dependency it does not assert on — ' +
-  'mark it NOT relevant, EVEN IF a regression could incidentally affect it. Judge by what the ' +
-  'test is for, not merely what it transitively depends on. ' +
+  "touches the change incidentally — via setup/fixtures, or a dependency it does not assert on — " +
+  "mark it NOT relevant, EVEN IF a regression could incidentally affect it. Judge by what the " +
+  "test is for, not merely what it transitively depends on. " +
   JSON_INSTRUCTION;
 
-const systemPromptFor = (mode: 'strict' | 'broad'): string =>
-  mode === 'broad' ? BROAD_SYSTEM_PROMPT : STRICT_SYSTEM_PROMPT;
+const systemPromptFor = (mode: "strict" | "broad"): string =>
+  mode === "broad" ? BROAD_SYSTEM_PROMPT : STRICT_SYSTEM_PROMPT;
 
 // Change triage — is the diff behavioural, or provably cosmetic? Used to skip
 // test selection entirely for whitespace/format-only changes.
 const TRIAGE_SYSTEM =
-  'You triage a code change for test selection. Classify the change as COSMETIC only if it ' +
-  'cannot possibly alter runtime behaviour — i.e. it is purely whitespace, indentation, ' +
-  'formatting, comments, import reordering, or renaming a local variable consistently. ' +
-  'Anything else is BEHAVIOURAL. IMPORTANT: whitespace or text inside a string/template literal, ' +
-  'JSX text, or a regex IS behavioural (it can change rendered/asserted output). If you are unsure, ' +
+  "You triage a code change for test selection. Classify the change as COSMETIC only if it " +
+  "cannot possibly alter runtime behaviour — i.e. it is purely whitespace, indentation, " +
+  "formatting, comments, import reordering, or renaming a local variable consistently. " +
+  "Anything else is BEHAVIOURAL. IMPORTANT: whitespace or text inside a string/template literal, " +
+  "JSX text, or a regex IS behavioural (it can change rendered/asserted output). If you are unsure, " +
   'answer behavioural. Respond with ONLY: {"cosmetic": boolean, "confidence": number 0..1, "why": short string}.';
 
 export interface ITriageResult {
@@ -118,17 +118,17 @@ export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandida
  */
 /** Coerce one raw `why` array item into a reason point, tolerating shapes. */
 function toReasonPoint(item: unknown): IReasonPoint | null {
-  if (typeof item === 'string') {
+  if (typeof item === "string") {
     const point = item.trim();
-    return point ? { tag: '', file: '', point } : null;
+    return point ? { tag: "", file: "", point } : null;
   }
-  if (item && typeof item === 'object') {
+  if (item && typeof item === "object") {
     const o = item as { tag?: unknown; file?: unknown; point?: unknown; reason?: unknown };
-    const point = String(o.point ?? o.reason ?? '').trim();
+    const point = String(o.point ?? o.reason ?? "").trim();
     if (!point) return null;
     return {
-      tag: typeof o.tag === 'string' ? o.tag.trim() : '',
-      file: typeof o.file === 'string' ? o.file.trim().replace(/^@/, '') : '',
+      tag: typeof o.tag === "string" ? o.tag.trim() : "",
+      file: typeof o.file === "string" ? o.file.trim().replace(/^@/, "") : "",
       point,
     };
   }
@@ -142,17 +142,17 @@ export function parseVerdict(
   if (!match) return null;
   try {
     const obj = JSON.parse(match[0]) as { relevant?: unknown; confidence?: unknown; why?: unknown };
-    if (typeof obj.relevant !== 'boolean') return null;
+    if (typeof obj.relevant !== "boolean") return null;
     const confidence =
-      typeof obj.confidence === 'number' ? Math.max(0, Math.min(1, obj.confidence)) : 0.5;
+      typeof obj.confidence === "number" ? Math.max(0, Math.min(1, obj.confidence)) : 0.5;
     // `why` is an array of {tag, file, point}; tolerate a bare string or missing.
     const why: IReasonPoint[] = Array.isArray(obj.why)
       ? obj.why
           .map(toReasonPoint)
           .filter((p): p is IReasonPoint => p !== null)
           .slice(0, 5)
-      : typeof obj.why === 'string' && obj.why.trim()
-        ? [{ tag: '', file: '', point: obj.why.trim() }]
+      : typeof obj.why === "string" && obj.why.trim()
+        ? [{ tag: "", file: "", point: obj.why.trim() }]
         : [];
     return { relevant: obj.relevant, confidence, why };
   } catch {
@@ -191,23 +191,23 @@ export class LLMReranker {
    * failure — a triage miss must never drop tests, so uncertainty keeps them.
    */
   async triageChange(changeSummary: string): Promise<ITriageResult> {
-    const fallback: ITriageResult = { cosmetic: false, confidence: 0, why: 'triage unavailable' };
+    const fallback: ITriageResult = { cosmetic: false, confidence: 0, why: "triage unavailable" };
     try {
       const raw = await this.provider.complete(
         [
-          { role: 'system', content: TRIAGE_SYSTEM },
-          { role: 'user', content: changeSummary },
+          { role: "system", content: TRIAGE_SYSTEM },
+          { role: "user", content: changeSummary },
         ],
         { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 1200 },
       );
       const m = raw.match(/\{[\s\S]*\}/);
       if (!m) return fallback;
       const o = JSON.parse(m[0]) as { cosmetic?: unknown; confidence?: unknown; why?: unknown };
-      if (typeof o.cosmetic !== 'boolean') return fallback;
+      if (typeof o.cosmetic !== "boolean") return fallback;
       return {
         cosmetic: o.cosmetic,
-        confidence: typeof o.confidence === 'number' ? Math.max(0, Math.min(1, o.confidence)) : 0,
-        why: typeof o.why === 'string' ? o.why.trim() : '',
+        confidence: typeof o.confidence === "number" ? Math.max(0, Math.min(1, o.confidence)) : 0,
+        why: typeof o.why === "string" ? o.why.trim() : "",
       };
     } catch (err) {
       this.log?.(`triage: ${String(err)} — treating as behavioural (keeps tests)`);
@@ -247,7 +247,7 @@ export class LLMReranker {
           testFile: c.testFile,
           kept: true,
           judged: false,
-          reason: 'protected (direct-import/colocation anchor)',
+          reason: "protected (direct-import/colocation anchor)",
         });
       } else {
         toJudge.push(c);
@@ -281,8 +281,8 @@ export class LLMReranker {
     try {
       const raw = await this.provider.complete(
         [
-          { role: 'system', content: systemPromptFor(this.config.judgeMode) },
-          { role: 'user', content: prompt },
+          { role: "system", content: systemPromptFor(this.config.judgeMode) },
+          { role: "user", content: prompt },
         ],
         // Headroom for reasoning models (e.g. nemotron): they spend tokens on a
         // thinking trace before the JSON verdict; too low truncates it →
@@ -291,7 +291,7 @@ export class LLMReranker {
         // BEFORE the JSON. With the diff-anchored, multi-point `why`, 800 could
         // truncate the JSON array → unparseable → fail-open with empty reasoning.
         // 2000 fits the trace + a 1-3 point verdict.
-        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 2000 },
+        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 10000 },
       );
       const verdict = parseVerdict(raw);
       if (!verdict) {
@@ -300,7 +300,7 @@ export class LLMReranker {
           testFile: c.testFile,
           kept: true,
           judged: true,
-          reason: 'unparseable LLM reply — kept (fail-open)',
+          reason: "unparseable LLM reply — kept (fail-open)",
         };
       }
       // Recall-safe gate: DROP only on a CONFIDENT rejection — the model must
