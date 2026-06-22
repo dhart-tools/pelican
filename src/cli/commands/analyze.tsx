@@ -19,8 +19,11 @@ import { AnalyzeView } from '@/cli/views/AnalyzeView';
 import { GitHistoryProvider } from '@/core/git/git-history-provider';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
-import { getChangedFiles } from '@/core/rerank/diff-extractor';
+import { extractDiffPayload, getChangedFiles } from '@/core/rerank/diff-extractor';
+import { LLMReranker, IRerankCandidate } from '@/core/rerank/llm/llm-reranker';
+import { createProvider } from '@/core/rerank/llm/provider-factory';
 import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
+import { buildSourceHeader, buildTestPayload } from '@/core/rerank/test-payload';
 import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
@@ -90,6 +93,89 @@ async function mineGitHistories(
     }
   }
 
+  return out;
+}
+
+/**
+ * LLM rerank pass (config.rerank). For each changed file it builds a change
+ * summary (diff + source header) and, per in-band candidate, asks the model
+ * whether the spec actually exercises the change. Recall-safe: the reranker
+ * auto-keeps strong/anchored candidates and fails open; here we only DROP specs
+ * it explicitly rejected. Returns results with rejected specs removed.
+ *
+ * Fail-open at this layer too: any setup error (missing key, bad provider)
+ * logs a warning and returns results untouched, so a misconfigured rerank never
+ * costs recall.
+ */
+async function applyLLMRerank(
+  results: IAnalyzeResult[],
+  config: IProjectConfig,
+  registry: Registry,
+  debug: boolean,
+  base?: string,
+  target?: string,
+): Promise<IAnalyzeResult[]> {
+  const rc = config.rerank;
+  if (!rc?.enabled) return results;
+
+  let provider;
+  try {
+    provider = createProvider(rc);
+  } catch (err) {
+    process.stderr.write(`[pelican] rerank disabled: ${String(err)}\n`);
+    if (debug) debugLog(`rerank: provider init failed — ${String(err)} (results unchanged)`);
+    return results;
+  }
+
+  const reranker = new LLMReranker(provider, rc, debug ? (m) => debugLog(m) : undefined);
+  if (debug) {
+    debugLog(
+      `rerank: provider=${rc.provider} model=${rc.model} band=[${rc.candidateBand.min},${rc.candidateBand.max}) ` +
+        `protectAnchors=${rc.protectAnchors} keepThreshold=${rc.keepThreshold}`,
+    );
+  }
+
+  const out: IAnalyzeResult[] = [];
+  for (const result of results) {
+    const sourceEntry = registry.getFile(result.changedFile);
+    const diff = await extractDiffPayload(result.changedFile, base, target);
+    const changeSummary =
+      (sourceEntry ? buildSourceHeader(sourceEntry) + '\n\n' : '') + `DIFF:\n${diff.text}`;
+
+    const candidates: IRerankCandidate[] = result.suggestedTests.map((t) => {
+      const entry = registry.getFile(t.testFile);
+      return {
+        testFile: t.testFile,
+        score: t.score,
+        signals: t.signals,
+        testExcerpt: entry ? buildTestPayload(entry) : t.testFile,
+      };
+    });
+
+    const verdicts = await reranker.rerank(
+      { changedFile: result.changedFile, changeSummary },
+      candidates,
+    );
+    const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
+
+    if (debug) {
+      const judged = verdicts.filter((v) => v.judged).length;
+      debugLog(
+        `rerank: ${result.changedFile} — ${candidates.length} candidate(s), ${judged} judged, ${dropped.size} dropped`,
+      );
+      for (const v of verdicts) {
+        debugLog(`    ${v.kept ? 'KEEP' : 'DROP'} ${v.testFile} — ${v.reason}`);
+      }
+    }
+
+    const kept = result.suggestedTests.filter((t) => !dropped.has(t.testFile));
+    out.push({
+      ...result,
+      suggestedTests: kept,
+      totalCandidates: kept.length,
+      postRerankCount: kept.length,
+    });
+  }
   return out;
 }
 
@@ -723,14 +809,25 @@ export async function runHeadless(
     results.push(await processFileHeadless(changedFile));
   }
 
+  // Optional LLM rerank (config.rerank) — independent of the Ollama path above.
+  // Only drops specs the model explicitly rejected; recall-safe + fail-open.
+  const finalResults = await applyLLMRerank(
+    results,
+    config,
+    registry,
+    debug,
+    options.base,
+    options.target,
+  );
+
   // In TUI mode we run this path only to populate analyze-debug.log; the JSON
   // belongs on stdout only for a real headless/json invocation.
   if (!runOptions.debugFileOnly) {
-    console.log(JSON.stringify({ results }, null, 2));
+    console.log(JSON.stringify({ results: finalResults }, null, 2));
   }
   if (debug) {
     debugLog(
-      `done — ${results.reduce((n, r) => n + (r.totalCandidates ?? 0), 0)} total suggestions`,
+      `done — ${finalResults.reduce((n, r) => n + (r.totalCandidates ?? 0), 0)} total suggestions`,
     );
   }
 }

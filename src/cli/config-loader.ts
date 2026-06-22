@@ -63,6 +63,19 @@ const DEFAULT_CONFIG: IProjectConfig = {
       maxWeight: 0.45,
     },
   },
+  rerank: {
+    enabled: false,
+    provider: 'openrouter',
+    model: 'anthropic/claude-sonnet-4.5',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    candidateBand: { min: 0.4, max: 0.9 },
+    protectAnchors: true,
+    keepThreshold: 0.5,
+    maxCandidates: 40,
+    concurrency: 4,
+    timeoutMs: 30000,
+  },
 };
 
 /**
@@ -81,6 +94,7 @@ interface IUserConfig {
   source?: DeepPartial<IProjectConfig['source']>;
   test?: DeepPartial<IProjectConfig['test']>;
   behaviour?: DeepPartial<IProjectConfig['behaviour']>;
+  rerank?: DeepPartial<IProjectConfig['rerank']>;
 }
 
 type DeepPartial<T> = {
@@ -229,5 +243,15 @@ function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfi
         ...user.behaviour?.temporal,
       } as ITemporalConfig,
     },
+    rerank: {
+      ...defaults.rerank,
+      ...user.rerank,
+      // candidateBand is nested — deep-merge so overriding one bound keeps the
+      // other from the defaults.
+      candidateBand: {
+        ...defaults.rerank!.candidateBand,
+        ...user.rerank?.candidateBand,
+      },
+    } as IProjectConfig['rerank'],
   };
 }

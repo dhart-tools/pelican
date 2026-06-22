@@ -1,4 +1,4 @@
-import { ITemporalConfig } from '@/types/config';
+import { ITemporalConfig, IRerankConfig } from '@/types/config';
 import { IScoreResult } from '@/types/scorers';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -234,6 +234,9 @@ export interface IProjectConfig {
      * loses anchor status (needs a co-signal). Default 0.1. */
     filenameAmbiguityShare?: number;
   };
+  /** Optional LLM rerank pass (disabled by default). An LLM judges whether each
+   * borderline candidate actually exercises the changed behaviour. */
+  rerank?: IRerankConfig;
 }
 
 // ─── CLI Options ─────────────────────────────────────────────────

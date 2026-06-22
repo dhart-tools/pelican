@@ -23,6 +23,45 @@ export interface ITemporalConfig {
   maxWeight: number;
 }
 
+/** LLM provider id. New providers are added to this union + the factory. */
+export type RerankProvider = 'openrouter';
+
+/**
+ * LLM rerank block. An LLM reads the change (diff + source header) and each
+ * candidate spec, and judges whether the spec actually EXERCISES the changed
+ * behaviour — the one thing static scorers and embeddings can't do (they see
+ * topical similarity; this reads intent). Disabled by default.
+ */
+export interface IRerankConfig {
+  enabled: boolean;
+  /** Which LLM backend to call. Only the value drives the factory; the shape is
+   * provider-agnostic so more backends slot in later. */
+  provider: RerankProvider;
+  /** Provider model slug, e.g. 'anthropic/claude-sonnet-4.5' or 'z-ai/glm-4.6'. */
+  model: string;
+  /** Name of the env var holding the API key. The key itself is NEVER stored in
+   * the config file. Default 'OPENROUTER_API_KEY'. */
+  apiKeyEnv: string;
+  /** Provider base URL (override for proxies/self-host). */
+  baseUrl: string;
+  /** Only candidates whose pelican score falls in [min, max) are sent to the
+   * LLM. Below min: already dropped. At/above max: auto-kept (strong structural
+   * match never second-guessed — saves cost AND protects recall). */
+  candidateBand: { min: number; max: number };
+  /** Never drop a candidate carrying a narrow structural anchor (direct-import/
+   * filename/colocation), regardless of the LLM verdict. Bounds recall risk. */
+  protectAnchors: boolean;
+  /** LLM relevance (0..1) at or above which a judged candidate is kept. */
+  keepThreshold: number;
+  /** Hard cap on candidates sent to the LLM per changed file (cost ceiling). */
+  maxCandidates: number;
+  /** Concurrent LLM requests. */
+  concurrency: number;
+  /** Per-request timeout (ms). On timeout/error the candidate is KEPT (fail-open
+   * → recall-safe). */
+  timeoutMs: number;
+}
+
 export interface ISuggestorConfig {
   scoring: {
     ubiquityThreshold: number; // default 0.7
