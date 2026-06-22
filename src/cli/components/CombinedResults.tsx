@@ -60,6 +60,47 @@ function trimPath(full: string, width: number): string {
   return tail.length < width - 2 ? `…/${tail}` : `…${tail.slice(-(width - 1))}`;
 }
 
+const POINT_WIDTH = 64;
+
+/** One reasoning bullet: "─ <Tag>  @<file>" then the wrapped point beneath. */
+function ReasonPointRow({
+  tag,
+  file,
+  point,
+  color,
+}: {
+  tag: string;
+  file: string;
+  point: string;
+  color: string;
+}) {
+  const fileName = file ? file.replace(/\\/g, '/').split('/').pop() : '';
+  const lines = wordWrap(point, POINT_WIDTH);
+  return (
+    <Box flexDirection="column">
+      <Box>
+        <Box width={9} flexShrink={0}>
+          <Text color={palette.dim}>{'      ─ '}</Text>
+        </Box>
+        {tag && (
+          <Text color={color} bold>
+            {tag}
+          </Text>
+        )}
+        {fileName && <Text color={palette.brand}>{`  @${fileName}`}</Text>}
+      </Box>
+      {lines.map((line, li) => (
+        <Box key={li}>
+          <Box width={9} flexShrink={0}>
+            <Text> </Text>
+          </Box>
+          <Text color={palette.muted}>{line}</Text>
+        </Box>
+      ))}
+    </Box>
+  );
+}
+
 interface BandSectionProps {
   band: EConfidenceLevel;
   tests: TFlatTest[];
@@ -84,26 +125,32 @@ function BandSection({ band, tests, startIndex }: BandSectionProps) {
       </Box>
       {tests.map((t, i) => {
         const idx = String(startIndex + i + 1).padStart(2, ' ');
-        // Reasoning line(s) — the model's rationale (or structural explanation).
-        // No raw confidence number: the tier (band header) IS the confidence.
-        const reason =
-          t.explanation && t.explanation.trim() !== 'No reason provided.'
-            ? t.explanation.trim()
-            : '';
-        const reasonLines = reason ? wordWrap(reason, PATH_WIDTH) : [];
+        // Structured reasoning points (LLM rerank). Fall back to the plain
+        // explanation when there are none. No raw score — the tier IS the
+        // confidence.
+        const points = t.reasonPoints ?? [];
+        const fallback =
+          points.length === 0 && t.explanation && t.explanation.trim() !== 'No reason provided.'
+            ? wordWrap(t.explanation.trim(), POINT_WIDTH)
+            : [];
         return (
-          <Box key={t.testFile} flexDirection="column">
+          <Box key={t.testFile} flexDirection="column" marginTop={points.length ? 1 : 0}>
             <Box>
               <Box width={7} flexShrink={0}>
                 <Text color={palette.muted}>{`   ${idx}  `}</Text>
               </Box>
               <Box flexShrink={1}>
-                <Text color={color}>{trimPath(t.testFile, PATH_WIDTH)}</Text>
+                <Text color={color} bold>
+                  {trimPath(t.testFile, PATH_WIDTH)}
+                </Text>
               </Box>
             </Box>
-            {reasonLines.map((line, li) => (
+            {points.map((p, pi) => (
+              <ReasonPointRow key={pi} tag={p.tag} file={p.file} point={p.point} color={color} />
+            ))}
+            {fallback.map((line, li) => (
               <Box key={li}>
-                <Box width={7} flexShrink={0}>
+                <Box width={9} flexShrink={0}>
                   <Text> </Text>
                 </Box>
                 <Text color={palette.muted}>{line}</Text>

@@ -1,5 +1,6 @@
 import { ISignal } from '@/types/analyzers';
 import { IRerankConfig } from '@/types/config';
+import { IReasonPoint } from '@/types/scorers';
 import { EScorerType } from '@/utils/enums';
 
 import { createLimiter, Limiter } from './limiter';
@@ -41,9 +42,9 @@ export interface IRerankVerdict {
   judged: boolean;
   llmRelevant?: boolean;
   llmConfidence?: number;
-  /** The model's own short rationale ("why"). Surfaced in the UI as the
-   * reasoning line for kept candidates. */
-  why?: string;
+  /** The model's structured rationale — bullet points. Surfaced in the UI as
+   * the reasoning lines for kept candidates. */
+  why?: IReasonPoint[];
 }
 
 const hasProtectedAnchor = (signals: ISignal[]): boolean =>
@@ -52,8 +53,12 @@ const hasProtectedAnchor = (signals: ISignal[]): boolean =>
   );
 
 const JSON_INSTRUCTION =
-  'Respond with ONLY a JSON object: {"relevant": boolean, "confidence": number between 0 and 1, "why": short string}. ' +
-  'No prose, no code fences.';
+  'Respond with ONLY a JSON object: ' +
+  '{"relevant": boolean, "confidence": number between 0 and 1, "why": array of points}. ' +
+  'Each point is {"tag": short label, "file": the changed file it concerns, "point": one sentence}, ' +
+  'where tag is a 1-3 word relationship (e.g. "Direct Impact", "Could Regress", "Shared State", ' +
+  '"Setup Only", "Different Feature"), and point names what changed and which test step it affects. ' +
+  'Give 1-3 points. No prose, no code fences.';
 
 // 'broad' — the original criterion: keep anything a regression COULD break.
 const BROAD_SYSTEM_PROMPT =
@@ -93,9 +98,28 @@ export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandida
  * surrounding prose. Returns null when nothing parseable is found (caller then
  * fails open).
  */
+/** Coerce one raw `why` array item into a reason point, tolerating shapes. */
+function toReasonPoint(item: unknown): IReasonPoint | null {
+  if (typeof item === 'string') {
+    const point = item.trim();
+    return point ? { tag: '', file: '', point } : null;
+  }
+  if (item && typeof item === 'object') {
+    const o = item as { tag?: unknown; file?: unknown; point?: unknown; reason?: unknown };
+    const point = String(o.point ?? o.reason ?? '').trim();
+    if (!point) return null;
+    return {
+      tag: typeof o.tag === 'string' ? o.tag.trim() : '',
+      file: typeof o.file === 'string' ? o.file.trim().replace(/^@/, '') : '',
+      point,
+    };
+  }
+  return null;
+}
+
 export function parseVerdict(
   raw: string,
-): { relevant: boolean; confidence: number; why: string } | null {
+): { relevant: boolean; confidence: number; why: IReasonPoint[] } | null {
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try {
@@ -103,7 +127,15 @@ export function parseVerdict(
     if (typeof obj.relevant !== 'boolean') return null;
     const confidence =
       typeof obj.confidence === 'number' ? Math.max(0, Math.min(1, obj.confidence)) : 0.5;
-    const why = typeof obj.why === 'string' ? obj.why.trim() : '';
+    // `why` is an array of {tag, file, point}; tolerate a bare string or missing.
+    const why: IReasonPoint[] = Array.isArray(obj.why)
+      ? obj.why
+          .map(toReasonPoint)
+          .filter((p): p is IReasonPoint => p !== null)
+          .slice(0, 5)
+      : typeof obj.why === 'string' && obj.why.trim()
+        ? [{ tag: '', file: '', point: obj.why.trim() }]
+        : [];
     return { relevant: obj.relevant, confidence, why };
   } catch {
     return null;

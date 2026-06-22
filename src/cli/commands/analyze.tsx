@@ -228,7 +228,7 @@ async function applyLLMRerank(
         .filter((t) => !dropped.has(t.testFile))
         .map((t) => {
           const v = verdictByFile.get(t.testFile);
-          return v?.llmRelevant && v.why ? { ...t, explanation: v.why } : t;
+          return v?.llmRelevant && v.why && v.why.length ? { ...t, reasonPoints: v.why } : t;
         });
       return {
         ...result,

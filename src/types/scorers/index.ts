@@ -27,6 +27,20 @@ export interface IScorerContext {
   gitHistories?: Map<string, IRepoGitHistory>;
 }
 
+/**
+ * One reasoning bullet from the LLM rerank — ties a specific changed file to a
+ * concrete way it could break (or fails to touch) this test. Rendered as a
+ * dash-bulleted line: "<tag> · @<file> — <point>".
+ */
+export interface IReasonPoint {
+  /** Short relationship label, e.g. "Direct Impact", "Could Regress", "Setup Only". */
+  tag: string;
+  /** Changed file the point refers to (basename; may be empty). */
+  file: string;
+  /** The concrete causal sentence (what changed → which test step it affects). */
+  point: string;
+}
+
 export interface IScoreResult {
   testFile: string;
   score: number;
@@ -34,6 +48,9 @@ export interface IScoreResult {
   confidence: EConfidenceLevel;
   /** Human-readable reason. Populated by LLM reranker or pelican scoring engine. */
   explanation: string;
+  /** Structured rerank reasoning — the model's bullet points. Rendered as the
+   * reasoning lines in the results UI when present (richer than `explanation`). */
+  reasonPoints?: IReasonPoint[];
   /** True when this result came from the .pelican.lock cache (no LLM call this run). */
   fromCache?: boolean;
 }

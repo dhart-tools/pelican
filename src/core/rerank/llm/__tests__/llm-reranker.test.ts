@@ -54,35 +54,43 @@ const input = {
 };
 
 describe('parseVerdict', () => {
-  it('parses plain JSON', () => {
+  it('parses plain JSON (why defaults to empty array)', () => {
     expect(parseVerdict('{"relevant": true, "confidence": 0.9}')).toEqual({
       relevant: true,
       confidence: 0.9,
-      why: '',
+      why: [],
     });
   });
-  it('captures the model rationale (why)', () => {
-    expect(
-      parseVerdict('{"relevant": true, "confidence": 0.8, "why": "drives the move flow"}'),
-    ).toEqual({ relevant: true, confidence: 0.8, why: 'drives the move flow' });
-  });
-  it('tolerates code fences and prose', () => {
-    expect(parseVerdict('Sure:\n```json\n{"relevant": false, "confidence": 0.2}\n```')).toEqual({
-      relevant: false,
-      confidence: 0.2,
-      why: '',
+  it('parses structured why points {tag, file, point}', () => {
+    const out = parseVerdict(
+      '{"relevant": true, "confidence": 0.8, "why": [' +
+        '{"tag": "Direct Impact", "file": "@MoveDevices.tsx", "point": "drives cy.moveDevice"}]}',
+    );
+    expect(out).toEqual({
+      relevant: true,
+      confidence: 0.8,
+      why: [{ tag: 'Direct Impact', file: 'MoveDevices.tsx', point: 'drives cy.moveDevice' }],
     });
+  });
+  it('tolerates a bare-string why (wraps into one point)', () => {
+    const out = parseVerdict('{"relevant": false, "confidence": 0.2, "why": "unrelated"}');
+    expect(out?.why).toEqual([{ tag: '', file: '', point: 'unrelated' }]);
+  });
+  it('drops empty/garbage points and caps at 5', () => {
+    const items = Array.from({ length: 8 }, (_, i) => `{"point": "p${i}"}`).join(',');
+    const out = parseVerdict(`{"relevant": true, "confidence": 0.9, "why": [${items}, {}, ""]}`);
+    expect(out?.why).toHaveLength(5);
   });
   it('clamps confidence and defaults when missing', () => {
     expect(parseVerdict('{"relevant": true, "confidence": 5}')).toEqual({
       relevant: true,
       confidence: 1,
-      why: '',
+      why: [],
     });
     expect(parseVerdict('{"relevant": true}')).toEqual({
       relevant: true,
       confidence: 0.5,
-      why: '',
+      why: [],
     });
   });
   it('returns null on garbage', () => {
