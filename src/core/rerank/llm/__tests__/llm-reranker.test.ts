@@ -19,6 +19,7 @@ const cfg: IRerankConfig = {
   maxRetries: 3,
   highPrecision: false,
   judgeMode: 'strict',
+  skipCosmeticChanges: true,
 };
 
 const sig = (type: string, over: Partial<ISignal> = {}): ISignal => ({

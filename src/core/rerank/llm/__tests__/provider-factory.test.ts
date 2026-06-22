@@ -18,6 +18,7 @@ const base: IRerankConfig = {
   maxRetries: 3,
   highPrecision: false,
   judgeMode: 'strict',
+  skipCosmeticChanges: true,
 };
 
 describe('createProvider — key resolution', () => {

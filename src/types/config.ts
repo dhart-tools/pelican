@@ -99,6 +99,13 @@ export interface IRerankConfig {
    * exercises the change"; 'broad' = "a regression could break it". See
    * RerankJudgeMode. */
   judgeMode: RerankJudgeMode;
+  /** Triage each changed file's diff first: if it's CONFIDENTLY cosmetic
+   * (whitespace, formatting, comments, import reordering, local rename — no
+   * runtime effect), select NO tests for it. Recall-safe: only skips on
+   * confidence >= dropConfidence; whitespace inside a string is treated as
+   * behavioural; needs the diff (skipped when only full content is available).
+   * Default true. */
+  skipCosmeticChanges: boolean;
 }
 
 export interface ISuggestorConfig {

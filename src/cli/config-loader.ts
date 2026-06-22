@@ -84,6 +84,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     maxRetries: 3,
     highPrecision: false,
     judgeMode: 'strict',
+    skipCosmeticChanges: true,
   },
 };
 

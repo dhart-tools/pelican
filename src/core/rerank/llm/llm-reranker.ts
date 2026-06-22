@@ -82,6 +82,22 @@ const STRICT_SYSTEM_PROMPT =
 const systemPromptFor = (mode: 'strict' | 'broad'): string =>
   mode === 'broad' ? BROAD_SYSTEM_PROMPT : STRICT_SYSTEM_PROMPT;
 
+// Change triage — is the diff behavioural, or provably cosmetic? Used to skip
+// test selection entirely for whitespace/format-only changes.
+const TRIAGE_SYSTEM =
+  'You triage a code change for test selection. Classify the change as COSMETIC only if it ' +
+  'cannot possibly alter runtime behaviour — i.e. it is purely whitespace, indentation, ' +
+  'formatting, comments, import reordering, or renaming a local variable consistently. ' +
+  'Anything else is BEHAVIOURAL. IMPORTANT: whitespace or text inside a string/template literal, ' +
+  'JSX text, or a regex IS behavioural (it can change rendered/asserted output). If you are unsure, ' +
+  'answer behavioural. Respond with ONLY: {"cosmetic": boolean, "confidence": number 0..1, "why": short string}.';
+
+export interface ITriageResult {
+  cosmetic: boolean;
+  confidence: number;
+  why: string;
+}
+
 /** Build the per-pair user message. Small, focused, groundable. */
 export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandidate): string {
   return (
@@ -168,6 +184,37 @@ export class LLMReranker {
    * changed files so the global in-flight cap holds even when files are reranked
    * in parallel. Defaults to a fresh per-call limiter (single-file use).
    */
+  /**
+   * Triage a change: is its diff behavioural, or provably cosmetic (whitespace/
+   * formatting/comments)? Used to skip test selection for no-op changes. One
+   * LLM call. Fails CLOSED to behavioural (cosmetic:false) on any error/parse
+   * failure — a triage miss must never drop tests, so uncertainty keeps them.
+   */
+  async triageChange(changeSummary: string): Promise<ITriageResult> {
+    const fallback: ITriageResult = { cosmetic: false, confidence: 0, why: 'triage unavailable' };
+    try {
+      const raw = await this.provider.complete(
+        [
+          { role: 'system', content: TRIAGE_SYSTEM },
+          { role: 'user', content: changeSummary },
+        ],
+        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 1200 },
+      );
+      const m = raw.match(/\{[\s\S]*\}/);
+      if (!m) return fallback;
+      const o = JSON.parse(m[0]) as { cosmetic?: unknown; confidence?: unknown; why?: unknown };
+      if (typeof o.cosmetic !== 'boolean') return fallback;
+      return {
+        cosmetic: o.cosmetic,
+        confidence: typeof o.confidence === 'number' ? Math.max(0, Math.min(1, o.confidence)) : 0,
+        why: typeof o.why === 'string' ? o.why.trim() : '',
+      };
+    } catch (err) {
+      this.log?.(`triage: ${String(err)} — treating as behavioural (keeps tests)`);
+      return fallback;
+    }
+  }
+
   async rerank(
     input: IRerankInput,
     candidates: IRerankCandidate[],

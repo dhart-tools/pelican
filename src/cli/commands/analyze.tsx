@@ -184,6 +184,21 @@ async function applyLLMRerank(
         changeSummary = `${diff.fallback ? 'FULL FILE' : 'DIFF'} — ${result.changedFile}\n${diff.text}`;
       }
 
+      // Change triage — a confidently-cosmetic diff (whitespace/format/comments)
+      // selects NO tests for this file. Needs a real diff (skipped on fallback,
+      // where we only have full content). Recall-safe: only on confidence >=
+      // dropConfidence; triage fails closed to behavioural.
+      if (rc.skipCosmeticChanges && !diff.fallback) {
+        const triage = await reranker.triageChange(`DIFF — ${result.changedFile}\n${diff.text}`);
+        if (triage.cosmetic && triage.confidence >= rc.dropConfidence) {
+          if (debug)
+            debugLog(
+              `rerank: ${result.changedFile} — COSMETIC (conf ${triage.confidence.toFixed(2)}: ${triage.why}); selecting 0 tests`,
+            );
+          return { ...result, suggestedTests: [], totalCandidates: 0, postRerankCount: 0 };
+        }
+      }
+
       const candidates: IRerankCandidate[] = await Promise.all(
         result.suggestedTests.map(async (t) => {
           const entry = registry.getFile(t.testFile);
