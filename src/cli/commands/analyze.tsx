@@ -24,7 +24,7 @@ import { createLimiter } from '@/core/rerank/llm/limiter';
 import { LLMReranker, IRerankCandidate } from '@/core/rerank/llm/llm-reranker';
 import { createProvider } from '@/core/rerank/llm/provider-factory';
 import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
-import { buildTestPayload } from '@/core/rerank/test-payload';
+import { buildTestPayload, buildStructuredTestExcerpt } from '@/core/rerank/test-payload';
 import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
@@ -97,24 +97,21 @@ async function mineGitHistories(
   return out;
 }
 
-/** Max chars of raw source/test code sent to the model per file. */
-const RERANK_FILE_CHARS = 8000;
-
 /**
- * Read a file's RAW content (truncated) for the rerank prompt. Resolves the
- * absolute path from the entry's repoRoot (two-repo aware). Returns null if it
- * can't be read, so the caller can fall back.
+ * Read a file's RAW content (capped). Resolves the absolute path from the
+ * entry's repoRoot (two-repo aware). Returns null if it can't be read, so the
+ * caller can fall back. Default cap 16k comfortably covers a changed source
+ * file; the test side reads more (it's distilled to a lean extract before send).
  */
 async function readFileExcerpt(
   repoRoot: string | undefined,
   relPath: string,
+  cap = 16000,
 ): Promise<string | null> {
   if (!repoRoot) return null;
   try {
     const content = await fs.readFile(path.join(repoRoot, relPath), 'utf-8');
-    return content.length > RERANK_FILE_CHARS
-      ? content.slice(0, RERANK_FILE_CHARS) + '\n…(truncated)'
-      : content;
+    return content.length > cap ? content.slice(0, cap) + '\n…(truncated)' : content;
   } catch {
     return null;
   }
@@ -190,14 +187,17 @@ async function applyLLMRerank(
       const candidates: IRerankCandidate[] = await Promise.all(
         result.suggestedTests.map(async (t) => {
           const entry = registry.getFile(t.testFile);
-          // Prefer the ACTUAL spec source (what the validated prompts used); fall
-          // back to the derived summary only if the file can't be read.
-          const realCode = entry ? await readFileExcerpt(entry.repoRoot, entry.path) : null;
+          // Distil the spec to a LEAN structured extract (purpose + scenarios +
+          // actions + assertions). Eval across labeled cases showed lean beats
+          // both raw bodies (hedge) and structural enrichment (hedge). Read a
+          // generous slice so the extractor sees the whole spec, then distil.
+          const raw = entry ? await readFileExcerpt(entry.repoRoot, entry.path, 50000) : null;
+          const excerpt = raw ? buildStructuredTestExcerpt(raw) : '';
           return {
             testFile: t.testFile,
             score: t.score,
             signals: t.signals,
-            testExcerpt: realCode ?? (entry ? buildTestPayload(entry) : t.testFile),
+            testExcerpt: excerpt || (entry ? buildTestPayload(entry) : t.testFile),
           };
         }),
       );

@@ -4,6 +4,51 @@ import { IFileEntry } from '@/types/registry';
 
 const MAX_PAYLOAD_CHARS = 2000;
 
+/**
+ * Lean structured extract of a raw spec — the evidence the LLM rerank judges on.
+ *
+ * Pulls the signal-dense, primary-intent parts from the WHOLE file: the purpose
+ * comment, every describe/it title, the cy.* action verbs, and the .should
+ * assertion targets. Deliberately LEAN — eval across labeled cases showed that
+ * enriching this (full bodies, or structural facts like routes/selectors) makes
+ * the judge HEDGE toward keeping → lower precision. It also avoids the arbitrary
+ * first-N-char truncation, which on big specs is mostly before() boilerplate.
+ *
+ * Pure: operates on the raw source text. Empty input → ''.
+ */
+export function buildStructuredTestExcerpt(source: string): string {
+  const c = source;
+  if (!c.trim()) return '';
+
+  const headMatch = c.match(/\/\*+([\s\S]*?)\*\//) || c.match(/(?:^\s*\/\/.*\n)+/m);
+  const purpose = headMatch
+    ? headMatch[0].replace(/[/*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400)
+    : '';
+
+  const titles = [
+    ...[...c.matchAll(/describe\(\s*[`'"]([^`'"]{1,140})/g)].map((m) => m[1].trim()),
+    ...[...c.matchAll(/\bit\(\s*[`'"]([^`'"]{1,140})/g)].map((m) => m[1].trim()),
+  ];
+  const uniqTitles = [...new Set(titles)].slice(0, 20);
+
+  const cmds = [...new Set([...c.matchAll(/cy\.([a-zA-Z][a-zA-Z0-9]*)/g)].map((m) => m[1]))].slice(
+    0,
+    40,
+  );
+  const asserts = [
+    ...new Set([...c.matchAll(/\.should\(\s*[`'"]([^`'"]{1,40})/g)].map((m) => m[1])),
+  ].slice(0, 15);
+
+  return [
+    purpose ? `PURPOSE: ${purpose}` : '',
+    `SCENARIOS: ${uniqTitles.join(' | ') || '—'}`,
+    `ACTIONS: ${cmds.map((x) => 'cy.' + x).join(', ') || '—'}`,
+    `ASSERTIONS: ${asserts.join(', ') || '—'}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 const PROVIDERS = ['okta', 'google', 'cognito', 'auth0', 'facebook'] as const;
 type Provider = (typeof PROVIDERS)[number];
 
