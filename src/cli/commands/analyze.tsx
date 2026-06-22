@@ -637,11 +637,24 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         const fileLimit = pLimit(fileConcurrency);
         const results = await Promise.all(changedFiles.map((f) => fileLimit(() => processFile(f))));
 
+        // LLM rerank (config.rerank) — the interactive path must apply it too,
+        // otherwise the OpenRouter reasoning/points only appear in --ci/json.
+        // debug=false: the TUI has no debug-file sink, so logging would corrupt
+        // the rendered frames (read rerank debug from a headless --debug run).
+        const results2 = await applyLLMRerank(
+          results,
+          config,
+          registry,
+          false,
+          options.base,
+          options.target,
+        );
+
         // Phase 5: Done
         setState((s) => ({
           ...s,
           phase: 'done',
-          results,
+          results: results2,
           elapsedMs: Date.now() - startTime,
           registryStats: {
             totalFiles: registry.files.size,
