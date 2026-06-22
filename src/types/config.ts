@@ -27,6 +27,18 @@ export interface ITemporalConfig {
 export type RerankProvider = 'openrouter';
 
 /**
+ * How strictly the LLM judges a candidate's relevance to the change.
+ * - 'strict' (default): RUN only if the test PRIMARILY exercises the changed
+ *   behaviour. A test whose main purpose is a different feature — touching the
+ *   change only incidentally (via setup, or an unasserted dependency) — is NOT
+ *   relevant, even if a regression could incidentally affect it. Matches how a
+ *   tester picks targeted tests.
+ * - 'broad': RUN if a regression in the change COULD make the test fail. Keeps
+ *   incidental dependents — higher recall, lower precision.
+ */
+export type RerankJudgeMode = 'strict' | 'broad';
+
+/**
  * LLM rerank block. An LLM reads the change (diff + source header) and each
  * candidate spec, and judges whether the spec actually EXERCISES the changed
  * behaviour — the one thing static scorers and embeddings can't do (they see
@@ -83,6 +95,10 @@ export interface IRerankConfig {
    * diff, then the test) — maximum context for the judge, at more tokens and
    * slower/costlier calls. When false, only the diff is sent. Default false. */
   highPrecision: boolean;
+  /** Relevance criterion the LLM applies. 'strict' (default) = "primarily
+   * exercises the change"; 'broad' = "a regression could break it". See
+   * RerankJudgeMode. */
+  judgeMode: RerankJudgeMode;
 }
 
 export interface ISuggestorConfig {

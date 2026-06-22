@@ -83,6 +83,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     timeoutMs: 30000,
     maxRetries: 3,
     highPrecision: false,
+    judgeMode: 'strict',
   },
 };
 

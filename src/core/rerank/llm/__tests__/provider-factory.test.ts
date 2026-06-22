@@ -17,6 +17,7 @@ const base: IRerankConfig = {
   timeoutMs: 30000,
   maxRetries: 3,
   highPrecision: false,
+  judgeMode: 'strict',
 };
 
 describe('createProvider — key resolution', () => {

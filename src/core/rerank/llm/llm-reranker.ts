@@ -51,13 +51,31 @@ const hasProtectedAnchor = (signals: ISignal[]): boolean =>
     (s) => s.matched && s.anchorEligible !== false && PROTECTED_ANCHOR_TYPES.has(s.type),
   );
 
-const SYSTEM_PROMPT =
+const JSON_INSTRUCTION =
+  'Respond with ONLY a JSON object: {"relevant": boolean, "confidence": number between 0 and 1, "why": short string}. ' +
+  'No prose, no code fences.';
+
+// 'broad' — the original criterion: keep anything a regression COULD break.
+const BROAD_SYSTEM_PROMPT =
   'You decide whether a test should run for a given code change in a CI test-selection tool. ' +
   'A test is RELEVANT only if it actually exercises the changed behaviour — i.e. a regression in ' +
   'the change could make this test fail. A test that merely mentions the same feature/domain but ' +
   'does not drive the changed code path is NOT relevant. ' +
-  'Respond with ONLY a JSON object: {"relevant": boolean, "confidence": number between 0 and 1, "why": short string}. ' +
-  'No prose, no code fences.';
+  JSON_INSTRUCTION;
+
+// 'strict' (default) — match a tester's targeted selection. Drops specs that
+// only touch the change incidentally even if a regression could affect them.
+const STRICT_SYSTEM_PROMPT =
+  'You select which tests a team runs for a code change in a CI test-selection tool. ' +
+  'A test should RUN only if it PRIMARILY exercises the changed behaviour — its main purpose ' +
+  "drives the changed code path. If the test's main purpose is a DIFFERENT feature and it only " +
+  'touches the change incidentally — via setup/fixtures, or a dependency it does not assert on — ' +
+  'mark it NOT relevant, EVEN IF a regression could incidentally affect it. Judge by what the ' +
+  'test is for, not merely what it transitively depends on. ' +
+  JSON_INSTRUCTION;
+
+const systemPromptFor = (mode: 'strict' | 'broad'): string =>
+  mode === 'broad' ? BROAD_SYSTEM_PROMPT : STRICT_SYSTEM_PROMPT;
 
 /** Build the per-pair user message. Small, focused, groundable. */
 export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandidate): string {
@@ -182,7 +200,7 @@ export class LLMReranker {
     try {
       const raw = await this.provider.complete(
         [
-          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'system', content: systemPromptFor(this.config.judgeMode) },
           { role: 'user', content: prompt },
         ],
         // Headroom for reasoning models (e.g. nemotron): they spend tokens on a
