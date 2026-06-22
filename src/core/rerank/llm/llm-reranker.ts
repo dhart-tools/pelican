@@ -89,7 +89,9 @@ export function buildRerankPrompt(input: IRerankInput, candidate: IRerankCandida
     `${input.changeSummary.trim()}\n\n` +
     `TEST — ${candidate.testFile}\n` +
     `${candidate.testExcerpt.trim()}\n\n` +
-    `Does this test exercise the changed behaviour? Reply with the JSON object only.`
+    `Anchor each point on the SPECIFIC change above — what was added/removed/modified ` +
+    `(prefer the DIFF lines if shown) — not just the file as a whole. Phrase it as ` +
+    `"the change to <X> could break <which step of this test>". Reply with the JSON object only.`
   );
 }
 
@@ -238,7 +240,11 @@ export class LLMReranker {
         // Headroom for reasoning models (e.g. nemotron): they spend tokens on a
         // thinking trace before the JSON verdict; too low truncates it →
         // unparseable → fail-open. 800 fits the trace + the tiny JSON.
-        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 800 },
+        // Headroom for a reasoning model: it spends tokens on a thinking trace
+        // BEFORE the JSON. With the diff-anchored, multi-point `why`, 800 could
+        // truncate the JSON array → unparseable → fail-open with empty reasoning.
+        // 2000 fits the trace + a 1-3 point verdict.
+        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 2000 },
       );
       const verdict = parseVerdict(raw);
       if (!verdict) {
