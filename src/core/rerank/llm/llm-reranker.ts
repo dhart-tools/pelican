@@ -179,7 +179,10 @@ export class LLMReranker {
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: prompt },
         ],
-        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 256 },
+        // Headroom for reasoning models (e.g. nemotron): they spend tokens on a
+        // thinking trace before the JSON verdict; too low truncates it →
+        // unparseable → fail-open. 800 fits the trace + the tiny JSON.
+        { timeoutMs: this.config.timeoutMs, temperature: 0, maxTokens: 800 },
       );
       const verdict = parseVerdict(raw);
       if (!verdict) {

@@ -68,8 +68,10 @@ const DEFAULT_CONFIG: IProjectConfig = {
     provider: 'openrouter',
     // Validated on the hard cases (case 05 + 10) at 8/8; a small MoE that's
     // cheap/fast yet reasons about behaviour well enough to separate
-    // exercises-the-change from mentions-the-domain. Override per project.
-    model: 'nvidia/nemotron-nano-3-30b-a3b',
+    // exercises-the-change from mentions-the-domain. The `:free` variant runs
+    // at $0 (rate-limited); drop `:free` + add OpenRouter credits for higher
+    // throughput. Override per project.
+    model: 'nvidia/nemotron-3-nano-30b-a3b:free',
     apiKeyEnv: 'OPENROUTER_API_KEY',
     baseUrl: 'https://openrouter.ai/api/v1',
     candidateBand: { min: 0.4, max: 0.9 },
