@@ -21,7 +21,7 @@ import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
 import { extractDiffPayload, getChangedFiles } from '@/core/rerank/diff-extractor';
 import { createLimiter } from '@/core/rerank/llm/limiter';
-import { LLMReranker, IRerankCandidate } from '@/core/rerank/llm/llm-reranker';
+import { LLMReranker, IRerankCandidate, IRerankVerdict } from '@/core/rerank/llm/llm-reranker';
 import { createProvider } from '@/core/rerank/llm/provider-factory';
 import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
 import { buildTestPayload, buildStructuredTestExcerpt } from '@/core/rerank/test-payload';
@@ -43,6 +43,7 @@ import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match
 import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
 import { IRepoGitHistory } from '@/types/git';
+import { IReasonPoint } from '@/types/scorers';
 import { formatBuildLine } from '@/utils/build-info';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -129,6 +130,50 @@ async function readFileExcerpt(
  * logs a warning and returns results untouched, so a misconfigured rerank never
  * costs recall.
  */
+/**
+ * Build a reasoning note for a kept candidate that has NO LLM relevance points
+ * — so the UI never shows a bare row. The tag tells the user how it survived:
+ * a confident structural match, a low-confidence keep, or one we couldn't
+ * evaluate (rate-limit/error → flagged so it reads as "unverified", not gold).
+ */
+function synthesizeKeepNote(
+  verdict: IRerankVerdict | undefined,
+  changedFile: string,
+): IReasonPoint[] {
+  const reason = verdict?.reason ?? '';
+  if (/fail-open/.test(reason)) {
+    return [
+      {
+        tag: 'Not evaluated',
+        file: changedFile,
+        point:
+          'LLM check did not complete (rate-limit/network); kept to preserve recall — verify manually',
+      },
+    ];
+  }
+  if (/protected/.test(reason)) {
+    return [
+      {
+        tag: 'Direct match',
+        file: changedFile,
+        point: 'test imports or is colocated with the changed file',
+      },
+    ];
+  }
+  if (verdict?.judged && verdict.llmRelevant === false) {
+    return [
+      {
+        tag: 'Low confidence',
+        file: changedFile,
+        point: `model leaned not-relevant (conf ${(verdict.llmConfidence ?? 0).toFixed(2)}) but below the drop threshold; kept to be safe`,
+      },
+    ];
+  }
+  return [
+    { tag: 'Strong match', file: changedFile, point: 'high structural score (not LLM-judged)' },
+  ];
+}
+
 async function applyLLMRerank(
   results: IAnalyzeResult[],
   config: IProjectConfig,
@@ -136,6 +181,7 @@ async function applyLLMRerank(
   debug: boolean,
   base?: string,
   target?: string,
+  onWarn?: (msg: string) => void,
 ): Promise<IAnalyzeResult[]> {
   const rc = config.rerank;
   if (!rc?.enabled) return results;
@@ -144,8 +190,12 @@ async function applyLLMRerank(
   try {
     provider = createProvider(rc);
   } catch (err) {
-    process.stderr.write(`[pelican] rerank disabled: ${String(err)}\n`);
-    if (debug) debugLog(`rerank: provider init failed — ${String(err)} (results unchanged)`);
+    // Rerank was ENABLED but can't run (missing/invalid key, bad provider).
+    // Surface loudly — otherwise reasoning silently vanishes with no clue.
+    const msg = `rerank enabled but disabled at runtime: ${String(err)}`;
+    process.stderr.write(`[pelican] ${msg}\n`);
+    if (debug) debugLog(`${msg} (results unchanged)`);
+    onWarn?.(String(err));
     return results;
   }
 
@@ -161,8 +211,13 @@ async function applyLLMRerank(
     );
   }
 
+  // Track model-call outcomes so we can warn if rerank ran but every call
+  // failed (e.g. network unreachable) — otherwise reasoning silently vanishes.
+  let judgedTotal = 0;
+  let failedTotal = 0;
+
   // Files run in parallel; the shared limiter bounds total concurrent LLM calls.
-  return Promise.all(
+  const out = await Promise.all(
     results.map(async (result) => {
       const diff = await extractDiffPayload(result.changedFile, base, target);
       // highPrecision: lead with the WHOLE changed file (max context), then the
@@ -225,6 +280,14 @@ async function applyLLMRerank(
       const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
       const verdictByFile = new Map(verdicts.map((v) => [v.testFile, v]));
 
+      // Count judged vs failed-open (network/parse errors keep the candidate
+      // but produce no verdict) so the caller can warn on a total failure.
+      for (const v of verdicts) {
+        if (!v.judged) continue;
+        judgedTotal++;
+        if (/fail-open/.test(v.reason)) failedTotal++;
+      }
+
       if (debug) {
         const judged = verdicts.filter((v) => v.judged).length;
         debugLog(
@@ -235,15 +298,20 @@ async function applyLLMRerank(
         }
       }
 
-      // Surface the model's own rationale on kept-AND-relevant candidates so the
-      // UI can show it as the reasoning line. (For a kept-but-low-confidence
-      // rejection the "why" argues against running, so we leave the structural
-      // explanation intact rather than show a contradictory note.)
+      // EVERY kept candidate carries a reason — never a bare row. Either the
+      // model's why points, or a synthesized note explaining WHY it's here
+      // without an LLM verdict (so "no reasoning" can't silently hide noise):
+      //  - LLM relevant      → the model's points
+      //  - protected anchor  → "Direct match" (test imports/colocated; not judged)
+      //  - kept-but-doubted  → "Low confidence" (model leaned no, below threshold)
+      //  - fail-open (429/err)→ "Not evaluated" (call failed — kept for safety) ⚠
+      //  - unjudged (band)   → "Strong match" (high structural score, not judged)
       const kept = result.suggestedTests
         .filter((t) => !dropped.has(t.testFile))
         .map((t) => {
           const v = verdictByFile.get(t.testFile);
-          return v?.llmRelevant && v.why && v.why.length ? { ...t, reasonPoints: v.why } : t;
+          if (v?.llmRelevant && v.why && v.why.length) return { ...t, reasonPoints: v.why };
+          return { ...t, reasonPoints: synthesizeKeepNote(v, result.changedFile) };
         });
       return {
         ...result,
@@ -253,6 +321,22 @@ async function applyLLMRerank(
       };
     }),
   );
+
+  // Rerank ran but EVERY model call failed → reasoning is silently absent and
+  // nothing was actually filtered. Warn loudly (recall is preserved by
+  // fail-open, but the user must know the LLM didn't run).
+  if (judgedTotal > 0 && failedTotal === judgedTotal) {
+    const msg = `every rerank call failed (${failedTotal}/${judgedTotal}) — check network/API key; showing structural results`;
+    process.stderr.write(`[pelican] ${msg}\n`);
+    if (debug) debugLog(msg);
+    onWarn?.(msg);
+  } else if (failedTotal > 0) {
+    const msg = `${failedTotal}/${judgedTotal} rerank calls failed (kept those candidates)`;
+    if (debug) debugLog(msg);
+    onWarn?.(msg);
+  }
+
+  return out;
 }
 
 /** Registers every scorer (all scorers are always on). */
@@ -648,6 +732,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           false,
           options.base,
           options.target,
+          (msg) => setState((s) => ({ ...s, rerankWarning: msg })),
         );
 
         // Phase 5: Done

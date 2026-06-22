@@ -70,6 +70,10 @@ export interface IAnalyzeState {
   /** Set when Ollama reranker is unavailable — UI shows a warning, falls back to pelican-only + lock cache. */
   rerankerUnavailable?: boolean;
   rerankerError?: string;
+  /** Set when the LLM rerank (config.rerank) was enabled but could not run —
+   * missing/invalid key, bad provider, or every model call failed (network).
+   * Surfaced as a loud warning so reasoning silently missing is never a mystery. */
+  rerankWarning?: string;
   /** How many pairs the LLM has scored so far (for progress display). */
   rerankScored?: number;
   /** Total pairs queued for LLM scoring. */

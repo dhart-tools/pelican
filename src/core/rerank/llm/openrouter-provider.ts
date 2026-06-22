@@ -58,8 +58,11 @@ export class OpenRouterProvider implements ILLMProvider {
       } catch (err) {
         lastErr = err;
         if (!(err instanceof RetryableHttpError) || attempt === this.maxRetries) break;
+        // Exponential backoff, but if the server told us when to retry (Retry-
+        // After / X-RateLimit-Reset) honour it — capped at 60s so a per-minute
+        // limit is actually waited out rather than 8s-and-give-up.
         const backoff = Math.min(8000, this.backoffBaseMs * 2 ** attempt);
-        await sleep(err.retryAfterMs ?? backoff);
+        await sleep(Math.min(60000, err.retryAfterMs ?? backoff));
       }
     }
     if (lastErr instanceof LLMProviderError) throw lastErr;
@@ -96,7 +99,13 @@ export class OpenRouterProvider implements ILLMProvider {
         const body = await res.text().catch(() => '');
         const msg = `OpenRouter HTTP ${res.status} ${res.statusText}${body ? `: ${body.slice(0, 300)}` : ''}`;
         if (RETRYABLE_STATUS.has(res.status)) {
-          throw new RetryableHttpError(msg, parseRetryAfter(res.headers.get('retry-after')));
+          // Prefer Retry-After; OpenRouter rate-limits send X-RateLimit-Reset
+          // (epoch ms) instead, so honour that too — otherwise we'd back off
+          // only 8s against a per-minute window and exhaust retries pointlessly.
+          const waitMs =
+            parseRetryAfter(res.headers.get('retry-after')) ??
+            parseResetHeader(res.headers.get('x-ratelimit-reset'));
+          throw new RetryableHttpError(msg, waitMs);
         }
         throw new LLMProviderError(msg);
       }
@@ -140,4 +149,15 @@ function parseRetryAfter(value: string | null): number | undefined {
   if (Number.isFinite(secs)) return Math.max(0, secs * 1000);
   const date = Date.parse(value);
   return Number.isFinite(date) ? Math.max(0, date - Date.now()) : undefined;
+}
+
+/** Parse an X-RateLimit-Reset header (epoch ms, or seconds) into a wait in ms. */
+function parseResetHeader(value: string | null): number | undefined {
+  if (!value) return undefined;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return undefined;
+  // Heuristic: > 1e12 ⇒ epoch milliseconds; > 1e9 ⇒ epoch seconds; else a
+  // relative seconds value.
+  const ms = n > 1e12 ? n - Date.now() : n > 1e9 ? n * 1000 - Date.now() : n * 1000;
+  return Math.max(0, ms);
 }

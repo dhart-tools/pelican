@@ -161,6 +161,22 @@ export function AnalyzeView(state: IAnalyzeState) {
         )}
       </Box>
 
+      {state.rerankWarning && (
+        <Box marginTop={1} paddingX={2} flexDirection="column">
+          <Box>
+            <Text color={palette.amber} bold>
+              ⚠ LLM rerank did not run — no AI reasoning this run
+            </Text>
+          </Box>
+          <Box paddingLeft={4}>
+            <Text color={palette.dim}>
+              showing pelican structural results.{' '}
+              <Text color={palette.muted}>{state.rerankWarning}</Text>
+            </Text>
+          </Box>
+        </Box>
+      )}
+
       {state.rerankerUnavailable && (
         <Box marginTop={1} paddingX={2} flexDirection="column">
           <Box>
