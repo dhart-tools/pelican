@@ -113,7 +113,20 @@ export class OpenRouterProvider implements ILLMProvider {
         // A timeout is worth one more shot — treat as retryable.
         throw new RetryableHttpError(`OpenRouter request timed out after ${opts.timeoutMs}ms`);
       }
-      throw new LLMProviderError(`OpenRouter request failed: ${String(err)}`, err);
+      // Surface the low-level cause: `fetch failed` hides the real reason
+      // (ECONNREFUSED / ENOTFOUND / proxy / self-signed cert). undici nests it
+      // on .cause, sometimes one level deeper on .cause.code.
+      const cause = err instanceof Error ? (err as { cause?: unknown }).cause : undefined;
+      const causeStr =
+        cause instanceof Error
+          ? `${cause.name}: ${cause.message}${(cause as { code?: string }).code ? ` [${(cause as { code?: string }).code}]` : ''}`
+          : cause != null
+            ? String(cause)
+            : '';
+      throw new LLMProviderError(
+        `OpenRouter request failed: ${String(err)}${causeStr ? ` — cause: ${causeStr} (host ${this.url})` : ''}`,
+        err,
+      );
     } finally {
       if (timer) clearTimeout(timer);
     }
