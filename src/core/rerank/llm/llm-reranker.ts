@@ -194,7 +194,13 @@ export class LLMReranker {
           reason: 'unparseable LLM reply — kept (fail-open)',
         };
       }
-      const kept = verdict.relevant && verdict.confidence >= this.config.keepThreshold;
+      // Recall-safe gate: DROP only on a CONFIDENT rejection — the model must
+      // say not-relevant AND be at/above dropConfidence. A relevant verdict, or
+      // any low-confidence rejection, is kept. (keepThreshold is honoured as a
+      // floor on "relevant" verdicts for back-compat, but the drop decision is
+      // governed by dropConfidence.)
+      const confidentReject = !verdict.relevant && verdict.confidence >= this.config.dropConfidence;
+      const kept = !confidentReject;
       return {
         testFile: c.testFile,
         kept,
@@ -202,8 +208,10 @@ export class LLMReranker {
         llmRelevant: verdict.relevant,
         llmConfidence: verdict.confidence,
         reason: kept
-          ? `LLM: relevant (conf ${verdict.confidence.toFixed(2)})`
-          : `LLM: not relevant / below keepThreshold (relevant=${verdict.relevant}, conf ${verdict.confidence.toFixed(2)})`,
+          ? verdict.relevant
+            ? `LLM: relevant (conf ${verdict.confidence.toFixed(2)})`
+            : `LLM: not relevant but low confidence ${verdict.confidence.toFixed(2)} < dropConfidence ${this.config.dropConfidence} — kept`
+          : `LLM: not relevant, conf ${verdict.confidence.toFixed(2)} ≥ dropConfidence ${this.config.dropConfidence} — dropped`,
       };
     } catch (err) {
       this.log?.(`rerank: ${c.testFile} — ${String(err)}, keeping (fail-open)`);

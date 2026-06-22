@@ -55,8 +55,17 @@ export interface IRerankConfig {
   /** Never drop a candidate carrying a narrow structural anchor (direct-import/
    * filename/colocation), regardless of the LLM verdict. Bounds recall risk. */
   protectAnchors: boolean;
-  /** LLM relevance (0..1) at or above which a judged candidate is kept. */
+  /** LLM relevance (0..1) at or above which a judged candidate is kept.
+   * (Legacy; superseded by dropConfidence as the recall-safe lever.) */
   keepThreshold: number;
+  /** Recall-safe drop gate: a judged candidate is DROPPED only when the model
+   * says NOT relevant AND its confidence is >= this. Anything below — including
+   * a low-confidence "not relevant" — is KEPT. Raising this toward 1 makes
+   * dropping more conservative (fewer false drops, less precision gain); the
+   * default 0.9 means "only drop when the model is very sure it's irrelevant".
+   * This is what keeps a confidently-wrong rejection (case 09) from costing
+   * recall while still dropping clear noise (case 10's 0.92–0.96 rejections). */
+  dropConfidence: number;
   /** Hard cap on candidates sent to the LLM per changed file (cost ceiling). */
   maxCandidates: number;
   /** GLOBAL concurrent LLM requests across the whole run (all changed files

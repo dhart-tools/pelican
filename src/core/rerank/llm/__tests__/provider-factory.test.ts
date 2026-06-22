@@ -11,6 +11,7 @@ const base: IRerankConfig = {
   candidateBand: { min: 0.4, max: 1.0 },
   protectAnchors: true,
   keepThreshold: 0.5,
+  dropConfidence: 0.9,
   maxCandidates: 40,
   concurrency: 4,
   timeoutMs: 30000,
