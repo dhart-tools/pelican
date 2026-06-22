@@ -64,8 +64,12 @@ export interface IRerankConfig {
    * LLM. Below min: already dropped. At/above max: auto-kept (strong structural
    * match never second-guessed — saves cost AND protects recall). */
   candidateBand: { min: number; max: number };
-  /** Never drop a candidate carrying a narrow structural anchor (direct-import/
-   * filename/colocation), regardless of the LLM verdict. Bounds recall risk. */
+  /** When true, a candidate with a narrow structural anchor (direct-import/
+   * colocation) is auto-kept WITHOUT asking the LLM — a hard recall floor, but
+   * it produces no real reasoning and can't catch a structural false positive.
+   * Default FALSE: anchors are judged like everything else, so each kept test
+   * carries a genuine LLM reason and a false-positive anchor can be dropped.
+   * Recall is then governed by dropConfidence (drop only on confident reject). */
   protectAnchors: boolean;
   /** LLM relevance (0..1) at or above which a judged candidate is kept.
    * (Legacy; superseded by dropConfidence as the recall-safe lever.) */

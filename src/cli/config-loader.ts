@@ -75,7 +75,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     apiKeyEnv: 'OPENROUTER_API_KEY',
     baseUrl: 'https://openrouter.ai/api/v1',
     candidateBand: { min: 0.4, max: 1.0 },
-    protectAnchors: true,
+    protectAnchors: false,
     keepThreshold: 0.5,
     dropConfidence: 0.9,
     maxCandidates: 40,
