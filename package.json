@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "Semantic test suggester for Cypress",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "bin": {
     "pelican": "./dist/cli/entry.js"
   },
