@@ -1,0 +1,13 @@
+# pnpm 10 no longer runs dependency build scripts unless they're allowlisted
+# here (this setting moved out of package.json's "pnpm" field). These packages
+# legitimately need their install/build scripts — native binaries and tooling:
+#   esbuild, onnxruntime-node, sharp, unrs-resolver — native addons / binaries
+#   cypress                                         — downloads the Cypress binary
+#   protobufjs                                      — postinstall codegen
+onlyBuiltDependencies:
+  - cypress
+  - esbuild
+  - onnxruntime-node
+  - protobufjs
+  - sharp
+  - unrs-resolver
