@@ -4,6 +4,12 @@ export default {
   // exit (worse on Node >= 22). Force it to exit after the run so CI never
   // stalls, and bound any single slow test.
   forceExit: true,
+  // Run serially. jest's experimental VM-ESM linker races when multiple workers
+  // link the same ESM graph (ink/React) concurrently, randomly throwing
+  // "does not provide an export named X" on a different cli suite each run
+  // (all pass in isolation). Serializing removes the race. The suite is fast
+  // enough that this costs only a few extra seconds.
+  maxWorkers: 1,
   projects: [
     // ─── Core tests (CommonJS, no Ink) ───────────────────────────────
     {
