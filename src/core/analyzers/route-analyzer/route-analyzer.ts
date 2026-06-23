@@ -295,7 +295,17 @@ export class AliasResolver {
   }
 
   private mergeAliases(incoming: IAliasMap): void {
-    Object.assign(this.aliasMap, incoming);
+    // Normalize keys by stripping a trailing slash. resolve() matches a prefix
+    // as either an exact hit or `prefix + '/'`, so a key stored WITH its slash
+    // (e.g. user config `{"@dm/": "src/dm/"}`) would be tested as `@dm//` and
+    // never match `@dm/components`. Strip it once here so both `@dm` and `@dm/`
+    // configs behave identically. Targets keep no trailing slash so path.join
+    // in resolve() produces clean paths.
+    for (const [key, value] of Object.entries(incoming)) {
+      const normKey = key.endsWith('/') ? key.slice(0, -1) : key;
+      const normValue = value.endsWith('/') ? value.slice(0, -1) : value;
+      this.aliasMap[normKey] = normValue;
+    }
   }
 }
 
@@ -316,8 +326,37 @@ export class AliasResolver {
  * 6. Path aliases: @/, @pages/, ~/, and arbitrary custom prefixes resolved
  *    from tsconfig.json, vite.config.ts, webpack.config.js, or user config.
  */
+/**
+ * Callback signature for resolving an imported const-object's keys to their
+ * string-literal values. Returns Map<exportedConstName, Record<key, value>>.
+ *
+ * Example: importPath = '@dm/constants/Routes', fromFile = '<router>.tsx'
+ *   → Map { 'RouterPath' → { MANAGE_DEVICES: '/managedevices', ... } }
+ *
+ * Mirrors the cypress-extractor's resolveTsConstImport plumbing so the
+ * registry-builder can pass the same resolver through.
+ */
+export type ResolveConstImport = (
+  importPath: string,
+) => Promise<Map<string, Record<string, string>> | null>;
+
+/**
+ * One `export … from './x'` declaration in a barrel file.
+ *  - `{ star: true, from }`           → `export * from './x'`
+ *  - `{ exported, local, from }`      → `export { local as exported } from './x'`
+ *    (`local` is `'default'` for `export { default as Foo } from './x'`)
+ */
+type IReExport =
+  | { star: true; from: string }
+  | { star: false; exported: string; local: string; from: string };
+
 export class RouteAnalyzer extends BaseAnalyzer<
-  { filePath: string; sourceCode: string; aliasConfig?: IAliasResolverConfig },
+  {
+    filePath: string;
+    sourceCode: string;
+    aliasConfig?: IAliasResolverConfig;
+    resolveConstImport?: ResolveConstImport;
+  },
   IRouteExtractionResult
 > {
   name = EAnalyzerName.ROUTE_ANALYZER;
@@ -325,23 +364,46 @@ export class RouteAnalyzer extends BaseAnalyzer<
   dependencies = [EAnalyzerName.SOURCE_EXTRACTOR];
 
   private processedNodes = new Set<ts.Node>();
+  // Per-extraction cache: rawSpecifier → constName → { key: value }.
+  // Cleared at the start of every extract() call so cross-file leaks can't
+  // happen. Keyed by raw specifier (the import path before alias expansion)
+  // because that's what the AST nodes carry.
+  private constCache = new Map<string, Map<string, Record<string, string>>>();
+
+  // Per-extraction caches for barrel resolution (cleared each extract()):
+  //   realFileCache: absPathNoExt → first existing on-disk file (or null)
+  //   reExportCache: realFile → parsed `export … from` declarations
+  private realFileCache = new Map<string, string | null>();
+  private reExportCache = new Map<string, IReExport[]>();
+
+  // Depth ceiling for following barrel re-export chains
+  // (barrel → sub-barrel → component). Cycles are also guarded via a visited set.
+  private static readonly MAX_BARREL_DEPTH = 5;
 
   /**
    * Orchestrates the extraction of routes from a source file.
    *
-   * @param input.filePath      Path to the file being analyzed.
-   * @param input.sourceCode    Raw source code of the file.
-   * @param input.aliasConfig   Optional alias resolver configuration.
-   *                            If omitted, aliases are auto-detected from
-   *                            tsconfig / vite / webpack in process.cwd().
+   * @param input.filePath           Path to the file being analyzed.
+   * @param input.sourceCode         Raw source code of the file.
+   * @param input.aliasConfig        Optional alias resolver configuration.
+   *                                 If omitted, aliases are auto-detected from
+   *                                 tsconfig / vite / webpack in process.cwd().
+   * @param input.resolveConstImport Optional callback for resolving
+   *                                 `path={Const.MEMBER}` to a string literal
+   *                                 by reading the imported const file. Without
+   *                                 it, non-literal paths are silently skipped.
    */
   async extract(input: {
     filePath: string;
     sourceCode: string;
     aliasConfig?: IAliasResolverConfig;
+    resolveConstImport?: ResolveConstImport;
   }): Promise<IRouteExtractionResult> {
-    const { filePath, sourceCode, aliasConfig } = input;
+    const { filePath, sourceCode, aliasConfig, resolveConstImport } = input;
     this.processedNodes.clear();
+    this.constCache.clear();
+    this.realFileCache.clear();
+    this.reExportCache.clear();
 
     const sourceFile = ts.createSourceFile(filePath, sourceCode, ts.ScriptTarget.Latest, true);
 
@@ -367,10 +429,142 @@ export class RouteAnalyzer extends BaseAnalyzer<
     // The resolver is passed in so aliased paths are expanded at this stage.
     const importMap = this.buildImportMap(sourceFile, resolver, path.dirname(filePath));
 
-    // ─── STEP 3: Walk the AST and extract routes ──────────────────────────────
-    this.visitNode(sourceFile, result, path.dirname(filePath), importMap);
+    // ─── STEP 3a: Pre-resolve const imports the file actually uses ────────────
+    // Find every `import { X } from '...'` or `import * as X from '...'` whose
+    // local name appears in a PropertyAccessExpression inside a JSX `path=` attr
+    // (e.g. `path={RouterPath.MANAGE_DEVICES}` → must resolve `RouterPath`).
+    // This pre-pass keeps the AST walk synchronous; resolution happens once per
+    // unique specifier.
+    if (resolveConstImport) {
+      const namesUsedInPath = this.collectConstNamesUsedInRoutePaths(sourceFile);
+      const specifiersToResolve = new Set<string>();
+      for (const stmt of sourceFile.statements) {
+        if (!ts.isImportDeclaration(stmt)) continue;
+        if (!ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+        const spec = stmt.moduleSpecifier.text;
+        const clause = stmt.importClause;
+        if (!clause) continue;
+        let touchesPath = false;
+        if (clause.name && namesUsedInPath.has(clause.name.text)) touchesPath = true;
+        if (clause.namedBindings) {
+          if (ts.isNamedImports(clause.namedBindings)) {
+            for (const el of clause.namedBindings.elements) {
+              if (namesUsedInPath.has(el.name.text)) touchesPath = true;
+            }
+          } else if (ts.isNamespaceImport(clause.namedBindings)) {
+            if (namesUsedInPath.has(clause.namedBindings.name.text)) touchesPath = true;
+          }
+        }
+        if (touchesPath) specifiersToResolve.add(spec);
+      }
+      for (const spec of specifiersToResolve) {
+        try {
+          const resolved = await resolveConstImport(spec);
+          if (resolved) this.constCache.set(spec, resolved);
+        } catch {
+          // Best-effort; keep walking the AST without the const value.
+        }
+      }
+    }
+
+    // ─── STEP 3b: Walk the AST and extract routes ────────────────────────────
+    this.visitNode(sourceFile, result, path.dirname(filePath), importMap, sourceFile);
 
     return result;
+  }
+
+  /**
+   * Collects identifier names that appear as the left side of a
+   * PropertyAccessExpression inside a JSX `path={...}` attribute. Used to
+   * narrow which imports are worth resolving as const objects — we don't want
+   * to read every imported file in the project, only the ones whose values
+   * actually feed a route path.
+   */
+  private collectConstNamesUsedInRoutePaths(node: ts.Node): Set<string> {
+    const names = new Set<string>();
+    const visit = (n: ts.Node): void => {
+      if (ts.isJsxAttribute(n) && n.name.getText() === 'path' && n.initializer) {
+        const init = n.initializer;
+        if (ts.isJsxExpression(init) && init.expression) {
+          const expr = init.expression;
+          if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+            names.add(expr.expression.text);
+          }
+        }
+      }
+      // Also catch `path: RouterPath.MANAGE_DEVICES` inside data-router objects.
+      if (
+        ts.isPropertyAssignment(n) &&
+        n.name.getText() === 'path' &&
+        ts.isPropertyAccessExpression(n.initializer) &&
+        ts.isIdentifier(n.initializer.expression)
+      ) {
+        names.add(n.initializer.expression.text);
+      }
+      ts.forEachChild(n, visit);
+    };
+    visit(node);
+    return names;
+  }
+
+  /**
+   * Resolves a path expression to its string literal value.
+   * Handles three cases:
+   *   1. StringLiteral             → returns its text directly.
+   *   2. Identifier (const x = '/foo')      → resolved via local const
+   *      declarations in the same file (top-level only).
+   *   3. PropertyAccessExpression  → looks up the namespace/named import
+   *      in the constCache populated during pre-resolution.
+   * Returns null if the path can't be resolved statically.
+   */
+  private resolvePathExpression(expr: ts.Expression, sourceFile: ts.SourceFile): string | null {
+    if (ts.isStringLiteral(expr) || ts.isNoSubstitutionTemplateLiteral(expr)) {
+      return expr.text;
+    }
+    if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+      const localName = expr.expression.text;
+      const memberName = expr.name.text;
+      // Find which import specifier this local name came from.
+      for (const stmt of sourceFile.statements) {
+        if (!ts.isImportDeclaration(stmt)) continue;
+        if (!ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+        const spec = stmt.moduleSpecifier.text;
+        const clause = stmt.importClause;
+        if (!clause) continue;
+        let matches = false;
+        if (clause.name && clause.name.text === localName) matches = true;
+        if (clause.namedBindings) {
+          if (ts.isNamedImports(clause.namedBindings)) {
+            for (const el of clause.namedBindings.elements) {
+              if (el.name.text === localName) {
+                matches = true;
+                break;
+              }
+            }
+          } else if (
+            ts.isNamespaceImport(clause.namedBindings) &&
+            clause.namedBindings.name.text === localName
+          ) {
+            matches = true;
+          }
+        }
+        if (!matches) continue;
+        const constsFromFile = this.constCache.get(spec);
+        if (!constsFromFile) return null;
+        // The local name might be the const name itself, or — for namespace
+        // imports — the const is keyed inside `constsFromFile` as one of the
+        // file's exports. Try both.
+        const direct = constsFromFile.get(localName);
+        if (direct && memberName in direct) return direct[memberName];
+        // Namespace import: const lives under its original name; only one
+        // exported const-object per file usually, so pick the first match.
+        for (const obj of constsFromFile.values()) {
+          if (memberName in obj) return obj[memberName];
+        }
+        return null;
+      }
+    }
+    return null;
   }
 
   /**
@@ -392,15 +586,24 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
     for (const extraction of extractions) {
       for (const route of extraction.routes) {
-        if (route.componentPath) {
-          if (routeMap.has(route.path)) {
-            console.warn(
-              `[RouteAnalyzer] Duplicate route path "${route.path}" found in ` +
-                `"${extraction.filePath}". Overwriting previous entry.`,
-            );
-          }
-          routeMap.set(route.path, route.componentPath);
+        // Last-resort fallback: when component resolution fails (namespace
+        // imports like `<DMContainers.Foo />`, wrapper indirection through
+        // `<ProtectedRoute>...</ProtectedRoute>`, etc.), point the route at
+        // the file that DECLARED it. The route-match scorer then climbs the
+        // dependency cone from there via its transitive lookup, which is
+        // still better than dropping the route entirely.
+        const componentPath = route.componentPath ?? extraction.filePath;
+        // Skip empty paths — they're not visit-able by any test.
+        if (!route.path) continue;
+        if (routeMap.has(route.path) && routeMap.get(route.path) !== componentPath) {
+          // Keep the first resolved entry; only warn for genuine differences.
+          // (Re-runs and idempotent extractions are common, no point shouting.)
+          console.warn(
+            `[RouteAnalyzer] Duplicate route path "${route.path}" found in ` +
+              `"${extraction.filePath}". Overwriting previous entry.`,
+          );
         }
+        routeMap.set(route.path, componentPath);
       }
     }
 
@@ -463,7 +666,11 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
       // After alias resolution, any import that is still not a local path
       // (absolute or relative) is a third-party package — skip it.
-      if (!resolvedSpecifier.startsWith('.') && !resolvedSpecifier.startsWith('/')) continue;
+      // Use path.isAbsolute, not startsWith('/'): a resolved alias on Windows is
+      // an absolute path like `C:\…\src\dm\components`, which starts with neither
+      // '.' nor '/'. The old check discarded every aliased component import on
+      // Windows, leaving importMap empty so every route fell back to Router.tsx.
+      if (!resolvedSpecifier.startsWith('.') && !path.isAbsolute(resolvedSpecifier)) continue;
 
       // Convert to absolute path so resolveComponentPath can use it directly
       // without needing baseDir again.
@@ -485,6 +692,14 @@ export class RouteAnalyzer extends BaseAnalyzer<
           importMap[element.name.text] = absoluteSpecifier;
         }
       }
+
+      // Namespace import: `import * as Containers from '@/containers'`
+      // Lets us resolve `<Containers.ManageDevicesContainer />` to the barrel
+      // file. The route-match scorer's transitive search then walks the barrel
+      // to reach the actual page component.
+      if (clause.namedBindings && ts.isNamespaceImport(clause.namedBindings)) {
+        importMap[clause.namedBindings.name.text] = absoluteSpecifier;
+      }
     }
 
     return importMap;
@@ -498,6 +713,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     result: IRouteExtractionResult,
     baseDir: string,
     importMap: IImportMap,
+    sourceFile: ts.SourceFile,
   ): void {
     if (this.processedNodes.has(node)) {
       return;
@@ -506,12 +722,12 @@ export class RouteAnalyzer extends BaseAnalyzer<
     try {
       // 1. Detect JSX Route elements: <Route path="/" element={<Home />} />
       if (ts.isJsxSelfClosingElement(node) || ts.isJsxElement(node)) {
-        this.extractRouteFromJSX(node, result, baseDir, importMap);
+        this.extractRouteFromJSX(node, result, baseDir, importMap, sourceFile);
       }
 
       // 2. Detect createBrowserRouter([...]) or createHashRouter([...])
       if (ts.isCallExpression(node)) {
-        this.extractRoutesFromRouterCall(node, result, baseDir, importMap);
+        this.extractRoutesFromRouterCall(node, result, baseDir, importMap, sourceFile);
       }
 
       // 3. Fallback: Standalone array literals (might be route configs).
@@ -524,7 +740,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
             return name === 'path' || name === 'element' || name === 'lazy' || name === 'index';
           });
           if (hasRouteKeys) {
-            this.extractRoutesFromArray(node, result, baseDir, importMap, '');
+            this.extractRoutesFromArray(node, result, baseDir, importMap, '', sourceFile);
           }
         }
       }
@@ -532,7 +748,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
       console.warn(`[RouteAnalyzer] Failed to process node at pos ${node.pos}: ${err}`);
     }
 
-    ts.forEachChild(node, (child) => this.visitNode(child, result, baseDir, importMap));
+    ts.forEachChild(node, (child) => this.visitNode(child, result, baseDir, importMap, sourceFile));
   }
 
   // ─── JSX-Specific Extraction ──────────────────────────────────────────────
@@ -546,6 +762,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     result: IRouteExtractionResult,
     baseDir: string,
     importMap: IImportMap,
+    sourceFile: ts.SourceFile,
   ): void {
     const openingElement = ts.isJsxSelfClosingElement(node) ? node : node.openingElement;
     const tagName = openingElement.tagName.getFullText().trim();
@@ -570,6 +787,12 @@ export class RouteAnalyzer extends BaseAnalyzer<
       const init = attrs['path'].initializer;
       if (init && ts.isStringLiteral(init)) {
         routePath = init.text;
+      } else if (init && ts.isJsxExpression(init) && init.expression) {
+        // path={EXPR} — try to resolve string literals, identifiers, and
+        // PropertyAccessExpressions (e.g. `path={RouterPath.MANAGE_DEVICES}`).
+        // Resolution uses the constCache populated at the start of extract().
+        const resolved = this.resolvePathExpression(init.expression, sourceFile);
+        if (resolved !== null) routePath = resolved;
       }
     }
 
@@ -629,6 +852,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     result: IRouteExtractionResult,
     baseDir: string,
     importMap: IImportMap,
+    sourceFile: ts.SourceFile,
   ): void {
     const callee = node.expression;
     if (!ts.isIdentifier(callee)) return;
@@ -636,7 +860,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
     const firstArg = node.arguments[0];
     if (firstArg && ts.isArrayLiteralExpression(firstArg)) {
-      this.extractRoutesFromArray(firstArg, result, baseDir, importMap, '');
+      this.extractRoutesFromArray(firstArg, result, baseDir, importMap, '', sourceFile);
     }
   }
 
@@ -650,11 +874,18 @@ export class RouteAnalyzer extends BaseAnalyzer<
     baseDir: string,
     importMap: IImportMap,
     parentPath: string,
+    sourceFile: ts.SourceFile,
   ): void {
     this.processedNodes.add(node);
     for (const element of node.elements) {
       if (ts.isObjectLiteralExpression(element)) {
-        const route = this.extractRouteFromObject(element, baseDir, importMap, parentPath);
+        const route = this.extractRouteFromObject(
+          element,
+          baseDir,
+          importMap,
+          parentPath,
+          sourceFile,
+        );
         if (route) {
           result.routes.push(route);
 
@@ -669,6 +900,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
               baseDir,
               importMap,
               route.path,
+              sourceFile,
             );
           }
         }
@@ -685,6 +917,7 @@ export class RouteAnalyzer extends BaseAnalyzer<
     baseDir: string,
     importMap: IImportMap,
     parentPath: string,
+    sourceFile: ts.SourceFile,
   ): IRouteDef | null {
     let routePath: string | null = null;
     let componentName: string | null = null;
@@ -701,12 +934,16 @@ export class RouteAnalyzer extends BaseAnalyzer<
 
     isLazy = 'lazy' in props;
 
-    if ('path' in props && ts.isStringLiteral(props['path'].initializer)) {
-      const rawPath = props['path'].initializer.text;
-      routePath =
-        rawPath.startsWith('/') || !parentPath
-          ? rawPath
-          : `${parentPath}/${rawPath}`.replace(/\/\//g, '/');
+    if ('path' in props) {
+      // Same trio of cases as JSX: literal, NoSubstitutionTemplateLiteral,
+      // and PropertyAccessExpression for `path: RouterPath.MANAGE_DEVICES`.
+      const rawPath = this.resolvePathExpression(props['path'].initializer, sourceFile);
+      if (rawPath !== null) {
+        routePath =
+          rawPath.startsWith('/') || !parentPath
+            ? rawPath
+            : `${parentPath}/${rawPath}`.replace(/\/\//g, '/');
+      }
     }
 
     if ('index' in props) {
@@ -773,20 +1010,151 @@ export class RouteAnalyzer extends BaseAnalyzer<
     importMap: IImportMap,
     _isLazy: boolean,
   ): string | undefined {
-    // Strategy 1: Import map (absolute path, alias already expanded)
+    // Strategy 1: named/default import resolved via the import map.
+    // `import { ManageDevices } from '@dm/components'` registers ManageDevices
+    // at the barrel; resolveExportedSymbol follows the barrel's
+    // `export … from './ManageDevices'` chain to the REAL page file so the
+    // route points at the page, not the catch-all barrel (which transitively
+    // imports the whole app and makes route-match match everything).
     if (componentName && importMap[componentName]) {
-      return importMap[componentName].replace(/\.tsx?$/, '') + '.ts';
+      const moduleNoExt = importMap[componentName].replace(/\.tsx?$/, '');
+      const real = this.resolveExportedSymbol(moduleNoExt, componentName, new Set(), 0);
+      if (real) return real;
+      // No on-disk file backs the module (e.g. virtual unit-test sources) —
+      // fall back to the legacy string-based path so those tests still resolve.
+      return moduleNoExt + '.ts';
+    }
+
+    // Strategy 1b: namespace member — `DMContainers.ManageDevicesContainer`.
+    // Look up the namespace (left of the first dot) in the import map, then
+    // resolve the member through the barrel the namespace points at.
+    if (componentName && componentName.includes('.')) {
+      const [head, ...rest] = componentName.split('.');
+      const member = rest.join('.');
+      if (head && member && importMap[head]) {
+        const moduleNoExt = importMap[head].replace(/\.tsx?$/, '');
+        const real = this.resolveExportedSymbol(moduleNoExt, member, new Set(), 0);
+        if (real) return real;
+        return moduleNoExt + '.ts';
+      }
     }
 
     // Strategy 2: Inline import() call
     if (expr && ts.isCallExpression(expr) && this.isImportCall(expr) && expr.arguments.length > 0) {
       const arg = expr.arguments[0];
       if (ts.isStringLiteral(arg)) {
-        return path.resolve(baseDir, arg.text).replace(/\.tsx?$/, '') + '.ts';
+        const absNoExt = path.resolve(baseDir, arg.text).replace(/\.tsx?$/, '');
+        return this.findRealFile(absNoExt) ?? absNoExt + '.ts';
       }
     }
 
     return undefined;
+  }
+
+  /**
+   * Resolves the extensionless module path `absNoExt` to the first matching
+   * file on disk, trying `.ts`, `.tsx`, then `index.ts` / `index.tsx` for a
+   * directory import. Returns null when nothing exists (the caller then keeps
+   * the legacy string path so virtual-source unit tests are unaffected).
+   * Cached per extract().
+   */
+  private findRealFile(absNoExt: string): string | null {
+    const cached = this.realFileCache.get(absNoExt);
+    if (cached !== undefined) return cached;
+    const candidates = [
+      absNoExt + '.ts',
+      absNoExt + '.tsx',
+      path.join(absNoExt, 'index.ts'),
+      path.join(absNoExt, 'index.tsx'),
+    ];
+    let found: string | null = null;
+    for (const c of candidates) {
+      try {
+        if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+          found = c;
+          break;
+        }
+      } catch {
+        // unreadable candidate — keep trying
+      }
+    }
+    this.realFileCache.set(absNoExt, found);
+    return found;
+  }
+
+  /**
+   * Parses the `export … from './x'` declarations of a real file. Files with
+   * none are leaf modules (the component itself); files with them are barrels.
+   * Cached per extract().
+   */
+  private getReExports(realFile: string): IReExport[] {
+    const cached = this.reExportCache.get(realFile);
+    if (cached) return cached;
+    const out: IReExport[] = [];
+    try {
+      const src = fs.readFileSync(realFile, 'utf-8');
+      const sf = ts.createSourceFile(realFile, src, ts.ScriptTarget.Latest, true);
+      for (const stmt of sf.statements) {
+        if (!ts.isExportDeclaration(stmt)) continue;
+        if (!stmt.moduleSpecifier || !ts.isStringLiteral(stmt.moduleSpecifier)) continue;
+        const from = stmt.moduleSpecifier.text;
+        if (!stmt.exportClause) {
+          out.push({ star: true, from }); // export * from './x'
+        } else if (ts.isNamedExports(stmt.exportClause)) {
+          for (const el of stmt.exportClause.elements) {
+            const exported = el.name.text; // re-exported name (after `as`)
+            const local = el.propertyName?.text ?? exported; // original name in target
+            out.push({ star: false, exported, local, from });
+          }
+        }
+      }
+    } catch {
+      // unreadable — treat as a leaf with no re-exports
+    }
+    this.reExportCache.set(realFile, out);
+    return out;
+  }
+
+  /**
+   * Resolves `symbol`, exported by the module at `absNoExt`, to the real source
+   * file that defines it, following barrel `export … from` chains (named and
+   * `export *`). Returns null only when no file backs `absNoExt` on disk, so
+   * the caller can fall back to legacy string resolution. Depth- and
+   * cycle-guarded.
+   */
+  private resolveExportedSymbol(
+    absNoExt: string,
+    symbol: string,
+    visited: Set<string>,
+    depth: number,
+  ): string | null {
+    const realFile = this.findRealFile(absNoExt);
+    if (!realFile) return null;
+    if (visited.has(realFile) || depth >= RouteAnalyzer.MAX_BARREL_DEPTH) return realFile;
+    visited.add(realFile);
+
+    const reExports = this.getReExports(realFile);
+    // Leaf module (no `export … from`): this file defines the component.
+    if (reExports.length === 0) return realFile;
+
+    // 1) Direct named re-export of the symbol → follow it to the target.
+    for (const re of reExports) {
+      if (re.star || re.exported !== symbol) continue;
+      const targetNoExt = path.resolve(path.dirname(realFile), re.from);
+      const resolved = this.resolveExportedSymbol(targetNoExt, re.local, visited, depth + 1);
+      return resolved ?? this.findRealFile(targetNoExt) ?? realFile;
+    }
+
+    // 2) `export * from './x'` — search each star-barrel for the symbol.
+    for (const re of reExports) {
+      if (!re.star) continue;
+      const targetNoExt = path.resolve(path.dirname(realFile), re.from);
+      const resolved = this.resolveExportedSymbol(targetNoExt, symbol, visited, depth + 1);
+      if (resolved) return resolved;
+    }
+
+    // Symbol not found behind this barrel — best effort: the barrel file itself.
+    return realFile;
   }
 
   private extractLazyComponentPath(
@@ -815,11 +1183,74 @@ export class RouteAnalyzer extends BaseAnalyzer<
     );
   }
 
+  /**
+   * Known wrapper components that pass children through transparently
+   * (auth/permission gates, layouts, error boundaries). When a route element
+   * matches one of these, prefer to surface the WRAPPED inner component as
+   * the route's real target so the route-match scorer can climb the right
+   * dependency cone.
+   */
+  private static readonly WRAPPER_COMPONENT_NAMES = new Set([
+    'ProtectedRoute',
+    'PrivateRoute',
+    'PublicRoute',
+    'AuthRoute',
+    'RequireAuth',
+    'GuardedRoute',
+    'Layout',
+    'AppLayout',
+    'PageLayout',
+    'ProtectedLayout',
+    'AuthLayout',
+    'ErrorBoundary',
+    'Suspense',
+  ]);
+
+  /**
+   * Returns the inner JSX child of a wrapper element, if there's exactly one
+   * meaningful (non-whitespace) JSX child. Used to look past
+   *   <ProtectedRoute ...><RealPage /></ProtectedRoute>
+   * and treat `<RealPage />` as the route's actual target.
+   */
+  private unwrapWrapperChildren(node: ts.JsxElement): ts.Expression | null {
+    const jsxChildren: ts.Expression[] = [];
+    for (const child of node.children) {
+      if (ts.isJsxSelfClosingElement(child) || ts.isJsxElement(child)) {
+        jsxChildren.push(child as unknown as ts.Expression);
+      } else if (ts.isJsxExpression(child) && child.expression) {
+        let inner: ts.Expression = child.expression;
+        while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+        if (ts.isJsxSelfClosingElement(inner) || ts.isJsxElement(inner) || ts.isIdentifier(inner)) {
+          jsxChildren.push(inner);
+        }
+      }
+      // JsxText is ignored — pure whitespace between tags.
+    }
+    return jsxChildren.length === 1 ? jsxChildren[0] : null;
+  }
+
   private extractComponentName(expr: ts.Expression | undefined): string | null {
     if (!expr) return null;
-    if (ts.isJsxSelfClosingElement(expr)) return expr.tagName.getText();
-    if (ts.isJsxElement(expr)) return expr.openingElement.tagName.getText();
-    if (ts.isIdentifier(expr)) return expr.text;
+    // Peel off `({...})` wrappers — common when the element is multi-line:
+    //   element={(<Foo>...</Foo>)}   ← ParenthesizedExpression around JSX
+    let inner: ts.Expression = expr;
+    while (ts.isParenthesizedExpression(inner)) inner = inner.expression;
+
+    // If the outer element is a known wrapper (ProtectedRoute, Layout, etc.)
+    // with exactly one JSX child, return the inner child's name instead.
+    // This is what makes `<ProtectedRoute><DMContainers.X/></ProtectedRoute>`
+    // resolve to `DMContainers.X` (whose namespace `DMContainers` lives in
+    // importMap), not to the wrapper barrel.
+    if (ts.isJsxElement(inner)) {
+      const wrapperTag = inner.openingElement.tagName.getText();
+      if (RouteAnalyzer.WRAPPER_COMPONENT_NAMES.has(wrapperTag)) {
+        const innerChild = this.unwrapWrapperChildren(inner);
+        if (innerChild) return this.extractComponentName(innerChild);
+      }
+      return wrapperTag;
+    }
+    if (ts.isJsxSelfClosingElement(inner)) return inner.tagName.getText();
+    if (ts.isIdentifier(inner)) return inner.text;
     return null;
   }
 
@@ -827,7 +1258,12 @@ export class RouteAnalyzer extends BaseAnalyzer<
     node: ts.JsxExpression | ts.StringLiteral | undefined,
   ): ts.Expression | undefined {
     if (!node) return undefined;
-    return ts.isJsxExpression(node) ? node.expression : undefined;
+    if (!ts.isJsxExpression(node)) return undefined;
+    let inner: ts.Expression | undefined = node.expression;
+    // Strip any parenthesized wrappers so downstream consumers see the real
+    // JSX/Identifier/CallExpression node directly.
+    while (inner && ts.isParenthesizedExpression(inner)) inner = inner.expression;
+    return inner;
   }
 
   private isDynamicRoute(routePath: string): boolean {

@@ -28,7 +28,10 @@ export interface IModelProgress {
 }
 
 export class ModelUnavailableError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(
+    message: string,
+    readonly cause?: unknown,
+  ) {
     super(message);
     this.name = 'ModelUnavailableError';
   }
@@ -107,10 +110,7 @@ export class CrossEncoderReranker {
    * Uses a disk cache keyed on sha1(query+candidate), so unchanged pairs
    * never hit the model.
    */
-  async scorePairs(
-    query: string,
-    candidates: string[],
-  ): Promise<number[]> {
+  async scorePairs(query: string, candidates: string[]): Promise<number[]> {
     if (candidates.length === 0) return [];
     await this.loadCache();
 
@@ -218,8 +218,7 @@ export class CrossEncoderReranker {
             this.config.onProgress?.({
               status: data.status as IModelProgress['status'],
               file: data.file,
-              pct:
-                typeof data.progress === 'number' ? Math.floor(data.progress) : undefined,
+              pct: typeof data.progress === 'number' ? Math.floor(data.progress) : undefined,
               loaded: data.loaded,
               total: data.total,
             });

@@ -5,7 +5,7 @@ import { Command } from 'commander';
 import { render } from 'ink';
 import React, { useState, useEffect } from 'react';
 
-import { loadProjectConfig } from '@/cli/config-loader';
+import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
 import { IRegistryBuildState, IRegistryBuildOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { RegistryBuildView } from '@/cli/views/RegistryBuildView';
@@ -77,11 +77,13 @@ function RegistryBuildApp({ options }: { options: IRegistryBuildOptions }) {
 
           const builder = new RegistryBuilder();
           const iRegistry = await builder.buildFromDirectories({
-            sourceDirs: config.sourceDirs,
-            testPatterns: config.testPatterns,
-            excludePatterns: config.excludePatterns,
-            projectRoot: process.cwd(),
-            pathAliases: config.analyzers.cypressExtractor.pathAliases,
+            sourceDirs: config.source.dirs,
+            testPatterns: config.test.patterns,
+            excludePatterns: config.test.exclude,
+            ignoreDirs: getIgnoreDirs(config),
+            sourceRoot: config.source.root,
+            testRoot: config.test.root ?? config.source.root,
+            pathAliases: getMergedAliases(config),
             debug: options.debug,
           });
 

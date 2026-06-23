@@ -10,15 +10,52 @@ const SOURCE_EXT_RE = /\.(tsx?|jsx?|mts|cts|mjs|cjs|vue|svelte|astro)$/i;
 const TEST_SUFFIX_RE = /\.(cy|spec|test|e2e|int|integration|unit|bench|stories)\.(ts|js)x?$/i;
 const INDEX_BASENAMES = new Set(['index', 'main', 'default', 'entry']);
 const STOPWORDS = new Set([
-  'test','tests','spec','specs','it','should','describe','when','given','and','or','the',
-  'a','an','of','for','with','page','pages','component','components','view','views',
-  'e2e','unit','integration','renders','works','shows','displays','handles','cypress',
+  'test',
+  'tests',
+  'spec',
+  'specs',
+  'it',
+  'should',
+  'describe',
+  'when',
+  'given',
+  'and',
+  'or',
+  'the',
+  'a',
+  'an',
+  'of',
+  'for',
+  'with',
+  'page',
+  'pages',
+  'component',
+  'components',
+  'view',
+  'views',
+  'e2e',
+  'unit',
+  'integration',
+  'renders',
+  'works',
+  'shows',
+  'displays',
+  'handles',
+  'cypress',
   // Layer/prefix tokens — structural, not features. `actions/post_actions.ts`
   // should tokenise as [post], not [post, actions]; otherwise the gate treats
   // `post` as a secondary token and demotes every legit post-related spec.
   // Same logic for `use` prefix on React hooks (`useBurnOnReadTimer` → [burn,
   // read, timer]) — `use` is a naming convention, not semantic content.
-  'actions','action','reducers','reducer','selectors','selector','hooks','hook','use',
+  'actions',
+  'action',
+  'reducers',
+  'reducer',
+  'selectors',
+  'selector',
+  'hooks',
+  'hook',
+  'use',
 ]);
 const MIN_TOKEN_LEN = 3;
 
@@ -95,18 +132,18 @@ export class DescribeBlockScorer extends BaseScorer {
     // other tokens the test ignored). A test referencing the source's only
     // token is the actual signal we want — e.g. `login.tsx` ↔ a spec whose
     // describe mentions `login`.
-    const weakSingleTokenHit =
-      hits.length === 1 && hits[0].length <= 10 && sourceTokens.size > 1;
+    const weakSingleTokenHit = hits.length === 1 && hits[0].length <= 10 && sourceTokens.size > 1;
     const demoted = matched && !shareFeature && weakSingleTokenHit;
     if (demoted) matched = false;
 
-    const reason = hits.length === 0
-      ? `describe/it blocks don't reference source tokens`
-      : lowInformationHit
-        ? `Low-information describe collision on [${hits.join(', ')}] (IDF=${maxHitIdf.toFixed(2)}) — dropped`
-        : demoted
-          ? `Cross-feature describe collision on [${hits.join(', ')}] — demoted`
-          : `describe/it blocks mention source tokens [${hits.join(', ')}] (idfRatio=${idfRatio.toFixed(2)})`;
+    const reason =
+      hits.length === 0
+        ? `describe/it blocks don't reference source tokens`
+        : lowInformationHit
+          ? `Low-information describe collision on [${hits.join(', ')}] (IDF=${maxHitIdf.toFixed(2)}) — dropped`
+          : demoted
+            ? `Cross-feature describe collision on [${hits.join(', ')}] — demoted`
+            : `describe/it blocks mention source tokens [${hits.join(', ')}] (idfRatio=${idfRatio.toFixed(2)})`;
 
     const sig = this.createSignal(matched, reason, {
       changedFile,
@@ -136,10 +173,7 @@ export class DescribeBlockScorer extends BaseScorer {
     const tests = registry.getFilesByType('test');
     const df = new Map<string, number>();
     for (const t of tests) {
-      const blocks = [
-        ...(t.cypress?.describeBlocks ?? []),
-        ...(t.cypress?.itBlocks ?? []),
-      ];
+      const blocks = [...(t.cypress?.describeBlocks ?? []), ...(t.cypress?.itBlocks ?? [])];
       if (blocks.length === 0) continue;
       const uniq = new Set<string>();
       for (const b of blocks) for (const tok of this.splitTokens(b)) uniq.add(tok);

@@ -75,6 +75,43 @@ describe('RouteMatchScorer', () => {
   });
 
   /**
+   * @description A transitive match through a heavily-visited route is damped by
+   * route traffic: weight scales by (1 - routeShare)^exponent, so a route most
+   * specs visit can't anchor a candidate on its own. Direct matches are exempt.
+   */
+  test('evaluate(): damps transitive matches through high-traffic routes', () => {
+    const changedFile = 'src/actions/manageDevices.ts';
+    const pageFile = 'src/containers/manageDevices.ts';
+    const routeMap = new Map([['/managedevices', pageFile]]);
+
+    // 8 of 10 specs visit /managedevices → 80% traffic.
+    const tests = Array.from({ length: 10 }, (_, i) => ({
+      type: 'test' as const,
+      cypress: { visitedRoutes: i < 8 ? ['/managedevices'] : ['/other'] },
+    }));
+
+    mockRegistry.getRouteMap = jest.fn().mockReturnValue(routeMap);
+    mockRegistry.getDependencies = jest
+      .fn()
+      .mockImplementation((p: string) => (p === pageFile ? new Set([changedFile]) : new Set()));
+    mockRegistry.getFilesByType = jest.fn().mockReturnValue(tests);
+    mockRegistry.getTestFileCount = jest.fn().mockReturnValue(10);
+    mockContext.testFile = { cypress: { visitedRoutes: ['/managedevices'] } } as any;
+
+    mockContext.config = { scoring: { routeTrafficDampingExponent: 1 } } as any;
+    const damped = scorer.evaluate(changedFile, 'spec.cy.ts', mockContext as IScorerContext);
+
+    mockContext.config = { scoring: { routeTrafficDampingExponent: 0 } } as any; // off
+    const undamped = scorer.evaluate(changedFile, 'spec.cy.ts', mockContext as IScorerContext);
+
+    expect(damped[0].matched).toBe(true);
+    expect(undamped[0].matched).toBe(true);
+    // 80% traffic, exponent 1 → damped to ~20% of the undamped weight.
+    expect(damped[0].weight).toBeCloseTo(undamped[0].weight * 0.2, 5);
+    expect(damped[0].reason).toContain('route traffic 80%');
+  });
+
+  /**
    * @description Ensures no false matches are reported when routesVisited is empty.
    *
    * @expected Unmatched signal with reason "No routes visited".

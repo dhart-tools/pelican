@@ -15,9 +15,9 @@ const VERB_LABEL: Record<EConfidenceLevel, string> = {
 };
 
 const VERB_BG: Record<EConfidenceLevel, string> = {
-  [EConfidenceLevel.HIGH]: '#059669',   // emerald
+  [EConfidenceLevel.HIGH]: '#059669', // emerald
   [EConfidenceLevel.MEDIUM]: '#D97706', // amber
-  [EConfidenceLevel.LOW]: '#4B5563',    // gray — de-emphasized
+  [EConfidenceLevel.LOW]: '#4B5563', // gray — de-emphasized
 };
 
 /**
@@ -30,7 +30,8 @@ export function SignalBadge({ confidence }: SignalBadgeProps) {
 
   return (
     <Text backgroundColor={bg} color={palette.badgeText} bold>
-      {' '}{label}{' '}
+      {' '}
+      {label}{' '}
     </Text>
   );
 }

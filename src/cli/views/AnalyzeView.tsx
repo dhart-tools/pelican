@@ -86,78 +86,102 @@ export function AnalyzeView(state: IAnalyzeState) {
             detail={stepDetail(phase)}
           />
         ))}
-        {(state.phase === 'scoring' || state.phase === 'done') &&
-          state.changedFiles.length > 0 && (
-            <Box flexDirection="column" paddingLeft={6} marginBottom={1}>
-              {state.changedFiles.map((file, i) => {
-                const isDoneFile = (state.completedFiles ?? []).includes(file);
-                const isActive = !isDoneFile && (
-                  (state.activeFiles ?? []).includes(file) || state.currentFile === file
+        {(state.phase === 'scoring' || state.phase === 'done') && state.changedFiles.length > 0 && (
+          <Box flexDirection="column" paddingLeft={6} marginBottom={1}>
+            {state.changedFiles.map((file, i) => {
+              const isDoneFile = (state.completedFiles ?? []).includes(file);
+              const isActive =
+                !isDoneFile &&
+                ((state.activeFiles ?? []).includes(file) || state.currentFile === file);
+              const isLast = i === state.changedFiles.length - 1;
+              const branch = isLast ? '╰' : '├';
+
+              if (isDoneFile) {
+                return (
+                  <Box key={file}>
+                    <Text color={palette.muted}>
+                      {branch}
+                      {'─ '}
+                    </Text>
+                    <Text color={palette.emerald}>✔</Text>
+                    <Text color={palette.muted}>{'  '}</Text>
+                    <Text color={palette.sub}>{file}</Text>
+                  </Box>
                 );
-                const isLast = i === state.changedFiles.length - 1;
-                const branch = isLast ? '╰' : '├';
+              }
 
-                if (isDoneFile) {
-                  return (
-                    <Box key={file}>
-                      <Text color={palette.muted}>{branch}{'─ '}</Text>
-                      <Text color={palette.emerald}>✔</Text>
-                      <Text color={palette.muted}>{'  '}</Text>
-                      <Text color={palette.sub}>{file}</Text>
-                    </Box>
+              if (isActive) {
+                const prog = state.rerankProgress?.[file];
+                const BAR_W = 12;
+                let bar: React.ReactNode = null;
+                if (prog && prog.total > 0) {
+                  const filled = Math.max(
+                    0,
+                    Math.min(BAR_W, Math.round((prog.scored / prog.total) * BAR_W)),
                   );
-                }
-
-                if (isActive) {
-                  const prog = state.rerankProgress?.[file];
-                  const BAR_W = 12;
-                  let bar: React.ReactNode = null;
-                  if (prog && prog.total > 0) {
-                    const filled = Math.max(
-                      0,
-                      Math.min(BAR_W, Math.round((prog.scored / prog.total) * BAR_W)),
-                    );
-                    const bars = '█'.repeat(filled) + '░'.repeat(BAR_W - filled);
-                    bar = (
-                      <Box>
-                        <Text color={palette.brand}>{bars}</Text>
-                        <Text color={palette.dim}>
-                          {'  '}
-                          {prog.scored}/{prog.total}
-                        </Text>
-                      </Box>
-                    );
-                  }
-
-                  return (
-                    <Box key={file} justifyContent="space-between" paddingRight={2}>
-                      <Box>
-                        <Text color={palette.muted}>{branch}{'─ '}</Text>
-                        <Shimmer text={file} />
-                      </Box>
-                      {bar && <Box flexShrink={0}>{bar}</Box>}
+                  const bars = '█'.repeat(filled) + '░'.repeat(BAR_W - filled);
+                  bar = (
+                    <Box>
+                      <Text color={palette.brand}>{bars}</Text>
+                      <Text color={palette.dim}>
+                        {'  '}
+                        {prog.scored}/{prog.total}
+                      </Text>
                     </Box>
                   );
                 }
 
                 return (
-                  <Box key={file}>
-                    <Text color={palette.muted}>{branch}{'─ '}</Text>
-                    <Text color={palette.muted}>○</Text>
-                    <Text color={palette.muted}>{'  '}</Text>
-                    <Text color={palette.dim}>{file}</Text>
+                  <Box key={file} justifyContent="space-between" paddingRight={2}>
+                    <Box>
+                      <Text color={palette.muted}>
+                        {branch}
+                        {'─ '}
+                      </Text>
+                      <Shimmer text={file} />
+                    </Box>
+                    {bar && <Box flexShrink={0}>{bar}</Box>}
                   </Box>
                 );
-              })}
-            </Box>
-          )}
+              }
+
+              return (
+                <Box key={file}>
+                  <Text color={palette.muted}>
+                    {branch}
+                    {'─ '}
+                  </Text>
+                  <Text color={palette.muted}>○</Text>
+                  <Text color={palette.muted}>{'  '}</Text>
+                  <Text color={palette.dim}>{file}</Text>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
       </Box>
+
+      {state.rerankWarning && (
+        <Box marginTop={1} paddingX={2} flexDirection="column">
+          <Box>
+            <Text color={palette.amber} bold>
+              ⚠ LLM rerank did not run — no AI reasoning this run
+            </Text>
+          </Box>
+          <Box paddingLeft={4}>
+            <Text color={palette.dim}>
+              showing pelican structural results.{' '}
+              <Text color={palette.muted}>{state.rerankWarning}</Text>
+            </Text>
+          </Box>
+        </Box>
+      )}
 
       {state.rerankerUnavailable && (
         <Box marginTop={1} paddingX={2} flexDirection="column">
           <Box>
             <Text color={palette.amber} bold>
-              ⚠  Ollama reranker unavailable
+              ⚠ Ollama reranker unavailable
             </Text>
           </Box>
           <Box paddingLeft={4}>

@@ -1,3 +1,4 @@
+import * as fsSync from 'fs';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
@@ -6,12 +7,24 @@ import { render } from 'ink';
 import pLimit from 'p-limit';
 import React, { useState, useEffect } from 'react';
 
-import { loadProjectConfig, toScoringConfig } from '@/cli/config-loader';
-import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult } from '@/cli/types';
+import {
+  loadProjectConfig,
+  toScoringConfig,
+  getMergedAliases,
+  getIgnoreDirs,
+} from '@/cli/config-loader';
+import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult, IProjectConfig } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
+import { GitHistoryProvider } from '@/core/git/git-history-provider';
 import { Registry } from '@/core/registry/registry';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { extractDiffPayload, getChangedFiles } from '@/core/rerank/diff-extractor';
+import { createLimiter } from '@/core/rerank/llm/limiter';
+import { LLMReranker, IRerankCandidate, IRerankVerdict } from '@/core/rerank/llm/llm-reranker';
+import { createProvider } from '@/core/rerank/llm/provider-factory';
+import { ModelUnavailableError, SemanticReranker } from '@/core/rerank/semantic-reranker';
+import { buildTestPayload, buildStructuredTestExcerpt } from '@/core/rerank/test-payload';
 import { ActionTypeScorer } from '@/core/scoring/scorers/action-type-scorer';
 import { APIInterceptScorer } from '@/core/scoring/scorers/api-intercept-scorer';
 import { ColocationScorer } from '@/core/scoring/scorers/colocation-scorer';
@@ -24,28 +37,310 @@ import { ReduxConsumerScorer } from '@/core/scoring/scorers/redux-consumer-score
 import { RouteMatchScorer } from '@/core/scoring/scorers/route-match-scorer';
 import { SelectorIdMatchScorer } from '@/core/scoring/scorers/selector-id-match-scorer';
 import { SelectorMatchScorer } from '@/core/scoring/scorers/selector-match-scorer';
+import { TemporalCoherenceScorer } from '@/core/scoring/scorers/temporal-coherence-scorer';
 import { TransitiveImportScorer } from '@/core/scoring/scorers/transitive-import-scorer';
 import { TranslationMatchScorer } from '@/core/scoring/scorers/translation-match-scorer';
 import { UsageSiteScorer } from '@/core/scoring/scorers/usage-site-scorer';
-import {
-  ModelUnavailableError,
-  SemanticReranker,
-} from '@/core/rerank/semantic-reranker';
-import { getChangedFiles } from '@/core/rerank/diff-extractor';
 import { ScoringEngine } from '@/core/scoring/scoring-engine';
+import { IRepoGitHistory } from '@/types/git';
+import { IReasonPoint } from '@/types/scorers';
+import { formatBuildLine } from '@/utils/build-info';
 import { EConfidenceLevel } from '@/utils/enums';
 
 const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 
 /**
- * Registers all scorer instances that are enabled in config.
- *
- * @example
- *   const engine = new ScoringEngine(config, registry);
- *   registerScorers(engine, config.scoring.enabledScorers);
- *   // All enabled scorers now registered
+ * Mines git history for the source repo and (if separate) the test repo, keyed
+ * by absolute repo root for the temporal-coherence scorer. Always resolves to a
+ * map (possibly with unavailable entries) — never throws — so scoring proceeds
+ * regardless. Emits rich `--debug` lines: per repo availability, file counts,
+ * shallow/no-git reasons, and a sample of mined timestamps.
  */
-function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void {
+async function mineGitHistories(
+  config: IProjectConfig,
+  debug: boolean,
+): Promise<Map<string, IRepoGitHistory>> {
+  const sourceRoot = config.source.root;
+  const testRoot = config.test.root ?? config.source.root;
+  const roots = [...new Set([sourceRoot, testRoot])];
+
+  const provider = new GitHistoryProvider(undefined, debug ? (m) => debugLog(m) : undefined);
+  const out = new Map<string, IRepoGitHistory>();
+
+  if (debug)
+    debugLog(`temporal: mining git history for ${roots.length} repo(s): ${roots.join(', ')}`);
+
+  for (const root of roots) {
+    const started = Date.now();
+    const history = await provider.getHistory(root);
+    out.set(history.repoRoot, history);
+
+    if (!debug) continue;
+    const ms = Date.now() - started;
+    const label = root === sourceRoot ? 'source' : 'test';
+    if (!history.available) {
+      debugLog(`temporal: [${label}] ${history.repoRoot} → UNAVAILABLE (no signal) in ${ms}ms`);
+      continue;
+    }
+    debugLog(`temporal: [${label}] ${history.repoRoot} → ${history.files.size} files in ${ms}ms`);
+    // Sample a few entries so the timestamps can be eyeballed against reality.
+    let shown = 0;
+    for (const [p, h] of history.files) {
+      const created = new Date(h.createdAt * 1000).toISOString().slice(0, 10);
+      const updated = new Date(h.updatedAt * 1000).toISOString().slice(0, 10);
+      debugLog(
+        `temporal:   ${p} — created ${created}, updated ${updated}, ${h.commits.length} commit(s)`,
+      );
+      if (++shown >= 5) break;
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Read a file's RAW content (capped). Resolves the absolute path from the
+ * entry's repoRoot (two-repo aware). Returns null if it can't be read, so the
+ * caller can fall back. Default cap 16k comfortably covers a changed source
+ * file; the test side reads more (it's distilled to a lean extract before send).
+ */
+async function readFileExcerpt(
+  repoRoot: string | undefined,
+  relPath: string,
+  cap = 16000,
+): Promise<string | null> {
+  if (!repoRoot) return null;
+  try {
+    const content = await fs.readFile(path.join(repoRoot, relPath), 'utf-8');
+    return content.length > cap ? content.slice(0, cap) + '\n…(truncated)' : content;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * LLM rerank pass (config.rerank). For each changed file it sends the model the
+ * RAW change (diff) and each candidate's RAW spec source — the same shape as the
+ * hand-validated prompts, NOT a static-analysis summary — and asks whether the
+ * spec actually exercises the change. Recall-safe: the reranker auto-keeps
+ * strong/anchored candidates and fails open; here we only DROP specs it
+ * explicitly rejected.
+ *
+ * Fail-open at this layer too: any setup error (missing key, bad provider)
+ * logs a warning and returns results untouched, so a misconfigured rerank never
+ * costs recall.
+ */
+/**
+ * Build a reasoning note for a kept candidate that has NO LLM relevance points
+ * — so the UI never shows a bare row. The tag tells the user how it survived:
+ * a confident structural match, a low-confidence keep, or one we couldn't
+ * evaluate (rate-limit/error → flagged so it reads as "unverified", not gold).
+ */
+function synthesizeKeepNote(
+  verdict: IRerankVerdict | undefined,
+  changedFile: string,
+): IReasonPoint[] {
+  const reason = verdict?.reason ?? '';
+  if (/fail-open/.test(reason)) {
+    return [
+      {
+        tag: 'Not evaluated',
+        file: changedFile,
+        point:
+          'LLM check did not complete (rate-limit/network); kept to preserve recall — verify manually',
+      },
+    ];
+  }
+  if (/protected/.test(reason)) {
+    return [
+      {
+        tag: 'Direct match',
+        file: changedFile,
+        point: 'test imports or is colocated with the changed file',
+      },
+    ];
+  }
+  if (verdict?.judged && verdict.llmRelevant === false) {
+    return [
+      {
+        tag: 'Low confidence',
+        file: changedFile,
+        point: `model leaned not-relevant (conf ${(verdict.llmConfidence ?? 0).toFixed(2)}) but below the drop threshold; kept to be safe`,
+      },
+    ];
+  }
+  return [
+    { tag: 'Strong match', file: changedFile, point: 'high structural score (not LLM-judged)' },
+  ];
+}
+
+async function applyLLMRerank(
+  results: IAnalyzeResult[],
+  config: IProjectConfig,
+  registry: Registry,
+  debug: boolean,
+  base?: string,
+  target?: string,
+  onWarn?: (msg: string) => void,
+): Promise<IAnalyzeResult[]> {
+  const rc = config.rerank;
+  if (!rc?.enabled) return results;
+
+  let provider;
+  try {
+    provider = createProvider(rc);
+  } catch (err) {
+    // Rerank was ENABLED but can't run (missing/invalid key, bad provider).
+    // Surface loudly — otherwise reasoning silently vanishes with no clue.
+    const msg = `rerank enabled but disabled at runtime: ${String(err)}`;
+    process.stderr.write(`[pelican] ${msg}\n`);
+    if (debug) debugLog(`${msg} (results unchanged)`);
+    onWarn?.(String(err));
+    return results;
+  }
+
+  const reranker = new LLMReranker(provider, rc, debug ? (m) => debugLog(m) : undefined);
+  // ONE limiter shared across every file → a single global in-flight cap, so the
+  // parallel files below never multiply into (files × candidates) requests.
+  const limiter = createLimiter(rc.concurrency);
+  if (debug) {
+    debugLog(
+      `rerank: provider=${rc.provider} model=${rc.model} band=[${rc.candidateBand.min},${rc.candidateBand.max}) ` +
+        `protectAnchors=${rc.protectAnchors} keepThreshold=${rc.keepThreshold} ` +
+        `concurrency=${rc.concurrency} maxRetries=${rc.maxRetries}`,
+    );
+  }
+
+  // Track model-call outcomes so we can warn if rerank ran but every call
+  // failed (e.g. network unreachable) — otherwise reasoning silently vanishes.
+  let judgedTotal = 0;
+  let failedTotal = 0;
+
+  // Files run in parallel; the shared limiter bounds total concurrent LLM calls.
+  const out = await Promise.all(
+    results.map(async (result) => {
+      const diff = await extractDiffPayload(result.changedFile, base, target);
+      // highPrecision: lead with the WHOLE changed file (max context), then the
+      // diff of what changed, then the test (sent as the candidate excerpt). Off:
+      // just the diff. The diff is real code (or full file on fallback).
+      const changedEntry = registry.getFile(result.changedFile);
+      const fullSource = rc.highPrecision
+        ? await readFileExcerpt(changedEntry?.repoRoot ?? config.source.root, result.changedFile)
+        : null;
+      let changeSummary: string;
+      if (fullSource && !diff.fallback) {
+        changeSummary =
+          `FULL FILE — ${result.changedFile}\n${fullSource}\n\n` +
+          `DIFF (what changed) — ${result.changedFile}\n${diff.text}`;
+      } else if (fullSource) {
+        // diff unavailable → the full file already is the change context
+        changeSummary = `FULL FILE — ${result.changedFile}\n${fullSource}`;
+      } else {
+        changeSummary = `${diff.fallback ? 'FULL FILE' : 'DIFF'} — ${result.changedFile}\n${diff.text}`;
+      }
+
+      // Change triage — a confidently-cosmetic diff (whitespace/format/comments)
+      // selects NO tests for this file. Needs a real diff (skipped on fallback,
+      // where we only have full content). Recall-safe: only on confidence >=
+      // dropConfidence; triage fails closed to behavioural.
+      if (rc.skipCosmeticChanges && !diff.fallback) {
+        const triage = await reranker.triageChange(`DIFF — ${result.changedFile}\n${diff.text}`);
+        if (triage.cosmetic && triage.confidence >= rc.dropConfidence) {
+          if (debug)
+            debugLog(
+              `rerank: ${result.changedFile} — COSMETIC (conf ${triage.confidence.toFixed(2)}: ${triage.why}); selecting 0 tests`,
+            );
+          return { ...result, suggestedTests: [], totalCandidates: 0, postRerankCount: 0 };
+        }
+      }
+
+      const candidates: IRerankCandidate[] = await Promise.all(
+        result.suggestedTests.map(async (t) => {
+          const entry = registry.getFile(t.testFile);
+          // Distil the spec to a LEAN structured extract (purpose + scenarios +
+          // actions + assertions). Eval across labeled cases showed lean beats
+          // both raw bodies (hedge) and structural enrichment (hedge). Read a
+          // generous slice so the extractor sees the whole spec, then distil.
+          const raw = entry ? await readFileExcerpt(entry.repoRoot, entry.path, 50000) : null;
+          const excerpt = raw ? buildStructuredTestExcerpt(raw) : '';
+          return {
+            testFile: t.testFile,
+            score: t.score,
+            signals: t.signals,
+            testExcerpt: excerpt || (entry ? buildTestPayload(entry) : t.testFile),
+          };
+        }),
+      );
+
+      const verdicts = await reranker.rerank(
+        { changedFile: result.changedFile, changeSummary },
+        candidates,
+        limiter,
+      );
+      const dropped = new Set(verdicts.filter((v) => !v.kept).map((v) => v.testFile));
+      const verdictByFile = new Map(verdicts.map((v) => [v.testFile, v]));
+
+      // Count judged vs failed-open (network/parse errors keep the candidate
+      // but produce no verdict) so the caller can warn on a total failure.
+      for (const v of verdicts) {
+        if (!v.judged) continue;
+        judgedTotal++;
+        if (/fail-open/.test(v.reason)) failedTotal++;
+      }
+
+      if (debug) {
+        const judged = verdicts.filter((v) => v.judged).length;
+        debugLog(
+          `rerank: ${result.changedFile} — ${candidates.length} candidate(s), ${judged} judged, ${dropped.size} dropped`,
+        );
+        for (const v of verdicts) {
+          debugLog(`    ${v.kept ? 'KEEP' : 'DROP'} ${v.testFile} — ${v.reason}`);
+        }
+      }
+
+      // EVERY kept candidate carries a reason — never a bare row. Either the
+      // model's why points, or a synthesized note explaining WHY it's here
+      // without an LLM verdict (so "no reasoning" can't silently hide noise):
+      //  - LLM relevant      → the model's points
+      //  - protected anchor  → "Direct match" (test imports/colocated; not judged)
+      //  - kept-but-doubted  → "Low confidence" (model leaned no, below threshold)
+      //  - fail-open (429/err)→ "Not evaluated" (call failed — kept for safety) ⚠
+      //  - unjudged (band)   → "Strong match" (high structural score, not judged)
+      const kept = result.suggestedTests
+        .filter((t) => !dropped.has(t.testFile))
+        .map((t) => {
+          const v = verdictByFile.get(t.testFile);
+          if (v?.llmRelevant && v.why && v.why.length) return { ...t, reasonPoints: v.why };
+          return { ...t, reasonPoints: synthesizeKeepNote(v, result.changedFile) };
+        });
+      return {
+        ...result,
+        suggestedTests: kept,
+        totalCandidates: kept.length,
+        postRerankCount: kept.length,
+      };
+    }),
+  );
+
+  // Rerank ran but EVERY model call failed → reasoning is silently absent and
+  // nothing was actually filtered. Warn loudly (recall is preserved by
+  // fail-open, but the user must know the LLM didn't run).
+  if (judgedTotal > 0 && failedTotal === judgedTotal) {
+    const msg = `every rerank call failed (${failedTotal}/${judgedTotal}) — check network/API key; showing structural results`;
+    process.stderr.write(`[pelican] ${msg}\n`);
+    if (debug) debugLog(msg);
+    onWarn?.(msg);
+  } else if (failedTotal > 0) {
+    const msg = `${failedTotal}/${judgedTotal} rerank calls failed (kept those candidates)`;
+    if (debug) debugLog(msg);
+    onWarn?.(msg);
+  }
+
+  return out;
+}
+
+/** Registers every scorer (all scorers are always on). */
+function registerScorers(engine: ScoringEngine): void {
   const allScorers = [
     new DirectImportScorer(),
     new RouteMatchScorer(),
@@ -62,19 +357,12 @@ function registerScorers(engine: ScoringEngine, enabledScorers: string[]): void 
     new DependentSelectorScorer(),
     new ActionTypeScorer(),
     new UsageSiteScorer(),
+    new TemporalCoherenceScorer(),
   ];
-
-  for (const scorer of allScorers) {
-    if (enabledScorers.includes(scorer.name)) {
-      engine.register(scorer);
-    }
-  }
+  for (const scorer of allScorers) engine.register(scorer);
 }
 
-function bandFor(
-  score: number,
-  thresholds: { high: number; min: number },
-): EConfidenceLevel {
+function bandFor(score: number, thresholds: { high: number; min: number }): EConfidenceLevel {
   if (score >= thresholds.high) return EConfidenceLevel.HIGH;
   if (score >= thresholds.min) return EConfidenceLevel.MEDIUM;
   return EConfidenceLevel.LOW;
@@ -205,11 +493,13 @@ async function loadOrBuildRegistry(
 
     const builder = new RegistryBuilder();
     const builtRegistry = await builder.buildFromDirectories({
-      sourceDirs: config.sourceDirs,
-      testPatterns: config.testPatterns,
-      excludePatterns: config.excludePatterns,
-      projectRoot: process.cwd(),
-      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      sourceDirs: config.source.dirs,
+      testPatterns: config.test.patterns,
+      excludePatterns: config.test.exclude,
+      ignoreDirs: getIgnoreDirs(config),
+      sourceRoot: config.source.root,
+      testRoot: config.test.root ?? config.source.root,
+      pathAliases: getMergedAliases(config),
       debug,
     });
 
@@ -247,7 +537,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         // Apply CLI overrides
         if (options.minConfidence) {
-          config.scoring.minConfidence = parseFloat(options.minConfidence);
+          config.behaviour.minConfidence = parseFloat(options.minConfidence);
         }
 
         // Phase 2: Load/build registry
@@ -262,7 +552,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         let changedFiles: string[];
         if (options.files) {
           const raw = Array.isArray(options.files) ? options.files : [options.files];
-          changedFiles = raw.flatMap((f) => f.split(',')).map((f) => f.trim()).filter(Boolean);
+          changedFiles = raw
+            .flatMap((f) => f.split(','))
+            .map((f) => f.trim())
+            .filter(Boolean);
         } else {
           changedFiles = await getChangedFiles(options.base, options.target);
           if (changedFiles.length === 0) {
@@ -286,23 +579,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const reranker = new SemanticReranker({
           debug: options.debug,
-          ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
-          ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
-          ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
-          ...(config.rerank?.explanations !== undefined && {
-            explanations: config.rerank.explanations,
-          }),
-          ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
-          ...(config.rerank?.pelicanWeight !== undefined && {
-            pelicanWeight: config.rerank.pelicanWeight,
-          }),
-          ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
-            biEncoderPrefilter: false,
-          }),
-          ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
-          ...(config.rerank?.biEncoderTopK !== undefined && {
-            biEncoderTopK: config.rerank.biEncoderTopK,
-          }),
+          ...(options.biEncoder === false && { biEncoderPrefilter: false }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
           useCache: options.cache !== false,
@@ -319,7 +596,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let rerankerUnavailable = false;
         let rerankerError: string | undefined;
-        if (options.rerank !== false) {
+        if (options.rerank === true) {
           try {
             await reranker.warmUp();
           } catch (err) {
@@ -343,24 +620,28 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // Phase 5: Score
         setState((s) => ({ ...s, phase: 'scoring' }));
 
+        // Mine without debug spam — the TUI path has no debug file sink, so
+        // logging would corrupt the rendered frames. Read temporal debug from
+        // a headless `--debug`/`--ci` run instead.
+        const gitHistories = await mineGitHistories(config, false);
         const scoringConfig = toScoringConfig(config);
-        const engine = new ScoringEngine(scoringConfig, registry);
-        registerScorers(engine, config.scoring.enabledScorers);
+        const engine = new ScoringEngine(scoringConfig, registry, gitHistories);
+        registerScorers(engine);
 
         const testFiles = registry.getFilesByType('test').map((f) => f.path);
         const maxResults = options.all
           ? Number.POSITIVE_INFINITY
-          : parseInt(options.maxResults) || config.scoring.maxResults || 10;
+          : parseInt(options.maxResults) || config.behaviour.maxResults || 10;
         const thresholds = {
-          high: config.scoring.highConfidence ?? 0.8,
-          min: config.scoring.minConfidence ?? 0.4,
+          high: config.behaviour.highConfidence ?? 0.8,
+          min: config.behaviour.minConfidence ?? 0.4,
         };
         // Score files sequentially. Structural scoring is sync/fast; reranking
         // is GPU-bound and Ollama serializes requests on single-GPU setups
         // anyway. Sequential processing keeps Ollama's KV prefix cache hot for
         // each source file's test batch — huge win over interleaved requests
         // that evict each other's cache.
-        const rerankThreshold = config.scoring.minConfidence;
+        const rerankThreshold = config.behaviour.minConfidence;
 
         async function processFile(changedFile: string): Promise<IAnalyzeResult> {
           setState((s) => ({
@@ -368,10 +649,14 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             activeFiles: [...(s.activeFiles ?? []), changedFile],
           }));
           const scoreResults = engine.evaluateTests(changedFile, testFiles);
-          const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
+          const relevant = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
           const preRerankCount = relevant.length;
 
-          const onFileProgress = (info: { status: string; scored?: number; total?: number }): void => {
+          const onFileProgress = (info: {
+            status: string;
+            scored?: number;
+            total?: number;
+          }): void => {
             if (info.status !== 'scoring' || info.scored == null || info.total == null) return;
             setState((s) => ({
               ...s,
@@ -394,9 +679,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
                 rerankCandidates,
                 registry,
                 thresholds,
-                config.rerank?.explanations === true,
+                false,
                 onFileProgress,
-                config.scoring.minConfidence,
+                config.behaviour.minConfidence,
               );
             } catch (err) {
               rerankerUnavailable = true;
@@ -414,8 +699,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             ...s,
             completedFiles: [...(s.completedFiles ?? []), changedFile],
             activeFiles: (s.activeFiles ?? []).filter((f) => f !== changedFile),
-            progress:
-              (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
+            progress: (((s.completedFiles?.length ?? 0) + 1) / changedFiles.length) * 100,
           }));
 
           return {
@@ -435,15 +719,27 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         // KV prefix reuse inside `rerankPairs` still wins within each slot.
         const fileConcurrency = Math.min(2, changedFiles.length);
         const fileLimit = pLimit(fileConcurrency);
-        const results = await Promise.all(
-          changedFiles.map((f) => fileLimit(() => processFile(f))),
+        const results = await Promise.all(changedFiles.map((f) => fileLimit(() => processFile(f))));
+
+        // LLM rerank (config.rerank) — the interactive path must apply it too,
+        // otherwise the OpenRouter reasoning/points only appear in --ci/json.
+        // debug=false: the TUI has no debug-file sink, so logging would corrupt
+        // the rendered frames (read rerank debug from a headless --debug run).
+        const results2 = await applyLLMRerank(
+          results,
+          config,
+          registry,
+          false,
+          options.base,
+          options.target,
+          (msg) => setState((s) => ({ ...s, rerankWarning: msg })),
         );
 
         // Phase 5: Done
         setState((s) => ({
           ...s,
           phase: 'done',
-          results,
+          results: results2,
           elapsedMs: Date.now() - startTime,
           registryStats: {
             totalFiles: registry.files.size,
@@ -480,16 +776,24 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
  *   suggestor analyze --files src/Button.tsx --json
  *   // { "results": [...], "stats": { ... } }
  */
-export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
+export async function runHeadless(
+  options: IAnalyzeOptions,
+  runOptions: { debugFileOnly?: boolean } = {},
+): Promise<void> {
   const debug = options.debug ?? false;
+  if (debug) initAnalyzeDebugFile();
   const config = await loadProjectConfig(options.config);
   if (options.minConfidence) {
-    config.scoring.minConfidence = parseFloat(options.minConfidence);
+    config.behaviour.minConfidence = parseFloat(options.minConfidence);
   }
 
   if (debug) {
-    debugLog(`config loaded: enabledScorers=${config.scoring.enabledScorers.join(',')}`);
-    debugLog(`pathAliases: ${JSON.stringify(config.analyzers.cypressExtractor.pathAliases ?? {})}`);
+    debugLog(formatBuildLine());
+    debugLog(
+      `config: minConfidence=${config.behaviour.minConfidence} maxResults=${config.behaviour.maxResults}`,
+    );
+    debugLog(`pathAliases: ${JSON.stringify(getMergedAliases(config) ?? {})}`);
+    debugLog(`ubiquitousSelectorThreshold=${config.behaviour.ubiquitousSelectorThreshold ?? 0.1}`);
   }
 
   const registry = new Registry();
@@ -497,7 +801,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const cacheData = await fs.readFile(REGISTRY_CACHE_PATH, 'utf-8');
     registry.deserialize(cacheData);
     if (debug) {
-      debugLog(`registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`);
+      debugLog(
+        `registry loaded from cache: ${registry.files.size} files, ${registry.getSelectorIndex().size} selectors`,
+      );
     }
   } catch {
     if (debug) {
@@ -505,11 +811,13 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }
     const builder = new RegistryBuilder();
     const builtRegistry = await builder.buildFromDirectories({
-      sourceDirs: config.sourceDirs,
-      testPatterns: config.testPatterns,
-      excludePatterns: config.excludePatterns,
-      projectRoot: process.cwd(),
-      pathAliases: config.analyzers.cypressExtractor.pathAliases,
+      sourceDirs: config.source.dirs,
+      testPatterns: config.test.patterns,
+      excludePatterns: config.test.exclude,
+      ignoreDirs: getIgnoreDirs(config),
+      sourceRoot: config.source.root,
+      testRoot: config.test.root ?? config.source.root,
+      pathAliases: getMergedAliases(config),
       debug,
     });
     const dir = path.dirname(REGISTRY_CACHE_PATH);
@@ -527,7 +835,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   } else {
     changedFiles = await getChangedFiles(options.base, options.target);
     if (changedFiles.length === 0) {
-      process.stderr.write('[pelican] No changed files detected. Specify --files or make changes in git.\n');
+      process.stderr.write(
+        '[pelican] No changed files detected. Specify --files or make changes in git.\n',
+      );
       console.log(JSON.stringify({ results: [] }, null, 2));
       return;
     }
@@ -536,17 +846,30 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     }
   }
 
+  const gitHistories = await mineGitHistories(config, debug);
   const scoringConfig = toScoringConfig(config);
-  const engine = new ScoringEngine(scoringConfig, registry);
-  registerScorers(engine, config.scoring.enabledScorers);
+  const engine = new ScoringEngine(scoringConfig, registry, gitHistories);
+  registerScorers(engine);
 
   const testFiles = registry.getFilesByType('test').map((f) => f.path);
   const maxResults = options.all
     ? Number.POSITIVE_INFINITY
-    : parseInt(options.maxResults) || config.scoring.maxResults || 10;
+    : parseInt(options.maxResults) || config.behaviour.maxResults || 10;
 
   if (debug) {
-    debugLog(`scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`);
+    debugLog(
+      `scoring ${changedFiles.length} changed file(s) against ${testFiles.length} test file(s)`,
+    );
+    // Top test selectors by frequency — calibrate ubiquitousSelectorThreshold
+    // against this (a selector at share > threshold is disqualified as a match).
+    const totalTests = registry.getTestFileCount();
+    const top = registry.getTopTestSelectors(30);
+    debugLog(`top test selectors (of ${totalTests} specs) — share% · count · value:`);
+    for (const { value, count } of top) {
+      debugLog(
+        `  ${((100 * count) / Math.max(1, totalTests)).toFixed(0).padStart(3)}%  ${count}  ${value}`,
+      );
+    }
   }
 
   // Headless progress: write to stderr with a throttled once-per-5%-per-file
@@ -554,23 +877,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   // see Ink TUI in this mode.
   const reranker = new SemanticReranker({
     debug,
-    ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
-    ...(config.rerank?.ollamaHost && { ollamaHost: config.rerank.ollamaHost }),
-    ...(config.rerank?.fileContent && { fileContent: config.rerank.fileContent }),
-    ...(config.rerank?.explanations !== undefined && {
-      explanations: config.rerank.explanations,
-    }),
-    ...(config.rerank?.promptVersion && { promptVersion: config.rerank.promptVersion }),
-    ...(config.rerank?.pelicanWeight !== undefined && {
-      pelicanWeight: config.rerank.pelicanWeight,
-    }),
-    ...((options.biEncoder === false || config.rerank?.biEncoder === false) && {
-      biEncoderPrefilter: false,
-    }),
-    ...(config.rerank?.biEncoderModel && { biEncoderModel: config.rerank.biEncoderModel }),
-    ...(config.rerank?.biEncoderTopK !== undefined && {
-      biEncoderTopK: config.rerank.biEncoderTopK,
-    }),
+    ...(options.biEncoder === false && { biEncoderPrefilter: false }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
     useCache: options.cache !== false,
@@ -583,7 +890,7 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     },
   });
 
-  let rerankerUnavailable = options.rerank === false;
+  let rerankerUnavailable = options.rerank !== true;
   if (!rerankerUnavailable) {
     try {
       await reranker.warmUp();
@@ -598,8 +905,8 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
   }
 
   const thresholds = {
-    high: config.scoring.highConfidence ?? 0.8,
-    min: config.scoring.minConfidence ?? 0.4,
+    high: config.behaviour.highConfidence ?? 0.8,
+    min: config.behaviour.minConfidence ?? 0.4,
   };
 
   async function processFileHeadless(changedFile: string): Promise<IAnalyzeResult> {
@@ -618,18 +925,21 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     const scoreResults = engine.evaluateTests(changedFile, testFiles);
 
     if (debug) {
-      const top = scoreResults.slice(0, 5);
-      for (const r of top) {
-        debugLog(`  → ${r.testFile}`);
-        debugLog(`    score=${r.score.toFixed(3)} confidence=${r.confidence}`);
-        for (const s of r.signals) {
-          debugLog(`    ${s.matched ? '✓' : '✗'} ${s.source} (${s.weight}) — ${s.reason}`);
+      // Dump every candidate that clears minConfidence (i.e. every suggested
+      // test) with its matched signals — this is what we read back to see which
+      // scorer/selector anchored each result and why the count is what it is.
+      const kept = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
+      debugLog(`  ${kept.length} candidate(s) ≥ minConfidence ${config.behaviour.minConfidence}:`);
+      for (const r of kept) {
+        debugLog(`  → ${r.testFile}  score=${r.score.toFixed(3)} (${r.confidence})`);
+        for (const s of r.signals.filter((sg) => sg.matched)) {
+          debugLog(`      ✓ ${s.source} w=${s.weight.toFixed(3)} — ${s.reason}`);
         }
       }
     }
 
-    const relevant = scoreResults.filter((r) => r.score >= config.scoring.minConfidence);
-    const rerankThreshold = config.scoring.minConfidence;
+    const relevant = scoreResults.filter((r) => r.score >= config.behaviour.minConfidence);
+    const rerankThreshold = config.behaviour.minConfidence;
     const preRerankCount = relevant.length;
     let reranked: IAnalyzeResult['suggestedTests'];
     if (rerankerUnavailable) {
@@ -643,9 +953,9 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
           rerankCandidates,
           registry,
           thresholds,
-          config.rerank?.explanations === true,
+          false,
           undefined,
-          config.scoring.minConfidence,
+          config.behaviour.minConfidence,
         );
       } catch (err) {
         rerankerUnavailable = true;
@@ -673,11 +983,48 @@ export async function runHeadless(options: IAnalyzeOptions): Promise<void> {
     results.push(await processFileHeadless(changedFile));
   }
 
-  console.log(JSON.stringify({ results }, null, 2));
+  // Optional LLM rerank (config.rerank) — independent of the Ollama path above.
+  // Only drops specs the model explicitly rejected; recall-safe + fail-open.
+  const finalResults = await applyLLMRerank(
+    results,
+    config,
+    registry,
+    debug,
+    options.base,
+    options.target,
+  );
+
+  // In TUI mode we run this path only to populate analyze-debug.log; the JSON
+  // belongs on stdout only for a real headless/json invocation.
+  if (!runOptions.debugFileOnly) {
+    console.log(JSON.stringify({ results: finalResults }, null, 2));
+  }
+  if (debug) {
+    debugLog(
+      `done — ${finalResults.reduce((n, r) => n + (r.totalCandidates ?? 0), 0)} total suggestions`,
+    );
+  }
+}
+
+const ANALYZE_DEBUG_LOG = 'analyze-debug.log';
+let debugSink: ((msg: string) => void) | null = null;
+
+// When --debug is set, route debug to ./analyze-debug.log (auto-created and
+// truncated per run) rather than stderr. The TUI renders on stdout and the
+// headless debug code never ran in TUI mode, so `2> analyze-debug.log` only
+// captured TUI frames. A dedicated file is captured consistently either way.
+function initAnalyzeDebugFile(): void {
+  try {
+    fsSync.writeFileSync(ANALYZE_DEBUG_LOG, '');
+    debugSink = (m) => fsSync.appendFileSync(ANALYZE_DEBUG_LOG, `[debug] ${m}\n`);
+  } catch {
+    debugSink = null; // fall back to stderr
+  }
 }
 
 function debugLog(msg: string): void {
-  process.stderr.write(`[debug] ${msg}\n`);
+  if (debugSink) debugSink(msg);
+  else process.stderr.write(`[debug] ${msg}\n`);
 }
 
 // ─── Commander Action ────────────────────────────────────────────
@@ -689,18 +1036,26 @@ export const analyzeCommand = new Command('analyze')
   .option('-t, --target <ref>', 'Target git reference (default: HEAD)')
   .option('-f, --files <paths...>', 'Space- or comma-separated list of changed files')
   .option('-o, --output <format>', 'Output format: tui, json, list', 'tui')
-  .option('--min-confidence <number>', 'Minimum confidence threshold', '0.40')
-  .option('--max-results <number>', 'Maximum number of results', '10')
+  // No CLI defaults here on purpose: a hardcoded default makes commander
+  // always populate the option, which then clobbers the value from
+  // .pelicanrc.json on every run. Leaving them unset means the flag overrides
+  // config ONLY when the user actually passes it; otherwise config wins
+  // (falling back to DEFAULT_CONFIG: minConfidence 0.4, maxResults 10).
+  .option('--min-confidence <number>', 'Minimum confidence threshold (default: from config)')
+  .option('--max-results <number>', 'Maximum number of results (default: from config)')
   .option('--all', 'Show all suggestions (overrides --max-results)')
   .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
-  .option('--no-rerank', 'Skip Ollama reranking (still uses .pelican.lock cache)')
+  .option(
+    '--rerank',
+    'Enable Ollama semantic reranking (off by default — pelican structural scoring + .pelican.lock cache only)',
+  )
   .option('--no-cache', 'Bypass .pelican.lock cache; every pair is re-evaluated')
   .option(
     '--no-bi-encoder',
     'Skip embedding cosine prefilter; pelican structural rank acts as the prefilter (faster, often better recall on naming-strong repos)',
   )
-  .option('--debug', 'Print detailed extraction and scoring info to stderr')
+  .option('--debug', 'Write detailed scoring diagnostics to ./analyze-debug.log (any output mode)')
   .option('-c, --config <path>', 'Path to config file')
   .action(async (opts: IAnalyzeOptions) => {
     // --ci is shorthand for --output json
@@ -709,6 +1064,19 @@ export const analyzeCommand = new Command('analyze')
     if (opts.output === 'json') {
       await runHeadless(opts);
       return;
+    }
+
+    // TUI mode: the interactive view doesn't emit debug, so when --debug is set
+    // run the headless scoring pass first purely to write analyze-debug.log
+    // (no stdout), then render the TUI as usual. Keeps `--debug` consistent
+    // with setup — you always get a debug log file, regardless of output mode.
+    if (opts.debug) {
+      try {
+        await runHeadless(opts, { debugFileOnly: true });
+        process.stderr.write(`[pelican] wrote analyze-debug.log\n`);
+      } catch (e) {
+        process.stderr.write(`[pelican] debug log generation failed: ${e}\n`);
+      }
     }
 
     await loadTheme();

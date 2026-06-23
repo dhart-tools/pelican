@@ -1,5 +1,10 @@
 import { BaseScorer } from '@/core/scoring/scorers/base';
 import { getScorerConfig } from '@/core/scoring/scoring-config';
+import {
+  DEFAULT_UBIQUITOUS_SELECTOR_THRESHOLD,
+  formatSelectorShares,
+  partitionBySelectorUbiquity,
+} from '@/core/scoring/selector-ubiquity';
 import { IScorerContext, ISignal } from '@/types';
 import { EScorerType } from '@/utils/enums';
 import { normalizeTestSelector } from '@/utils/selector-normalize';
@@ -10,7 +15,7 @@ export class SelectorMatchScorer extends BaseScorer {
   }
 
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {
-    const { testFile: testEntry, changedFile: changedEntry, registry } = context;
+    const { testFile: testEntry, changedFile: changedEntry, registry, config } = context;
 
     const testSelectors = testEntry.cypress?.selectors || [];
     if (testSelectors.length === 0) {
@@ -89,22 +94,52 @@ export class SelectorMatchScorer extends BaseScorer {
     }
 
     if (exactMatches.length > 0 || prefixMatches.length > 0) {
-      // Worst-case (deepest) origin of the matched values — 0 = own file,
-      // 1 = direct import, 2 = grand-child. Transitive matches dampen.
-      const allMatched: string[] = [
-        ...exactMatches,
-        ...prefixMatches.map((p) => p.source),
-      ];
-      const minDepth = Math.min(...allMatched.map((v) => valueOrigin.get(v) ?? 0));
+      const allMatched: string[] = [...exactMatches, ...prefixMatches.map((p) => p.source)];
+
+      // Fix #2: disqualify ubiquitous selectors. Shared grid/nav/toast markers
+      // (`Type_`, `Serial Number_`, `SaveButton`) appear across most specs, so a
+      // match on them alone says nothing about WHICH spec a change affects — and
+      // they're the dominant precision-flood carrier. The signal counts only if
+      // at least one matched selector is discriminating (non-ubiquitous).
+      const threshold =
+        config?.scoring?.ubiquitousSelectorThreshold ?? DEFAULT_UBIQUITOUS_SELECTOR_THRESHOLD;
+      const { discriminating, ubiquitous } = registry
+        ? partitionBySelectorUbiquity(allMatched, registry, threshold)
+        : { discriminating: [...new Set(allMatched)], ubiquitous: [] as string[] };
+
+      if (registry && discriminating.length === 0) {
+        return [
+          this.createSignal(
+            false,
+            `All ${ubiquitous.length} matched selector(s) ubiquitous (>${(threshold * 100).toFixed(0)}% of specs) — disqualified: ${formatSelectorShares(ubiquitous, registry)}`,
+            { changedFile, testFile, disqualified: ubiquitous },
+          ),
+        ];
+      }
+
+      // Everything below is computed over DISCRIMINATING matches only.
+      const discSet = new Set(discriminating);
+      const keptExact = exactMatches.filter((v) => discSet.has(v));
+      const keptPrefix = prefixMatches.filter((p) => discSet.has(p.source));
+      // Worst-case (deepest) origin — 0 = own file, 1 = direct import, 2 = grand-child.
+      const minDepth = Math.min(...discriminating.map((v) => valueOrigin.get(v) ?? 0));
+      const ignored = ubiquitous.length ? ` [${ubiquitous.length} ubiquitous ignored]` : '';
       const sig = this.createSignal(
         true,
-        exactMatches.length > 0
-          ? `Test selectors match: ${exactMatches.join(', ')}${prefixMatches.length ? ` (+${prefixMatches.length} prefix)` : ''}${minDepth > 0 ? ` (via dep d${minDepth})` : ''}`
-          : `Test selectors prefix-match: ${prefixMatches.map((p) => `${p.test}~${p.source}`).join(', ')}${minDepth > 0 ? ` (via dep d${minDepth})` : ''}`,
-        { changedFile, testFile, exactMatches, prefixMatches, minDepth },
+        keptExact.length > 0
+          ? `Test selectors match: ${keptExact.join(', ')}${keptPrefix.length ? ` (+${keptPrefix.length} prefix)` : ''}${minDepth > 0 ? ` (via dep d${minDepth})` : ''}${ignored}`
+          : `Test selectors prefix-match: ${keptPrefix.map((p) => `${p.test}~${p.source}`).join(', ')}${minDepth > 0 ? ` (via dep d${minDepth})` : ''}${ignored}`,
+        {
+          changedFile,
+          testFile,
+          exactMatches: keptExact,
+          prefixMatches: keptPrefix,
+          minDepth,
+          ubiquitous,
+        },
       );
       let w = this.weight;
-      if (exactMatches.length === 0) w *= 0.7;
+      if (keptExact.length === 0) w *= 0.7;
       if (minDepth === 1) w *= 0.7;
       else if (minDepth >= 2) w *= 0.45;
 
@@ -112,40 +147,26 @@ export class SelectorMatchScorer extends BaseScorer {
       // vocabulary is a weak connection. Scale weight by how much of the test
       // we actually cover. Cap at 3 matches = full weight so genuinely
       // selector-heavy components don't over-score.
-      const matchCount = exactMatches.length + prefixMatches.length;
+      const matchCount = keptExact.length + keptPrefix.length;
       const densityFactor = Math.min(1, matchCount / 3);
       w *= Math.max(0.35, densityFactor);
 
-      // IDF-style quality scaling. Each matched value's contribution is
-      // weighted by how discriminating it is: values that appear in most
-      // specs (`SaveButton`, `CancelButton`, `BackButton`) are near-useless
-      // for identifying WHICH spec a change affects, while rare values
-      // (`facility-name-input`) are near-perfect discriminators.
-      //
-      // quality(v) = (1 - freq(v)/totalTests)^2
-      //   freq 0/215    → 1.00   (perfect discriminator — unique to one spec)
-      //   freq 10/215   → 0.91
-      //   freq 47/215   → 0.61   (SaveButton in 22% of specs → 0.61)
-      //   freq 100/215  → 0.28
-      //   freq 200/215  → 0.005  (universal — near-zero signal)
-      //
-      // Signal quality = MAX of per-value qualities. A single rare match
-      // rescues the signal even if other matched values are ubiquitous
-      // (the discriminator carries the decision).
+      // IDF-style quality scaling over the DISCRIMINATING values. Ubiquitous
+      // values are already removed, so no floor is needed — a low best-quality
+      // here means a genuinely weak (rare-but-shallow) match.
+      //   quality(v) = (1 - freq(v)/totalTests)^2
+      //   freq 0     → 1.00 (unique to one spec)   freq 10/215 → 0.91
+      //   freq 47/215 → 0.61                        freq 100/215 → 0.28
       if (registry) {
         const totalTests = registry.getTestFileCount();
         if (totalTests > 1) {
-          const uniqueMatched = Array.from(new Set(allMatched));
           let bestQuality = 0;
-          for (const v of uniqueMatched) {
-            const freq = registry.getTestSelectorFrequency(v);
-            const share = freq / totalTests;
+          for (const v of discriminating) {
+            const share = registry.getTestSelectorFrequency(v) / totalTests;
             const q = Math.pow(1 - share, 2);
             if (q > bestQuality) bestQuality = q;
           }
-          // Floor at 0.25 so a match on purely ubiquitous selectors still
-          // lands as a weak MED rather than vanishing into LOW.
-          w *= Math.max(0.25, bestQuality);
+          w *= bestQuality;
         }
       }
       sig.weight = w;

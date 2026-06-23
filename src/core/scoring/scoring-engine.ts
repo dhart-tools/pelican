@@ -6,16 +6,26 @@ import {
   IRegistry,
   ISuggestorConfig,
 } from '@/types';
+import { IRepoGitHistory } from '@/types/git';
 import { EConfidenceLevel } from '@/utils/enums';
+
+import { applyAnchorGate } from './anchor-gate';
+import { isHubFile } from './hub-file';
 
 export class ScoringEngine {
   private scorers: Map<string, IScorer> = new Map();
   private config: ISuggestorConfig;
   private registry: IRegistry;
+  private gitHistories: Map<string, IRepoGitHistory>;
 
-  constructor(config: ISuggestorConfig, registry: IRegistry) {
+  constructor(
+    config: ISuggestorConfig,
+    registry: IRegistry,
+    gitHistories: Map<string, IRepoGitHistory> = new Map(),
+  ) {
     this.config = config;
     this.registry = registry;
+    this.gitHistories = gitHistories;
   }
 
   register(scorer: IScorer): void {
@@ -38,6 +48,12 @@ export class ScoringEngine {
       return results;
     }
 
+    // Hub status depends only on the changed file, so compute it once here
+    // rather than per-candidate. Used by the anchor gate to demote a hub's
+    // broad (medium-tier) signals.
+    const requireAnchor = this.config.scoring.requireAnchor ?? true;
+    const changedIsHub = isHubFile(changedFileEntry);
+
     for (const testFilePath of testFiles) {
       const testFileEntry = this.registry.getFile(testFilePath);
       if (!testFileEntry) continue;
@@ -47,20 +63,13 @@ export class ScoringEngine {
         config: this.config,
         changedFile: changedFileEntry,
         testFile: testFileEntry,
+        gitHistories: this.gitHistories,
       };
 
-      // Collect signals from all enabled scorers
+      // Collect signals from every registered scorer (all scorers are always on).
       const signals: ISignal[] = [];
 
       for (const scorer of this.scorers.values()) {
-        if (!this.config.scoring.enabledScorers.includes(scorer.name)) continue;
-
-        // Apply config weight override
-        const weightOverride = this.config.scoring.scorerWeights?.[scorer.name];
-        if (weightOverride !== undefined) {
-          (scorer as unknown as { __effectiveWeight?: number }).__effectiveWeight = weightOverride;
-        }
-
         const scorerSignals = scorer.evaluate(changedFile, testFilePath, context);
         signals.push(...scorerSignals);
 
@@ -79,8 +88,11 @@ export class ScoringEngine {
       // share a noun with the spec). Keep the signal lit only when some
       // structural scorer (import, route, redux, selector, etc.) also
       // backs the pair.
+      // Temporal coherence is a corroborator, not structural evidence, so it
+      // does not by itself rescue a describe-only match here (the anchor gate
+      // would suppress such a pair anyway — this just keeps the intent clear).
       const hasStructuralMatch = signals.some(
-        (s) => s.matched && s.type !== 'describe-block',
+        (s) => s.matched && s.type !== 'describe-block' && s.type !== 'temporal-coherence',
       );
       if (!hasStructuralMatch) {
         for (const s of signals) {
@@ -91,8 +103,16 @@ export class ScoringEngine {
         }
       }
 
+      // Anchor gate — require at least one file-identity signal (direct-import,
+      // filename, colocation; plus route/selector/transitive when the changed
+      // file isn't a hub). Candidates matched only by broad domain signals
+      // (redux, describe-block) are suppressed here. This is the main precision
+      // lever against hub-file floods; recall is preserved because every true
+      // positive carries a narrow anchor.
+      const gatedSignals = requireAnchor ? applyAnchorGate(signals, { changedIsHub }) : signals;
+
       // Apply ubiquity dampener
-      const dampenedSignals = this.applyUbiquityDampener(changedFile, signals);
+      const dampenedSignals = this.applyUbiquityDampener(changedFile, gatedSignals);
 
       // Calculate final score
       const score = this.calculateScore(dampenedSignals);
@@ -222,7 +242,10 @@ export class ScoringEngine {
         return 'This test lives alongside the changed file — likely tests it directly';
 
       case 'describe-block':
-        return 'This test\'s describe/it blocks reference the changed component by name';
+        return "This test's describe/it blocks reference the changed component by name";
+
+      case 'temporal-coherence':
+        return 'This test was created/changed alongside the changed file in git history';
 
       default:
         return reason || 'This test is connected to the changed file';

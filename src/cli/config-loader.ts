@@ -1,155 +1,115 @@
 import * as fs from 'fs/promises';
+import * as path from 'path';
 
-import { ISuggestorConfig } from '@/types/config';
+import { ISuggestorConfig, ITemporalConfig } from '@/types/config';
 
 import { IProjectConfig } from './types';
 
+/** Universal directories never scanned (not user-configurable). */
+const UNIVERSAL_IGNORES = ['node_modules', 'dist', 'build', '.next', 'coverage', '.git'];
+
 const DEFAULT_CONFIG: IProjectConfig = {
-  sourceDirs: ['src'],
-  // Broad default — covers Cypress, Jest/Vitest, Playwright, Testing Library,
-  // and generic e2e / integration layouts. Matches the `registry-builder`
-  // fallback so empty-config and default-config behavior stay identical.
-  testPatterns: [
-    '**/*.cy.ts',
-    '**/*.cy.tsx',
-    '**/*.test.ts',
-    '**/*.test.tsx',
-    '**/*.test.js',
-    '**/*.test.jsx',
-    '**/*.spec.ts',
-    '**/*.spec.tsx',
-    '**/*.spec.js',
-    '**/*.spec.jsx',
-    '**/*.e2e.ts',
-    '**/*.e2e.tsx',
-    '**/*.integration.ts',
-    '**/*.integration.tsx',
-    '**/*.int.ts',
-    '**/*.int.tsx',
-  ],
-  ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
-  analyzers: {
-    enabled: [
-      'source-extractor',
-      'cypress-extractor',
-      'import-graph-analyzer',
-      'route-analyzer',
-      'i18n-analyzer',
-    ],
-    sourceExtractor: { enabled: true, selectorStrategy: ['data-testid', 'data-cy'] },
-    cypressExtractor: {
-      enabled: true,
-      pathAliases: {
-        '@fixtures/': 'cypress/fixtures/',
-      },
-    },
-    reduxChain: { enabled: false, storeDirs: [] },
+  source: {
+    // Placeholder — source.root is required from user config; validateConfig
+    // rejects an empty root with a clear message.
+    root: '',
+    dirs: ['src'],
+    ignoreDirs: [],
+    pathAliases: {},
+    selectorAttributes: ['data-testid', 'data-cy'],
+    imports: true,
+    routes: { enabled: true, routerFile: '' },
+    redux: { enabled: false, storeDirs: [] },
     i18n: { enabled: true, library: 'react-i18next', localesPath: '' },
-    routeAnalyzer: { enabled: true, routerFile: '' },
-    importGraph: { enabled: true },
   },
-  scoring: {
-    enabledScorers: [
-      'direct-import',
-      'selector-match',
-      'selector-id-match',
-      'route-match',
-      'filename-match',
-      'transitive-import',
-      'api-intercept',
-      'colocation',
-      'describe-block',
-      'translation-match',
-      'dependent-selector',
-      'action-type',
-      'usage-site',
+  test: {
+    // Broad default — covers Cypress, Jest/Vitest, Playwright, Testing Library,
+    // and generic e2e / integration layouts.
+    patterns: [
+      '**/*.cy.ts',
+      '**/*.cy.tsx',
+      '**/*.test.ts',
+      '**/*.test.tsx',
+      '**/*.test.js',
+      '**/*.test.jsx',
+      '**/*.spec.ts',
+      '**/*.spec.tsx',
+      '**/*.spec.js',
+      '**/*.spec.jsx',
+      '**/*.e2e.ts',
+      '**/*.e2e.tsx',
+      '**/*.integration.ts',
+      '**/*.integration.tsx',
+      '**/*.int.ts',
+      '**/*.int.tsx',
     ],
-    ubiquityThreshold: 0.7,
+    pathAliases: { '@fixtures/': 'cypress/fixtures/' },
+    exclude: [],
+  },
+  behaviour: {
     minConfidence: 0.4,
     highConfidence: 0.8,
     maxResults: 10,
+    requireAnchor: true,
+    ubiquityThreshold: 0.7,
+    ubiquitousSelectorThreshold: 0.1,
+    routeTrafficDampingExponent: 1,
+    filenameAmbiguityShare: 0.1,
+    temporal: {
+      creationWindowSoftDays: 14,
+      creationWindowHardDays: 28,
+      updateWindowDays: 14,
+      maxCommitFiles: 30,
+      maxWeight: 0.45,
+    },
+  },
+  rerank: {
+    enabled: false,
+    provider: 'openrouter',
+    // Validated on the hard cases (case 05 + 10) at 8/8; a small MoE that's
+    // cheap/fast yet reasons about behaviour well enough to separate
+    // exercises-the-change from mentions-the-domain. The `:free` variant runs
+    // at $0 (rate-limited); drop `:free` + add OpenRouter credits for higher
+    // throughput. Override per project.
+    model: 'nvidia/nemotron-3-nano-30b-a3b:free',
+    apiKeyEnv: 'OPENROUTER_API_KEY',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    candidateBand: { min: 0.4, max: 1.0 },
+    protectAnchors: false,
+    keepThreshold: 0.5,
+    dropConfidence: 0.9,
+    maxCandidates: 40,
+    concurrency: 4,
+    timeoutMs: 30000,
+    maxRetries: 3,
+    highPrecision: false,
+    judgeMode: 'strict',
+    skipCosmeticChanges: true,
   },
 };
 
 /**
- * Slim user-facing config shape — what users actually write in `.pelicanrc.json`.
- *
- * Everything is optional. The legacy verbose shape (`analyzers`, `scoring`)
- * is still accepted for back-compat; advanced overrides live in `advanced`.
+ * User-facing config — what users write in `.pelicanrc.json`. Same three-block
+ * shape as IProjectConfig, but every field (and every block) is optional and
+ * deep-merged onto the defaults.
  *
  * @example minimal config
  *   {
- *     "sourceDirs": ["src"],
- *     "pathAliases": { "@/": "src/" },
- *     "rerank": { "model": "qwen2.5-coder:7b" }
+ *     "source": { "dirs": ["src"], "pathAliases": { "@/": "src/" } },
+ *     "test": { "patterns": ["**\/*.cy.ts"] },
+ *     "behaviour": { "maxResults": 10 }
  *   }
  */
 interface IUserConfig {
-  sourceDirs?: string[];
-  testPatterns?: string[];
-  ignorePatterns?: string[];
-
-  /** Glob patterns for files to exclude from BOTH source and test discovery. */
-  excludePatterns?: string[];
-
-  /** Path alias map for resolving imports. Replaces `analyzers.cypressExtractor.pathAliases`. */
-  pathAliases?: Record<string, string>;
-
-  /** Filter floor. Below this, results are dropped. Default 0.4. */
-  minConfidence?: number;
-  /** Band threshold. ≥ this is "high"; below is "medium". Default 0.8. */
-  highConfidence?: number;
-  /** Cap on results. Default 10. Set on CLI via `--all` to disable. */
-  maxResults?: number;
-
-  /** LLM rerank settings. Whole block optional; sane defaults applied. */
-  rerank?: IUserRerankConfig;
-
-  /**
-   * Escape hatch for power users who need to tune scorer weights, disable
-   * specific analyzers, or override structural internals. Most users should
-   * never set this.
-   */
-  advanced?: {
-    enabledScorers?: string[];
-    scorerWeights?: Record<string, number>;
-    ubiquityThreshold?: number;
-    routerFile?: string;
-    storeDirs?: string[];
-    selectorStrategy?: string[];
-  };
-
-  // ── Back-compat: legacy verbose shape still accepted ─────────────
-  analyzers?: IProjectConfig['analyzers'];
-  scoring?: Partial<IProjectConfig['scoring']>;
+  source?: DeepPartial<IProjectConfig['source']>;
+  test?: DeepPartial<IProjectConfig['test']>;
+  behaviour?: DeepPartial<IProjectConfig['behaviour']>;
+  rerank?: DeepPartial<IProjectConfig['rerank']>;
 }
 
-interface IUserRerankConfig {
-  /** Run the LLM reranker. Default true. */
-  enabled?: boolean;
-  /** Ollama model. Default qwen2.5-coder:7b. */
-  model?: string;
-  /** Ollama host. Default http://localhost:11434. */
-  host?: string;
-  /** Embedding-based prefilter (drops candidates by cosine before LLM). Default true. */
-  biEncoder?: boolean;
-  /** Embedding model when biEncoder is on. Default mxbai-embed-large. */
-  biEncoderModel?: string;
-  /** Cap candidates that survive the bi-encoder. Default 30. */
-  biEncoderTopK?: number;
-  /** Prompt template. Default 'v2'. */
-  promptVersion?: 'v1' | 'v2';
-  /** Late-fusion weight on pelican prior in v2. Default 0.4. */
-  pelicanWeight?: number;
-  /** Ask LLM for explanations per candidate. Default false. */
-  explanations?: boolean;
-
-  // ── Legacy field names still accepted ─────────────────────────────
-  ollamaModel?: string;
-  ollamaHost?: string;
-  biEncoderPrefilter?: boolean;
-  fileContent?: IProjectConfig['rerank'] extends { fileContent?: infer T } ? T : never;
-}
+type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends Array<unknown> ? T[K] : T[K] extends object ? Partial<T[K]> : T[K];
+};
 
 /**
  * Loads config from .pelicanrc.json and merges with defaults.
@@ -160,18 +120,37 @@ interface IUserRerankConfig {
  *   // config.scoring.minConfidence === 0.4 (from file or default)
  */
 export async function loadProjectConfig(configPath?: string): Promise<IProjectConfig> {
-  const path = configPath || '.pelicanrc.json';
+  const cfgPath = configPath || '.pelicanrc.json';
 
+  let raw: string | undefined;
   try {
-    const content = await fs.readFile(path, 'utf-8');
-    const userConfig: IUserConfig = JSON.parse(content);
-    const merged = mergeConfig(DEFAULT_CONFIG, userConfig);
-    validateScoringThresholds(merged);
-    return merged;
-  } catch (err) {
-    if (err instanceof ConfigValidationError) throw err;
-    return { ...DEFAULT_CONFIG };
+    raw = await fs.readFile(cfgPath, 'utf-8');
+  } catch {
+    raw = undefined; // no config file — validateConfig surfaces the missing source.root
   }
+
+  let userConfig: IUserConfig = {};
+  if (raw !== undefined) {
+    try {
+      userConfig = JSON.parse(raw);
+    } catch {
+      throw new ConfigValidationError(`config at ${cfgPath} is not valid JSON`);
+    }
+  }
+
+  const merged = mergeConfig(DEFAULT_CONFIG, userConfig);
+  validateConfig(merged);
+  resolveRoots(merged);
+  return merged;
+}
+
+/**
+ * Resolves source.root (and test.root, defaulting to source.root) to absolute
+ * paths. Mutates in place — both roots are absolute after this runs.
+ */
+function resolveRoots(config: IProjectConfig): void {
+  config.source.root = path.resolve(config.source.root);
+  config.test.root = config.test.root ? path.resolve(config.test.root) : config.source.root;
 }
 
 export class ConfigValidationError extends Error {
@@ -182,12 +161,18 @@ export class ConfigValidationError extends Error {
 }
 
 /**
- * Guard against the "inverted bands" mis-config where highConfidence is
- * set below minConfidence — a real user hit this and saw every result
- * collapse into the HIGH band (anything ≥ min was also ≥ high).
+ * Validates the config: source.root is required, and the confidence bands must
+ * not be inverted (a real user once set highConfidence below minConfidence and
+ * saw every result collapse into the HIGH band).
  */
-function validateScoringThresholds(config: IProjectConfig): void {
-  const { minConfidence, highConfidence } = config.scoring;
+function validateConfig(config: IProjectConfig): void {
+  if (!config.source.root || config.source.root.trim() === '') {
+    throw new ConfigValidationError(
+      'config invalid: source.root is required (the path to your source repository). ' +
+        'Set it in .pelicanrc.json under "source": { "root": "..." }.',
+    );
+  }
+  const { minConfidence, highConfidence } = config.behaviour;
   if (highConfidence < minConfidence) {
     throw new ConfigValidationError(
       `highConfidence (${highConfidence}) must be >= minConfidence (${minConfidence}). ` +
@@ -197,94 +182,86 @@ function validateScoringThresholds(config: IProjectConfig): void {
 }
 
 /**
- * Extracts the ISuggestorConfig subset that the ScoringEngine expects.
+ * The effective list of directory names to skip while scanning: the always-on
+ * UNIVERSAL_IGNORES plus any extra `source.ignoreDirs` from config (deduped).
+ * Single source of truth — every registry-builder caller passes this so both
+ * repos honour the same ignore set (and `.git` is actually ignored).
+ */
+export function getIgnoreDirs(config: IProjectConfig): string[] {
+  return [...new Set([...UNIVERSAL_IGNORES, ...(config.source.ignoreDirs ?? [])])];
+}
+
+/**
+ * Merged source + test path aliases as ABSOLUTE targets — source aliases
+ * resolved against source.root, test aliases against test.root. This lets the
+ * builder resolve a cross-repo import (a spec's `@dm/...` → the source repo)
+ * without knowing which root each alias belongs to. Call after roots are
+ * resolved (i.e. on a config from loadProjectConfig).
+ */
+export function getMergedAliases(config: IProjectConfig): Record<string, string> {
+  const testRoot = config.test.root ?? config.source.root;
+  const out: Record<string, string> = {};
+  for (const [prefix, target] of Object.entries(config.source.pathAliases ?? {})) {
+    out[prefix] = path.isAbsolute(target) ? target : path.resolve(config.source.root, target);
+  }
+  for (const [prefix, target] of Object.entries(config.test.pathAliases ?? {})) {
+    out[prefix] = path.isAbsolute(target) ? target : path.resolve(testRoot, target);
+  }
+  return out;
+}
+
+/**
+ * Extracts the ISuggestorConfig subset (the `behaviour` thresholds) that the
+ * ScoringEngine expects under a `scoring` key.
  */
 export function toScoringConfig(config: IProjectConfig): ISuggestorConfig {
   return {
-    scoring: config.scoring,
+    scoring: {
+      minConfidence: config.behaviour.minConfidence,
+      highConfidence: config.behaviour.highConfidence,
+      ubiquityThreshold: config.behaviour.ubiquityThreshold,
+      requireAnchor: config.behaviour.requireAnchor,
+      ubiquitousSelectorThreshold: config.behaviour.ubiquitousSelectorThreshold,
+      routeTrafficDampingExponent: config.behaviour.routeTrafficDampingExponent,
+      temporal: config.behaviour.temporal,
+      filenameAmbiguityShare: config.behaviour.filenameAmbiguityShare,
+    },
   };
 }
 
 function mergeConfig(defaults: IProjectConfig, user: IUserConfig): IProjectConfig {
-  // Top-level path aliases beat the legacy nested location.
-  const pathAliases =
-    user.pathAliases ??
-    user.analyzers?.cypressExtractor?.pathAliases ??
-    defaults.analyzers.cypressExtractor.pathAliases;
-
   return {
-    sourceDirs: user.sourceDirs ?? defaults.sourceDirs,
-    testPatterns: user.testPatterns ?? defaults.testPatterns,
-    ignorePatterns: user.ignorePatterns ?? defaults.ignorePatterns,
-    excludePatterns: user.excludePatterns ?? defaults.excludePatterns,
-    analyzers: {
-      ...defaults.analyzers,
-      ...user.analyzers,
-      sourceExtractor: {
-        ...defaults.analyzers.sourceExtractor,
-        ...user.analyzers?.sourceExtractor,
-        ...(user.advanced?.selectorStrategy && {
-          selectorStrategy: user.advanced.selectorStrategy,
-        }),
-      },
-      cypressExtractor: {
-        ...defaults.analyzers.cypressExtractor,
-        ...user.analyzers?.cypressExtractor,
-        pathAliases,
-      },
-      reduxChain: {
-        ...defaults.analyzers.reduxChain,
-        ...user.analyzers?.reduxChain,
-        ...(user.advanced?.storeDirs && { storeDirs: user.advanced.storeDirs }),
-      },
-      i18n: {
-        ...defaults.analyzers.i18n,
-        ...user.analyzers?.i18n,
-      },
-      routeAnalyzer: {
-        ...defaults.analyzers.routeAnalyzer,
-        ...user.analyzers?.routeAnalyzer,
-        ...(user.advanced?.routerFile && { routerFile: user.advanced.routerFile }),
-      },
-      importGraph: {
-        ...defaults.analyzers.importGraph,
-        ...user.analyzers?.importGraph,
-      },
+    source: {
+      ...defaults.source,
+      ...user.source,
+      routes: { ...defaults.source.routes, ...user.source?.routes },
+      redux: { ...defaults.source.redux, ...user.source?.redux },
+      i18n: { ...defaults.source.i18n, ...user.source?.i18n },
     },
-    scoring: {
-      ...defaults.scoring,
-      ...user.scoring,
-      ...(user.advanced?.enabledScorers && { enabledScorers: user.advanced.enabledScorers }),
-      ...(user.advanced?.scorerWeights && { scorerWeights: user.advanced.scorerWeights }),
-      ...(user.advanced?.ubiquityThreshold !== undefined && {
-        ubiquityThreshold: user.advanced.ubiquityThreshold,
-      }),
-      ...(user.minConfidence !== undefined && { minConfidence: user.minConfidence }),
-      ...(user.highConfidence !== undefined && { highConfidence: user.highConfidence }),
-      ...(user.maxResults !== undefined && { maxResults: user.maxResults }),
+    test: {
+      ...defaults.test,
+      ...user.test,
     },
-    rerank: normalizeRerankConfig(user.rerank),
-  };
-}
-
-/**
- * Map the slim user-facing rerank shape (and legacy field names) onto the
- * internal `IProjectConfig['rerank']` shape consumed by SemanticReranker.
- */
-function normalizeRerankConfig(
-  user: IUserRerankConfig | undefined,
-): IProjectConfig['rerank'] {
-  if (!user) return undefined;
-  return {
-    enabled: user.enabled ?? true,
-    ollamaModel: user.model ?? user.ollamaModel ?? 'qwen2.5-coder:7b',
-    ollamaHost: user.host ?? user.ollamaHost ?? 'http://localhost:11434',
-    biEncoder: user.biEncoder ?? user.biEncoderPrefilter,
-    biEncoderModel: user.biEncoderModel,
-    biEncoderTopK: user.biEncoderTopK,
-    promptVersion: user.promptVersion,
-    pelicanWeight: user.pelicanWeight,
-    explanations: user.explanations,
-    fileContent: user.fileContent,
+    behaviour: {
+      ...defaults.behaviour,
+      ...user.behaviour,
+      // Deep-merge temporal so a user can override one knob without dropping
+      // the rest of the defaults. DEFAULT_CONFIG always supplies a full block,
+      // so the spread is complete at runtime.
+      temporal: {
+        ...defaults.behaviour.temporal,
+        ...user.behaviour?.temporal,
+      } as ITemporalConfig,
+    },
+    rerank: {
+      ...defaults.rerank,
+      ...user.rerank,
+      // candidateBand is nested — deep-merge so overriding one bound keeps the
+      // other from the defaults.
+      candidateBand: {
+        ...defaults.rerank!.candidateBand,
+        ...user.rerank?.candidateBand,
+      },
+    } as IProjectConfig['rerank'],
   };
 }

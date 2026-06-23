@@ -1,3 +1,4 @@
+import { ITemporalConfig, IRerankConfig } from '@/types/config';
 import { IScoreResult } from '@/types/scorers';
 import { EConfidenceLevel } from '@/utils/enums';
 
@@ -69,6 +70,10 @@ export interface IAnalyzeState {
   /** Set when Ollama reranker is unavailable — UI shows a warning, falls back to pelican-only + lock cache. */
   rerankerUnavailable?: boolean;
   rerankerError?: string;
+  /** Set when the LLM rerank (config.rerank) was enabled but could not run —
+   * missing/invalid key, bad provider, or every model call failed (network).
+   * Surfaced as a loud warning so reasoning silently missing is never a mystery. */
+  rerankWarning?: string;
   /** How many pairs the LLM has scored so far (for progress display). */
   rerankScored?: number;
   /** Total pairs queued for LLM scoring. */
@@ -167,96 +172,75 @@ export interface ISetupState {
 // ─── Config ──────────────────────────────────────────────────────
 
 /**
- * Full project config — superset of what lives in .pelicanrc.json.
- * This is NOT the same as ISuggestorConfig from @/types/config
- * which only contains the `scoring` block.
- *
- * ISuggestorConfig is embedded within IProjectConfig.scoring.
+ * Full project config — exactly what lives in .pelicanrc.json, organized into
+ * three blocks: SOURCE (how app code is found & read), TEST (how specs are found
+ * & read), and BEHAVIOUR (how pelican scores & decides what to return).
  */
 export interface IProjectConfig {
-  sourceDirs: string[];
-  testPatterns: string[];
-  ignorePatterns: string[];
-  excludePatterns?: string[];
-  analyzers: {
-    enabled: string[];
-    sourceExtractor: { enabled: boolean; selectorStrategy: string[] };
-    cypressExtractor: {
-      enabled: boolean;
-      /**
-       * Path alias mappings for resolving test imports (e.g. JSON fixture files).
-       * Keys are the alias prefix, values are the directory they map to (relative to project root).
-       * Example: { "@fixtures/": "cypress/fixtures/", "@support/": "cypress/support/" }
-       */
-      pathAliases?: Record<string, string>;
-    };
-    reduxChain: { enabled: boolean; storeDirs: string[] };
+  /** How pelican finds your application code and what it extracts from it. */
+  source: {
+    /** Absolute or relative path to the source repository root. REQUIRED.
+     * Relative paths are resolved against cwd at load time. */
+    root: string;
+    /** Directories to scan for source files, relative to `root`. */
+    dirs: string[];
+    /** Extra directory names never scanned (in EITHER repo), on top of the
+     * always-ignored set (node_modules, dist, build, .next, coverage, .git).
+     * e.g. ["storybook-static", "cypress/videos"]. */
+    ignoreDirs?: string[];
+    /** Alias map for resolving source→source imports (e.g. `@dm/` → `src/dm/`). */
+    pathAliases?: Record<string, string>;
+    /** Attributes treated as selectors when extracting from source. */
+    selectorAttributes: string[];
+    /** Build the import graph. */
+    imports: boolean;
+    /** Extract React Router routes. `routerFile` "" = auto-detect. */
+    routes: { enabled: boolean; routerFile?: string };
+    /** Extract Redux slices/actions/selectors. */
+    redux: { enabled: boolean; storeDirs: string[] };
+    /** Extract i18n translation keys. */
     i18n: { enabled: boolean; library: string; localesPath: string };
-    routeAnalyzer: { enabled: boolean; routerFile: string };
-    importGraph: { enabled: boolean };
   };
-  scoring: {
-    enabledScorers: string[];
-    ubiquityThreshold: number;
+  /** How pelican finds your tests and what it extracts from them. */
+  test: {
+    /** Absolute or relative path to the test repository root. Optional —
+     * defaults to `source.root` (single-repo). Relative paths resolved at load. */
+    root?: string;
+    /** Glob patterns that match your spec files, relative to `root`. */
+    patterns: string[];
+    /** Alias map for resolving spec→fixture/support imports (e.g. `@fixtures/`). */
+    pathAliases?: Record<string, string>;
+    /** Specs/suites pelican must never suggest (globs or basenames). */
+    exclude: string[];
+  };
+  /** How pelican scores candidates and decides what to return. All scorers are
+   * always on; tune only the thresholds and result cap here. */
+  behaviour: {
     minConfidence: number;
     highConfidence: number;
-    scorerWeights?: Record<string, number>;
-    maxResults?: number;
+    maxResults: number;
+    /** Drop candidates with no file-identity anchor signal. Default true. */
+    requireAnchor: boolean;
+    /** Component-fanout dampener threshold. Default 0.7. */
+    ubiquityThreshold: number;
+    /** Share (0..1) above which a test selector is treated as ubiquitous and
+     * disqualified as a match/anchor. Default 0.1. */
+    ubiquitousSelectorThreshold: number;
+    /** Strength of route-traffic damping on transitive route-match signals
+     * (scaled by (1 - routeShare)^exponent). 0 disables. Default 1. */
+    routeTrafficDampingExponent: number;
+    /** Temporal-coherence scorer tunables (git creation/update timing).
+     * Populated from defaults by the config loader; the scorer also falls back
+     * to built-in defaults if absent. */
+    temporal?: ITemporalConfig;
+    /** Filename token doc-frequency share (0..1) above which a token is treated
+     * as ambiguous/corpus-ubiquitous. A filename match on ambiguous tokens only
+     * loses anchor status (needs a co-signal). Default 0.1. */
+    filenameAmbiguityShare?: number;
   };
-  rerank?: {
-    /** Enable Ollama LLM reranking. Default true. */
-    enabled: boolean;
-    /** Ollama model to use. Default: qwen2.5-coder:7b */
-    ollamaModel: string;
-    /** Ollama host. Default: http://localhost:11434 */
-    ollamaHost: string;
-    /**
-     * Embedding-based prefilter (cosine cut before LLM). Default true.
-     * Disable when filename/identifier overlap matters more than
-     * semantic similarity (e.g. large Cypress repos with strong naming
-     * conventions); pelican's structural rank is then the prefilter.
-     */
-    biEncoder?: boolean;
-    /** Embedding model name when biEncoder is on. */
-    biEncoderModel?: string;
-    /** Cap on candidates surviving the bi-encoder. */
-    biEncoderTopK?: number;
-    fileContent?: {
-      /**
-       * Number of equal-width regions to sample from the file. Default: 8.
-       * Higher = more coverage, larger prompt.
-       */
-      segments?: number;
-      /**
-       * Lines captured per region. Default: 30.
-       * Higher = more context per region, larger prompt.
-       */
-      linesPerWindow?: number;
-      /**
-       * JS/TS keyword tokens stripped from each line before sending to the LLM.
-       * Reduces boilerplate noise while preserving identifiers and structure.
-       * Set to [] to disable filtering entirely.
-       * Defaults to a broad set of JS/TS syntactic and modifier keywords.
-       */
-      stripKeywords?: string[];
-    };
-    /**
-     * Ask the LLM for a short explanation per test. Default: false.
-     * When false, results show files only, reranker runs much faster since
-     * decode shrinks from ~25 tokens to ~3 per call.
-     */
-    explanations?: boolean;
-    /**
-     * Prompt template version. Default 'v2' — neutral SOURCE+TEST prompt with
-     * late-fusion blend. Set to 'v1' to fall back to the legacy R/A rubric.
-     */
-    promptVersion?: "v1" | "v2";
-    /**
-     * Weight on pelican structural prior in the v2 late-fusion blend
-     * (`combined = w·pelican + (1-w)·(confidence/5)`). Default 0.4.
-     */
-    pelicanWeight?: number;
-  };
+  /** Optional LLM rerank pass (disabled by default). An LLM judges whether each
+   * borderline candidate actually exercises the changed behaviour. */
+  rerank?: IRerankConfig;
 }
 
 // ─── CLI Options ─────────────────────────────────────────────────
@@ -271,7 +255,7 @@ export interface IAnalyzeOptions {
   config?: string;
   ci?: boolean;
   debug?: boolean;
-  /** Set to false by --no-rerank flag. Skips Ollama reranking; still uses .pelican.lock cache. */
+  /** Set to true by --rerank flag. Off by default — pelican structural scoring + .pelican.lock cache only. */
   rerank?: boolean;
   /** Set to false by --no-cache flag. Bypasses .pelican.lock for this run; nothing read or written. */
   cache?: boolean;
@@ -293,6 +277,7 @@ export interface IRegistryBuildOptions {
 export interface ISetupOptions {
   auto?: boolean;
   config?: string;
+  debug?: boolean;
 }
 
 // Re-export EConfidenceLevel for use within this module

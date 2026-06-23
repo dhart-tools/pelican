@@ -1,5 +1,5 @@
-import { IScoreResult } from "@/types/scorers";
-import { EConfidenceLevel } from "@/utils/enums";
+import { IScoreResult } from '@/types/scorers';
+import { EConfidenceLevel } from '@/utils/enums';
 
 export interface IResultEntry {
   changedFile: string;
@@ -10,6 +10,23 @@ export interface IResultEntry {
 }
 
 export type TFlatTest = IScoreResult & { changedFile: string };
+
+/** Greedy word-wrap into lines no wider than maxWidth. Shared by result views. */
+export function wordWrap(text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+  for (const word of words) {
+    if (!current) current = word;
+    else if (current.length + 1 + word.length <= maxWidth) current += ' ' + word;
+    else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
 
 export const BAND_ORDER: EConfidenceLevel[] = [
   EConfidenceLevel.HIGH,
@@ -24,20 +41,20 @@ export const BAND_RANK: Record<EConfidenceLevel, number> = {
 };
 
 export const DOT_COLOR: Record<EConfidenceLevel, string> = {
-  [EConfidenceLevel.HIGH]: "#34D399",
-  [EConfidenceLevel.MEDIUM]: "#FBBF24",
-  [EConfidenceLevel.LOW]: "#6B7280",
+  [EConfidenceLevel.HIGH]: '#34D399',
+  [EConfidenceLevel.MEDIUM]: '#FBBF24',
+  [EConfidenceLevel.LOW]: '#6B7280',
 };
 
 export const BADGE_COLOR: Record<EConfidenceLevel, string> = {
-  [EConfidenceLevel.HIGH]: "#059669",
-  [EConfidenceLevel.MEDIUM]: "#D97706",
-  [EConfidenceLevel.LOW]: "#4B5563",
+  [EConfidenceLevel.HIGH]: '#059669',
+  [EConfidenceLevel.MEDIUM]: '#D97706',
+  [EConfidenceLevel.LOW]: '#4B5563',
 };
 
 export function shortPath(full: string): string {
-  const parts = full.replace(/\\/g, "/").split("/");
-  return parts.length > 3 ? `…/${parts.slice(-2).join("/")}` : full;
+  const parts = full.replace(/\\/g, '/').split('/');
+  return parts.length > 3 ? `…/${parts.slice(-2).join('/')}` : full;
 }
 
 export function formatElapsed(ms: number): string {
@@ -48,10 +65,7 @@ export function formatElapsed(ms: number): string {
   return `${sec}s`;
 }
 
-export function flattenAndSort(
-  results: IResultEntry[],
-  maxResults: number,
-): TFlatTest[] {
+export function flattenAndSort(results: IResultEntry[], maxResults: number): TFlatTest[] {
   return results
     .flatMap((r) => r.suggestedTests.map((t) => ({ changedFile: r.changedFile, ...t })))
     .sort((a, b) => b.score - a.score)

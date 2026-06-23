@@ -85,11 +85,10 @@ export async function getChangedFiles(
 
   // Default: staged + unstaged changes vs HEAD
   try {
-    const { stdout } = await execFileP(
-      'git',
-      ['diff', '--name-only', 'HEAD'],
-      { cwd, maxBuffer: 1024 * 1024 },
-    );
+    const { stdout } = await execFileP('git', ['diff', '--name-only', 'HEAD'], {
+      cwd,
+      maxBuffer: 1024 * 1024,
+    });
     const files = dedup(stdout);
     if (files.length > 0) return files;
   } catch {
@@ -98,11 +97,10 @@ export async function getChangedFiles(
 
   // No working-tree changes — use last commit
   try {
-    const { stdout } = await execFileP(
-      'git',
-      ['diff', '--name-only', 'HEAD~1..HEAD'],
-      { cwd, maxBuffer: 1024 * 1024 },
-    );
+    const { stdout } = await execFileP('git', ['diff', '--name-only', 'HEAD~1..HEAD'], {
+      cwd,
+      maxBuffer: 1024 * 1024,
+    });
     return dedup(stdout);
   } catch {
     return [];

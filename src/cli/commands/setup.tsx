@@ -1,5 +1,6 @@
 import { execFile, spawn } from 'child_process';
 import * as fs from 'fs/promises';
+import * as path from 'path';
 import { promisify } from 'util';
 
 import { Command } from 'commander';
@@ -8,13 +9,13 @@ import { useInput } from 'ink';
 import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
-import * as path from 'path';
-
+import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
+import { SETUP_MODELS } from '@/cli/setup-models';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
-import { SETUP_MODELS } from '@/cli/setup-models';
 import { RegistryBuilder } from '@/core/registry/registry-builder';
+import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 
 const execFileP = promisify(execFile);
 
@@ -39,7 +40,6 @@ async function persistModelChoice(configPath: string, model: string): Promise<vo
   }
 }
 
-
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
  *
@@ -60,57 +60,47 @@ export async function detectProjectConfig(): Promise<{
   const steps: ISetupStep[] = [];
 
   const config: IProjectConfig = {
-    sourceDirs: ['src'],
-    testPatterns: [
-      '**/*.cy.ts',
-      '**/*.cy.tsx',
-      '**/*.test.ts',
-      '**/*.test.tsx',
-      '**/*.test.js',
-      '**/*.test.jsx',
-      '**/*.spec.ts',
-      '**/*.spec.tsx',
-      '**/*.spec.js',
-      '**/*.spec.jsx',
-      '**/*.e2e.ts',
-      '**/*.e2e.tsx',
-      '**/*.integration.ts',
-      '**/*.integration.tsx',
-      '**/*.int.ts',
-      '**/*.int.tsx',
-    ],
-    ignorePatterns: ['node_modules', 'dist', '.git', 'coverage'],
-    analyzers: {
-      enabled: [
-        'source-extractor',
-        'cypress-extractor',
-        'import-graph-analyzer',
-        'route-analyzer',
-        'i18n-analyzer',
-      ],
-      sourceExtractor: { enabled: true, selectorStrategy: ['data-testid', 'data-cy'] },
-      cypressExtractor: { enabled: true },
-      reduxChain: { enabled: false, storeDirs: [] },
+    source: {
+      root: '.',
+      dirs: ['src'],
+      ignoreDirs: [],
+      pathAliases: {},
+      selectorAttributes: ['data-testid', 'data-cy'],
+      imports: true,
+      routes: { enabled: true, routerFile: '' },
+      redux: { enabled: false, storeDirs: [] },
       i18n: { enabled: true, library: 'react-i18next', localesPath: '' },
-      routeAnalyzer: { enabled: true, routerFile: '' },
-      importGraph: { enabled: true },
     },
-    scoring: {
-      enabledScorers: [
-        'direct-import',
-        'selector-match',
-        'selector-id-match',
-        'filename-match',
-        'transitive-import',
-        'api-intercept',
-        'colocation',
-        'describe-block',
-        'translation-match',
-        'dependent-selector',
+    test: {
+      patterns: [
+        '**/*.cy.ts',
+        '**/*.cy.tsx',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.test.js',
+        '**/*.test.jsx',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        '**/*.spec.js',
+        '**/*.spec.jsx',
+        '**/*.e2e.ts',
+        '**/*.e2e.tsx',
+        '**/*.integration.ts',
+        '**/*.integration.tsx',
+        '**/*.int.ts',
+        '**/*.int.tsx',
       ],
-      ubiquityThreshold: 0.7,
+      pathAliases: { '@fixtures/': 'cypress/fixtures/' },
+      exclude: [],
+    },
+    behaviour: {
       minConfidence: 0.6,
       highConfidence: 0.8,
+      maxResults: 10,
+      requireAnchor: true,
+      ubiquityThreshold: 0.7,
+      ubiquitousSelectorThreshold: 0.1,
+      routeTrafficDampingExponent: 1,
     },
   };
 
@@ -124,22 +114,10 @@ export async function detectProjectConfig(): Promise<{
         detail: 'cypress-extractor',
         section: 'detected',
       });
-      if (!config.scoring.enabledScorers.includes('selector-match')) {
-        config.scoring.enabledScorers.push('selector-match');
-      }
     }
 
     if (pkg.dependencies?.['@reduxjs/toolkit'] || pkg.dependencies?.redux) {
-      config.analyzers.reduxChain.enabled = true;
-      if (!config.analyzers.enabled.includes('redux-chain-analyzer')) {
-        config.analyzers.enabled.push('redux-chain-analyzer');
-      }
-      if (!config.scoring.enabledScorers.includes('redux-chain')) {
-        config.scoring.enabledScorers.push('redux-chain');
-      }
-      if (!config.scoring.enabledScorers.includes('redux-consumer')) {
-        config.scoring.enabledScorers.push('redux-consumer');
-      }
+      config.source.redux.enabled = true;
 
       const possibleDirs = ['src/store', 'src/redux', 'src/state'];
       const existingDirs: string[] = [];
@@ -151,7 +129,7 @@ export async function detectProjectConfig(): Promise<{
           // dir not found
         }
       }
-      config.analyzers.reduxChain.storeDirs = existingDirs;
+      config.source.redux.storeDirs = existingDirs;
       steps.push({
         name: 'redux toolkit',
         status: 'success',
@@ -161,13 +139,13 @@ export async function detectProjectConfig(): Promise<{
     }
 
     if (pkg.dependencies?.['react-router-dom'] || pkg.dependencies?.['react-router']) {
-      config.analyzers.routeAnalyzer.enabled = true;
+      config.source.routes.enabled = true;
 
       const possibleFiles = ['src/App.tsx', 'src/router.tsx', 'src/routes.tsx', 'src/Router.tsx'];
       for (const file of possibleFiles) {
         try {
           await fs.access(file);
-          config.analyzers.routeAnalyzer.routerFile = file;
+          config.source.routes.routerFile = file;
           break;
         } catch {
           // file not found
@@ -176,14 +154,14 @@ export async function detectProjectConfig(): Promise<{
       steps.push({
         name: 'react router',
         status: 'success',
-        detail: config.analyzers.routeAnalyzer.routerFile || 'router file not found',
+        detail: config.source.routes.routerFile || 'router file not found',
         section: 'detected',
       });
     }
 
     if (pkg.dependencies?.['react-i18next'] || pkg.dependencies?.['i18next']) {
-      config.analyzers.i18n.enabled = true;
-      config.analyzers.i18n.library = 'react-i18next';
+      config.source.i18n.enabled = true;
+      config.source.i18n.library = 'react-i18next';
 
       const possiblePaths = [
         'public/locales/en/translation.json',
@@ -193,7 +171,7 @@ export async function detectProjectConfig(): Promise<{
       for (const p of possiblePaths) {
         try {
           await fs.access(p);
-          config.analyzers.i18n.localesPath = p.replace('/en/', '/{locale}/');
+          config.source.i18n.localesPath = p.replace('/en/', '/{locale}/');
           break;
         } catch {
           // path not found
@@ -202,7 +180,7 @@ export async function detectProjectConfig(): Promise<{
       steps.push({
         name: 'react-i18next',
         status: 'success',
-        detail: config.analyzers.i18n.localesPath || 'locales path not found',
+        detail: config.source.i18n.localesPath || 'locales path not found',
         section: 'detected',
       });
     }
@@ -351,14 +329,64 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         const { config, steps } = await detectProjectConfig();
         setState((s) => ({ ...s, phase: 'saving', steps, detectedConfig: config }));
 
-        // Phase 2: Save config
+        // Phase 2: Save config — merge with existing to preserve user settings
+        // (e.g. "explanations", pathAliases, rerank, etc.)
         const configPath = options.config || '.pelicanrc.json';
-        await fs.writeFile(configPath, JSON.stringify(config, null, 2));
+        let existingConfig: Record<string, unknown> = {};
+        try {
+          const raw = await fs.readFile(configPath, 'utf-8');
+          existingConfig = JSON.parse(raw);
+        } catch {
+          // File doesn't exist yet — start fresh
+        }
+        // Deep-merge: detected config is the base, but top-level user keys win.
+        // For nested objects (analyzers, scoring, rerank) we do a shallow merge
+        // so that user sub-keys (pathAliases, ollamaModel, explanations …) survive.
+        const mergedConfig: Record<string, unknown> = { ...config };
+        for (const key of Object.keys(existingConfig)) {
+          const existingVal = existingConfig[key];
+          const detectedVal = (config as unknown as Record<string, unknown>)[key];
+          if (
+            existingVal !== null &&
+            typeof existingVal === 'object' &&
+            !Array.isArray(existingVal) &&
+            detectedVal !== null &&
+            typeof detectedVal === 'object' &&
+            !Array.isArray(detectedVal)
+          ) {
+            // Shallow-merge nested objects so user sub-keys are preserved
+            mergedConfig[key] = { ...(detectedVal as object), ...(existingVal as object) };
+          } else {
+            // Scalar / array user values always win
+            mergedConfig[key] = existingVal;
+          }
+        }
+        // Scaffold defaults the user can't recover from a deleted rc file:
+        //   - pathAliases auto-detected from tsconfig.json (analyze rebuilds
+        //     them at runtime anyway, but writing them lets users see/edit).
+        //   - rerank.explanations: true (sane default; persistModelChoice
+        //     later spreads this through, so model-pull doesn't drop it).
+        const mergedSource =
+          (mergedConfig.source as { dirs?: string[]; pathAliases?: Record<string, string> }) ?? {};
+        const detectedAliases = loadTsConfigAliases(
+          process.cwd(),
+          mergedSource.dirs ?? config.source.dirs,
+        );
+        if (mergedSource.pathAliases == null && Object.keys(detectedAliases.aliases).length > 0) {
+          mergedConfig.source = { ...mergedSource, pathAliases: detectedAliases.aliases };
+        }
+
+        await fs.writeFile(configPath, JSON.stringify(mergedConfig, null, 2));
         setState((s) => ({
           ...s,
           steps: [
             ...s.steps,
-            { name: 'config', status: 'success' as const, detail: configPath, section: 'installed' as const },
+            {
+              name: 'config',
+              status: 'success' as const,
+              detail: configPath,
+              section: 'installed' as const,
+            },
           ],
         }));
 
@@ -377,13 +405,22 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ],
         }));
 
+        // Re-read the merged config so user-provided top-level pathAliases
+        // (which `detectProjectConfig` doesn't know about) get hoisted into
+        // analyzers.cypressExtractor.pathAliases. Otherwise the registry built
+        // here resolves fewer imports than the one analyze rebuilds on a cold
+        // cache, and the two diverge on result counts.
+        const effectiveConfig = await loadProjectConfig(configPath);
         const builder = new RegistryBuilder();
         const registry = await builder.buildFromDirectories({
-          sourceDirs: config.sourceDirs,
-          testPatterns: config.testPatterns,
-          excludePatterns: config.excludePatterns,
-          projectRoot: process.cwd(),
-          pathAliases: config.analyzers.cypressExtractor.pathAliases,
+          sourceDirs: effectiveConfig.source.dirs,
+          testPatterns: effectiveConfig.test.patterns,
+          excludePatterns: effectiveConfig.test.exclude,
+          ignoreDirs: getIgnoreDirs(effectiveConfig),
+          sourceRoot: effectiveConfig.source.root,
+          testRoot: effectiveConfig.test.root ?? effectiveConfig.source.root,
+          pathAliases: getMergedAliases(effectiveConfig),
+          debug: options.debug,
         });
         const registryDir = path.dirname(REGISTRY_CACHE_PATH);
         await fs.mkdir(registryDir, { recursive: true });
@@ -395,7 +432,11 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ...s,
           steps: s.steps.map((step) =>
             step.name === 'registry'
-              ? { ...step, status: 'success' as const, detail: `${sourceCount} source · ${testCount} tests` }
+              ? {
+                  ...step,
+                  status: 'success' as const,
+                  detail: `${sourceCount} source · ${testCount} tests`,
+                }
               : step,
           ),
         }));
@@ -456,7 +497,10 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         // Phase 5: Fetch locally installed models + measure speed in parallel
         const ollama = new Ollama({ host: OLLAMA_HOST });
         const [installedList, speedBps] = await Promise.all([
-          ollama.list().then((r) => r.models.map((m) => m.name)).catch(() => [] as string[]),
+          ollama
+            .list()
+            .then((r) => r.models.map((m) => m.name))
+            .catch(() => [] as string[]),
           measureInternetSpeed(),
         ]);
 
@@ -477,7 +521,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     }
 
     run();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Phase 5+: pull confirmed model ──────────────────────────────
   useEffect(() => {
@@ -599,6 +643,7 @@ export const setupCommand = new Command('setup')
   .description('Run setup wizard to configure Test Suggestor')
   .option('--auto', 'Skip interactive prompts, use auto-detection only')
   .option('-c, --config <path>', 'Path to save config file')
+  .option('--debug', 'Stream registry-build diagnostics to stderr')
   .action(async (opts: ISetupOptions) => {
     await loadTheme();
     const { waitUntilExit } = render(<SetupApp options={opts} />);

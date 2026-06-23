@@ -3,8 +3,10 @@ import path from 'path';
 import { BaseScorer } from '@/core/scoring/scorers/base';
 import { sharesFeatureDir } from '@/core/scoring/scorers/feature-dir';
 import { getScorerConfig } from '@/core/scoring/scoring-config';
-import { IScorerContext, ISignal } from '@/types';
+import { IScorerContext, ISignal, IRegistry } from '@/types';
 import { EScorerType } from '@/utils/enums';
+
+const DEFAULT_AMBIGUITY_SHARE = 0.1;
 
 const TEST_SUFFIX_RE = /\.(cy|spec|test|e2e|int|integration|unit|bench|stories)\.(ts|js)x?$/i;
 const SOURCE_EXT_RE = /\.(tsx?|jsx?|mts|cts|mjs|cjs|vue|svelte|astro)$/i;
@@ -14,11 +16,41 @@ const INDEX_BASENAMES = new Set(['index', 'main', 'default', 'entry']);
 // An identical match on these is nearly meaningless — every dir has its own.
 // Require the colocation scorer or import-graph to carry the signal instead.
 const GENERIC_BASENAMES = new Set([
-  'utils', 'util', 'helpers', 'helper', 'types', 'type', 'constants', 'const',
-  'config', 'configs', 'defaults', 'common', 'shared', 'hooks', 'styles',
-  'style', 'theme', 'misc', 'errors', 'validation', 'validators', 'fixtures',
-  'mocks', 'queries', 'mutations', 'selectors', 'actions', 'reducers',
-  'handlers', 'data', 'api', 'model', 'models', 'service', 'services',
+  'utils',
+  'util',
+  'helpers',
+  'helper',
+  'types',
+  'type',
+  'constants',
+  'const',
+  'config',
+  'configs',
+  'defaults',
+  'common',
+  'shared',
+  'hooks',
+  'styles',
+  'style',
+  'theme',
+  'misc',
+  'errors',
+  'validation',
+  'validators',
+  'fixtures',
+  'mocks',
+  'queries',
+  'mutations',
+  'selectors',
+  'actions',
+  'reducers',
+  'handlers',
+  'data',
+  'api',
+  'model',
+  'models',
+  'service',
+  'services',
 ]);
 
 const STOPWORDS = new Set([
@@ -74,7 +106,10 @@ export class FilenameConventionScorer extends BaseScorer {
     super(getScorerConfig(EScorerType.FILENAME_MATCH));
   }
 
-  evaluate(changedFile: string, testFile: string, _context: IScorerContext): ISignal[] {
+  /** Corpus token→doc-share, memoized per registry (built once per run). */
+  private readonly docShareCache = new WeakMap<IRegistry, Map<string, number>>();
+
+  evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {
     const changedBase = this.basenameTokens(changedFile, false);
     const testBase = this.basenameTokens(testFile, true);
 
@@ -150,19 +185,16 @@ export class FilenameConventionScorer extends BaseScorer {
     const baseIntersection = [...exactBaseIntersection, ...fuzzyMatches];
     const effectiveIntersectionCount = exactBaseIntersection.length + fuzzyMatches.length * 0.9;
     const baseOverlapRatio =
-      effectiveIntersectionCount /
-      Math.min(new Set(changedBase).size, new Set(testBase).size);
+      effectiveIntersectionCount / Math.min(new Set(changedBase).size, new Set(testBase).size);
     const hasStrongBaseMatch =
-      exactBaseIntersection.some((t) => t.length >= 3) ||
-      fuzzyMatches.some((t) => t.length >= 5);
+      exactBaseIntersection.some((t) => t.length >= 3) || fuzzyMatches.some((t) => t.length >= 5);
 
     // Combined set includes parent-dir tokens as weak boosters of the ratio,
     // only counted when a base-token match already exists.
     const changedAll = Array.from(new Set([...changedBase, ...changedParent]));
     const testAll = Array.from(new Set([...testBase, ...testParent]));
     const allIntersection = changedAll.filter((t) => testAll.includes(t));
-    const allOverlapRatio =
-      allIntersection.length / Math.min(changedAll.length, testAll.length);
+    const allOverlapRatio = allIntersection.length / Math.min(changedAll.length, testAll.length);
 
     const matched = hasStrongBaseMatch && baseOverlapRatio >= MATCH_THRESHOLD;
 
@@ -208,9 +240,52 @@ export class FilenameConventionScorer extends BaseScorer {
       // tokens also agree (cart/CartSummary ↔ cart/summary).
       const parentBoost = allOverlapRatio > baseOverlapRatio ? 0.2 : 0;
       signal.weight = this.weight * Math.min(1, baseOverlapRatio + parentBoost);
+
+      // Ambiguity demotion: when the overlap rests ONLY on corpus-ubiquitous
+      // tokens (e.g. `device`/`list` in a device app), a shared name proves
+      // nothing on its own — strip anchor status so the candidate needs a real
+      // co-signal (route/selector/import) to survive. One distinctive token
+      // (e.g. `provisioning`) keeps it anchored. Recall-safe: no corpus → skip.
+      const shares = this.docShare(context?.registry);
+      if (shares) {
+        const threshold =
+          context?.config?.scoring?.filenameAmbiguityShare ?? DEFAULT_AMBIGUITY_SHARE;
+        const distinctive = baseIntersection.some((t) => (shares.get(t) ?? 0) < threshold);
+        if (!distinctive) {
+          signal.anchorEligible = false;
+          signal.reason = `${signal.reason} — ambiguous tokens only (corpus-ubiquitous); needs a co-signal`;
+          (signal.metadata as Record<string, unknown>).ambiguousTokensOnly = true;
+        }
+      }
     }
 
     return [signal];
+  }
+
+  /**
+   * Corpus token → document-frequency share (0..1): the fraction of all files
+   * whose tokenized basename contains the token. Built once per registry and
+   * memoized. Returns null when there's no registry/corpus (e.g. unit tests),
+   * so the caller skips ambiguity demotion entirely.
+   */
+  private docShare(registry: IRegistry | undefined): Map<string, number> | null {
+    if (!registry) return null;
+    const cached = this.docShareCache.get(registry);
+    if (cached) return cached;
+
+    const all = [...registry.getFilesByType('source'), ...registry.getFilesByType('test')];
+    const total = all.length;
+    if (total === 0) return null;
+
+    const counts = new Map<string, number>();
+    for (const f of all) {
+      const tokens = new Set(this.basenameTokens(f.path, f.type === 'test'));
+      for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1);
+    }
+    const shares = new Map<string, number>();
+    for (const [t, c] of counts) shares.set(t, c / total);
+    this.docShareCache.set(registry, shares);
+    return shares;
   }
 
   private basenameTokens(filePath: string, isTest: boolean): string[] {
@@ -239,11 +314,13 @@ export class FilenameConventionScorer extends BaseScorer {
   private parentDirTokens(filePath: string, isTest: boolean): string[] {
     // When basename is plain `index` (no dotted variant), parent dir already
     // became the basename — step up one more level for the parent-dir context.
-    const baseLower = path.basename(filePath).replace(isTest ? TEST_SUFFIX_RE : SOURCE_EXT_RE, '').toLowerCase();
+    const baseLower = path
+      .basename(filePath)
+      .replace(isTest ? TEST_SUFFIX_RE : SOURCE_EXT_RE, '')
+      .toLowerCase();
     const dotParts = baseLower.split('.');
     const isPlainIndex =
-      INDEX_BASENAMES.has(baseLower) ||
-      (dotParts.length === 1 && INDEX_BASENAMES.has(dotParts[0]));
+      INDEX_BASENAMES.has(baseLower) || (dotParts.length === 1 && INDEX_BASENAMES.has(dotParts[0]));
     // Dotted index variants (index.cognito.tsx) extract their basename from the
     // dot segments, so parent dir is still the immediate directory — no skip.
     const isDottedIndex = dotParts.length > 1 && INDEX_BASENAMES.has(dotParts[0]);

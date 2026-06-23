@@ -1,12 +1,12 @@
-import { Text } from "ink";
-import React from "react";
+import { Text } from 'ink';
+import React from 'react';
 
-import { palette } from "@/cli/theme";
+import { palette } from '@/cli/theme';
 
-import { CombinedResults } from "./CombinedResults";
-import { ExpandedResults } from "./ExpandedResults";
-import { SectionDivider } from "./SectionDivider";
-import { IResultEntry } from "./results-shared";
+import { CombinedResults } from './CombinedResults';
+import { ExpandedResults } from './ExpandedResults';
+import { IResultEntry } from './results-shared';
+import { SectionDivider } from './SectionDivider';
 
 interface ResultsTableProps {
   results: IResultEntry[];

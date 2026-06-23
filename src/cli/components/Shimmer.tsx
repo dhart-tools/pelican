@@ -50,12 +50,15 @@ export function Shimmer({ text, speed = 50, width = 20 }: ShimmerProps) {
 
   // Uses brand cyan for glow — consistent with pelican identity.
   // Dark: muted gray → cyan-400 → light. Light: muted → cyan-600 → dark.
-  const stops = useMemo(() => ({
-    base: palette.muted,    // resting state
-    mid: palette.dim,       // transition
-    bright: palette.brand,  // main glow — cyan
-    peak: palette.sub,      // text-level brightness at tip
-  }), []);
+  const stops = useMemo(
+    () => ({
+      base: palette.muted, // resting state
+      mid: palette.dim, // transition
+      bright: palette.brand, // main glow — cyan
+      peak: palette.sub, // text-level brightness at tip
+    }),
+    [],
+  );
 
   return (
     <Text>
@@ -67,7 +70,7 @@ export function Shimmer({ text, speed = 50, width = 20 }: ShimmerProps) {
           color = stops.base;
         } else {
           // Cosine falloff: smooth bell curve, 1.0 at center → 0.0 at edge
-          const ratio = 0.5 * (1 + Math.cos(Math.PI * dist / width));
+          const ratio = 0.5 * (1 + Math.cos((Math.PI * dist) / width));
 
           if (ratio > 0.7) {
             // Peak: bright silver → white

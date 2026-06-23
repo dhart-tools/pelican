@@ -113,7 +113,13 @@ export class ReduxChainAnalyzer extends BaseAnalyzer<
     }
 
     if (extraction.selectors.length > 0) {
-      chain.files.selectors = chain.files.selectors ?? extraction.filePath;
+      // A dedicated selectors file wins the slot. The slice branch below claims
+      // `selectors` as a FALLBACK (RTK co-locates selectors in the slice file),
+      // so also override when the current holder is just that slice fallback —
+      // otherwise a slice processed first would block the real selectors file.
+      if (!chain.files.selectors || chain.files.selectors === chain.files.slice) {
+        chain.files.selectors = extraction.filePath;
+      }
       chain.selectorNames.push(...extraction.selectors.map((s) => s.name));
     }
 

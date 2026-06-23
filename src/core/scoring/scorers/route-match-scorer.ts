@@ -12,12 +12,45 @@ import { EScorerType } from '@/utils/enums';
 const HIGH_FANOUT_IMPORTERS = 200;
 
 export class RouteMatchScorer extends BaseScorer {
+  // Cached route-traffic index: componentPath → number of test files that visit
+  // a route resolving to it. Built once per registry (stable within a run).
+  private routeTraffic?: Map<string, number>;
+  private routeTrafficFor?: IRegistry;
+
   constructor() {
     super(getScorerConfig(EScorerType.ROUTE_MATCH));
   }
 
+  /**
+   * How many distinct test files visit a route that resolves to each component.
+   * A high count means the route is heavily trafficked, so a transitive match
+   * there is low-information (it fires for most specs). Cached per registry.
+   */
+  private getRouteTraffic(registry: IRegistry): Map<string, number> {
+    if (this.routeTraffic && this.routeTrafficFor === registry) return this.routeTraffic;
+    const routeMap = registry.getRouteMap();
+    const traffic = new Map<string, number>();
+    const tests =
+      typeof registry.getFilesByType === 'function' ? registry.getFilesByType('test') : [];
+    for (const test of tests) {
+      const routes = test.cypress?.visitedRoutes;
+      if (!routes || routes.length === 0) continue;
+      // Count each component once per test, even if the test visits it twice.
+      const components = new Set<string>();
+      for (const visited of routes) {
+        const normalizedVisited = visited.replace(/\?.*$/, '').replace(/^\/?#/, '');
+        const resolved = this.resolveComponentForRoute(normalizedVisited, routeMap);
+        if (resolved) components.add(resolved.componentPath);
+      }
+      for (const c of components) traffic.set(c, (traffic.get(c) ?? 0) + 1);
+    }
+    this.routeTraffic = traffic;
+    this.routeTrafficFor = registry;
+    return traffic;
+  }
+
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {
-    const { testFile: testEntry, registry } = context;
+    const { testFile: testEntry, registry, config } = context;
 
     const visitedRoutes = testEntry.cypress?.visitedRoutes || [];
     if (visitedRoutes.length === 0) {
@@ -54,15 +87,29 @@ export class RouteMatchScorer extends BaseScorer {
 
       const depth = this.findTransitiveDependencies(componentPath, changedFile, registry);
       if (depth !== null) {
+        // Route-traffic damping. A transitive match means "the page this route
+        // renders imports the changed file" — pure reachability. When that route
+        // is visited by a large share of specs (e.g. /managedevices), the match
+        // fires for nearly all of them and says nothing about WHICH spec
+        // exercises the change. Scale by (1 - share)^exponent so high-traffic
+        // routes can't anchor a candidate on their own, while niche routes keep
+        // their weight. Direct matches above are never damped (the page itself
+        // changed → all its specs are genuinely relevant).
+        const totalTests = registry.getTestFileCount?.() ?? 0;
+        const trafficCount = this.getRouteTraffic(registry).get(componentPath) ?? 0;
+        const share = totalTests > 0 ? trafficCount / totalTests : 0;
+        const exponent = config?.scoring?.routeTrafficDampingExponent ?? 1;
+        const trafficFactor = Math.pow(1 - share, exponent);
+
         const sig = this.createSignal(
           true,
-          `Test visits ${visited}, component ${componentPath} imports ${changedFile} (depth ${depth})`,
-          { changedFile, testFile, route: visited, componentPath, depth, specificity },
+          `Test visits ${visited}, component ${componentPath} imports ${changedFile} (depth ${depth}) [route traffic ${(share * 100).toFixed(0)}%]`,
+          { changedFile, testFile, route: visited, componentPath, depth, specificity, share },
         );
         // Penalize both low specificity AND transitive depth. A `/*` wildcard
         // 3 hops deep shouldn't beat a direct colocated test.
         const depthFactor = 1 / (depth + 1);
-        sig.weight = this.weight * (0.3 + 0.7 * specificity) * depthFactor;
+        sig.weight = this.weight * (0.3 + 0.7 * specificity) * depthFactor * trafficFactor;
         return [sig];
       }
     }
@@ -129,9 +176,7 @@ export class RouteMatchScorer extends BaseScorer {
 
   private patternToPrefixRegex(pattern: string): RegExp {
     const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    const body = escaped
-      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+')
-      .replace(/\*/g, '.*');
+    const body = escaped.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+').replace(/\*/g, '.*');
     // Require a segment boundary after the pattern so `/:team/integrations`
     // doesn't match `/:team/integrations_foo`.
     return new RegExp(`^${body}/.+$`);
@@ -152,9 +197,7 @@ export class RouteMatchScorer extends BaseScorer {
   private patternToRegex(pattern: string): RegExp {
     // Escape regex metachars, then swap `:param` and `*` back in.
     const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    const body = escaped
-      .replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+')
-      .replace(/\*/g, '.*');
+    const body = escaped.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, '[^/]+').replace(/\*/g, '.*');
     return new RegExp(`^${body}/?$`);
   }
 

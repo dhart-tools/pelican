@@ -63,7 +63,11 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
     version: '1.0.0',
     description: 'Scores based on filename naming conventions',
     type: 'filename-match',
-    weight: 0.6,
+    // A spec named after the changed component is one of the most reliable
+    // truth signals (especially for renames/migrations), yet was previously
+    // one of the lowest-weighted scorers. Bumped 0.6 → 0.82 so a dedicated
+    // spec clears the medium band on filename alone.
+    weight: 0.82,
   },
   [EScorerType.API_INTERCEPT]: {
     name: EScorerType.API_INTERCEPT,
@@ -75,7 +79,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.COLOCATION]: {
     name: EScorerType.COLOCATION,
     version: '1.0.0',
-    description: 'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
+    description:
+      'Scores based on test files colocated with source (same dir, __tests__ sibling, etc.)',
     type: 'colocation',
     weight: 0.75,
   },
@@ -89,7 +94,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.DEPENDENT_SELECTOR]: {
     name: EScorerType.DEPENDENT_SELECTOR,
     version: '1.0.0',
-    description: 'Scores based on selectors in files that import the changed file (reverse dependency)',
+    description:
+      'Scores based on selectors in files that import the changed file (reverse dependency)',
     type: 'dependent-selector',
     weight: 0.65,
   },
@@ -103,7 +109,8 @@ const SCORER_CONFIGS: Record<EScorerType, IScorerConfig> = {
   [EScorerType.USAGE_SITE]: {
     name: EScorerType.USAGE_SITE,
     version: '1.0.0',
-    description: 'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
+    description:
+      'Scores based on tests that import any usage site of the changed file (depth-2/3 reverse dependency cone)',
     type: 'usage-site',
     weight: 0.55,
   },

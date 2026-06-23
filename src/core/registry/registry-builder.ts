@@ -7,13 +7,16 @@ import * as ts from 'typescript';
 
 import { CypressExtractorAnalyzer } from '@/core/analyzers/cypress-extractor';
 import { ReduxChainAnalyzer } from '@/core/analyzers/redux-chain/redux-chain-analyzer';
+import { RouteAnalyzer } from '@/core/analyzers/route-analyzer/route-analyzer';
 import { SourceExtractorAnalyzer } from '@/core/analyzers/source-extractor';
 import { normalizePath } from '@/core/registry/path-utils';
 import { createRegistry } from '@/core/registry/registry';
+import { partitionSuggestableTests } from '@/core/registry/suggestion-exclusions';
 import { loadTsConfigAliases } from '@/core/registry/tsconfig-loader';
 import { ICypressExtractionResult, ISourceExtractionResult } from '@/types';
-import { IReduxExtractionResult } from '@/types/analyzers';
+import { IReduxExtractionResult, IRouteExtractionResult } from '@/types/analyzers';
 import { IRegistry, IFileEntry } from '@/types/registry';
+import { formatBuildLine } from '@/utils/build-info';
 
 export interface RegistryBuilderConfig {
   /**
@@ -48,14 +51,22 @@ export interface RegistryBuilderConfig {
   excludePatterns?: string[];
 
   /**
-   * Absolute path to the project root.
-   * Default: process.cwd()
+   * Absolute path to the SOURCE repository root. Source files (and the import
+   * graph) are scanned and resolved relative to this. Required.
    */
-  projectRoot?: string;
+  sourceRoot: string;
 
   /**
-   * Path alias mappings for resolving imports in test files.
-   * Keys are the alias prefix (e.g. "@fixtures/"), values are directories relative to projectRoot.
+   * Absolute path to the TEST repository root. Cypress specs are scanned here;
+   * jest-style tests colocated in the source repo are also picked up. When the
+   * two repos are the same, pass the same value as sourceRoot. Required.
+   */
+  testRoot: string;
+
+  /**
+   * Path alias mappings for resolving imports. Keys are the alias prefix
+   * (e.g. "@dm/", "@fixtures/"), values are ABSOLUTE target directories
+   * (see config-loader.getMergedAliases).
    */
   pathAliases?: Record<string, string>;
 
@@ -67,7 +78,10 @@ export interface RegistryBuilderConfig {
 
 export class RegistryBuilder {
   private registry: IRegistry;
+  /** Source repo root. Doubles as the import-resolution base (imports point at
+   * source) and the `projectRoot` the resolver helpers reference. */
   private projectRoot: string;
+  private testRoot: string;
   private pathAliases: Record<string, string> = {};
   private baseUrlRoots: string[] = [];
   private debug = false;
@@ -75,10 +89,12 @@ export class RegistryBuilder {
   constructor() {
     this.registry = createRegistry();
     this.projectRoot = process.cwd();
+    this.testRoot = process.cwd();
   }
 
   async buildFromDirectories(config: RegistryBuilderConfig): Promise<IRegistry> {
-    this.projectRoot = config.projectRoot ?? process.cwd();
+    this.projectRoot = config.sourceRoot;
+    this.testRoot = config.testRoot;
     this.debug = config.debug ?? false;
 
     // Auto-detect aliases + baseUrl from tsconfig.json in each source tree.
@@ -100,8 +116,21 @@ export class RegistryBuilder {
     const cypressExtractor = new CypressExtractorAnalyzer();
     const reduxChainAnalyzer = new ReduxChainAnalyzer();
     const reduxExtractions: IReduxExtractionResult[] = [];
+    const routeAnalyzer = new RouteAnalyzer();
+    const routeExtractions: IRouteExtractionResult[] = [];
+    const routeAliasConfig = {
+      projectRoot: this.projectRoot,
+      aliases: this.pathAliases,
+    };
+    // Counters so the summary log can distinguish "RouteAnalyzer never ran on
+    // anything" from "RouteAnalyzer ran on N files but every file produced 0
+    // routes". The two cases imply very different next steps for debugging.
+    let routeFilesScanned = 0;
+    let routeFilesContributed = 0;
+    let routeFilesFailed = 0;
 
     if (this.debug) {
+      this.log(formatBuildLine());
       this.log(`projectRoot: ${this.projectRoot}`);
       this.log(`pathAliases (merged): ${JSON.stringify(this.pathAliases)}`);
       this.log(`baseUrlRoots (tsconfig): ${JSON.stringify(this.baseUrlRoots)}`);
@@ -113,7 +142,12 @@ export class RegistryBuilder {
     // the user's explicit `excludePatterns` (typically unit-test noise in a
     // repo that only cares about E2E specs).
     const sourceExcludes = [...excludePatterns, ...config.testPatterns];
-    const sourceFiles = await this.findSourceFiles(config.sourceDirs, extensions, ignoreDirs, sourceExcludes);
+    const sourceFiles = await this.findSourceFiles(
+      config.sourceDirs,
+      extensions,
+      ignoreDirs,
+      sourceExcludes,
+    );
     if (this.debug) this.log(`Found ${sourceFiles.length} source files.`);
 
     for (const filePath of sourceFiles) {
@@ -135,6 +169,61 @@ export class RegistryBuilder {
           if (this.debug) this.log(`redux-chain extract failed for ${filePath}: ${e}`);
         }
 
+        // Run route-analyzer on every source file — JSX <Route>, data-routers,
+        // and lazy() imports can live anywhere, not just App.tsx. Cheap to skip
+        // files with no routes (extractor produces an empty result).
+        try {
+          routeFilesScanned++;
+          const routeResult = await routeAnalyzer.extract({
+            filePath,
+            sourceCode,
+            aliasConfig: routeAliasConfig,
+            // Lets the analyzer resolve `path={RouterPath.MANAGE_DEVICES}` by
+            // reading the imported const-object file. Same plumbing as
+            // cypressExtractor uses for action-type literals.
+            resolveConstImport: async (importPath) => {
+              if (this.debug) {
+                this.log(
+                  `route-analyzer: requesting const resolve for "${importPath}" from ${filePath}`,
+                );
+              }
+              const r = await this.resolveTsConstImport(importPath, filePath);
+              if (this.debug) {
+                this.log(
+                  `route-analyzer: const resolve for "${importPath}" returned ${
+                    r === null ? 'null' : `${r.size} const-object(s)`
+                  }`,
+                );
+              }
+              return r;
+            },
+          });
+          if (routeResult.routes.length > 0) {
+            for (const r of routeResult.routes) {
+              if (r.componentPath)
+                r.componentPath = normalizePath(r.componentPath, this.projectRoot);
+            }
+            routeExtractions.push(routeResult);
+            routeFilesContributed++;
+            // Per-file log — the most useful breadcrumb when the summary line
+            // shows zero contributions: which files DID produce routes, with
+            // a peek at the first three paths so it's obvious whether the
+            // target's real router files were touched.
+            if (this.debug) {
+              const sample = routeResult.routes
+                .slice(0, 3)
+                .map((r) => r.path + (r.componentPath ? ` → ${r.componentPath}` : ''))
+                .join(', ');
+              this.log(
+                `route-analyzer: ${filePath} → ${routeResult.routes.length} route(s)${sample ? ` [${sample}${routeResult.routes.length > 3 ? ', …' : ''}]` : ''}`,
+              );
+            }
+          }
+        } catch (e) {
+          routeFilesFailed++;
+          if (this.debug) this.log(`route-analyzer extract failed for ${filePath}: ${e}`);
+        }
+
         if (this.debug) {
           this.logExtraction('source', filePath, {
             exports: result.exports,
@@ -148,11 +237,31 @@ export class RegistryBuilder {
       }
     }
 
-    // --- Process test files ---
-    const testFiles = await this.findTestFiles(config.testPatterns, ignoreDirs, excludePatterns);
-    if (this.debug) this.log(`Found ${testFiles.length} test files.`);
+    // --- Process test files (from both repos; each tagged with its root) ---
+    const discoveredTestFiles = await this.findTestFiles(
+      config.testPatterns,
+      ignoreDirs,
+      excludePatterns,
+    );
 
-    for (const filePath of testFiles) {
+    // Drop specs that must never be suggested (separate-cadence suites such as
+    // InterOps and dmSanity). Centralized in `suggestion-exclusions.ts` — add
+    // new rules there, not here. Excluded here (registry build) rather than at
+    // scoring time so these specs never enter the candidate pool at all.
+    const { excluded } = partitionSuggestableTests(discoveredTestFiles.map((t) => t.abs));
+    const excludedSet = new Set(excluded.map((e) => e.path));
+    const testFiles = discoveredTestFiles.filter((t) => !excludedSet.has(t.abs));
+    if (this.debug) {
+      this.log(
+        `Found ${discoveredTestFiles.length} test files; ` +
+          `${excluded.length} excluded from suggestions, ${testFiles.length} kept.`,
+      );
+      for (const { path: excludedPath, rule } of excluded) {
+        this.log(`  excluded ${excludedPath} (${rule.id})`);
+      }
+    }
+
+    for (const { abs: filePath, repoRoot } of testFiles) {
       try {
         const sourceCode = await fs.readFile(filePath, 'utf-8');
 
@@ -166,10 +275,9 @@ export class RegistryBuilder {
           filePath,
           sourceCode,
           resolveJsonImport: (importPath) => this.resolveJsonImport(importPath, filePath),
-          resolveTsConstImport: (importPath) =>
-            this.resolveTsConstImport(importPath, filePath),
+          resolveTsConstImport: (importPath) => this.resolveTsConstImport(importPath, filePath),
         });
-        const entry = this.convertCypressExtractionToFileEntry(result, filePath);
+        const entry = this.convertCypressExtractionToFileEntry(result, filePath, repoRoot);
         fileEntries.push(entry);
         if (this.debug) {
           this.logExtraction('test', filePath, {
@@ -216,13 +324,106 @@ export class RegistryBuilder {
 
     this.registry.buildFromFileEntries(fileEntries);
 
+    // Route map publication — MERGE with what the registry already populated
+    // from `entry.routesDefined` (shallow source-extractor path). The standalone
+    // RouteAnalyzer is more capable (data-routers, lazy imports, alias
+    // resolution), so its entries win on path collisions, but we keep any
+    // routes the simpler pipeline already found.
+    try {
+      const sourceExtractorRoutes = this.registry.getRouteMap().size;
+      if (this.debug) {
+        this.log(
+          `route-analyzer summary: scanned=${routeFilesScanned}, contributed=${routeFilesContributed}, failed=${routeFilesFailed}; source-extractor pipeline produced ${sourceExtractorRoutes} entries before merge`,
+        );
+      }
+
+      const externalRouteMap = routeAnalyzer.buildRouteMap(routeExtractions);
+      if (externalRouteMap.size > 0) {
+        const merged = new Map(this.registry.getRouteMap());
+        const before = merged.size;
+        let overrides = 0;
+        for (const [routePath, componentPath] of externalRouteMap) {
+          if (merged.has(routePath) && merged.get(routePath) !== componentPath) overrides++;
+          merged.set(routePath, componentPath);
+        }
+        this.registry.setRouteMap(merged);
+        if (this.debug) {
+          this.log(
+            `route map merged: ${before} existing + ${externalRouteMap.size} from RouteAnalyzer = ${merged.size} total (${overrides} overridden)`,
+          );
+          // Sample of final route map so the user can grep for specific paths
+          // (e.g. /managedevices) without dumping the whole registry.json.
+          const sample: string[] = [];
+          let i = 0;
+          for (const [p, c] of merged) {
+            sample.push(`${p} → ${c}`);
+            if (++i >= 15) break;
+          }
+          this.log(
+            `route map sample (first ${sample.length}/${merged.size}): ${sample.join(' | ')}`,
+          );
+        }
+      } else if (this.debug) {
+        this.log(
+          `route map: RouteAnalyzer found 0 routes across ${routeFilesScanned} files (${routeFilesFailed} failed); keeping ${sourceExtractorRoutes} from source-extractor`,
+        );
+        if (sourceExtractorRoutes > 0) {
+          const sample: string[] = [];
+          let i = 0;
+          for (const [p, c] of this.registry.getRouteMap()) {
+            sample.push(`${p} → ${c}`);
+            if (++i >= 15) break;
+          }
+          this.log(`route map sample (source-extractor only): ${sample.join(' | ')}`);
+        }
+      }
+    } catch (e) {
+      if (this.debug) this.log(`route map build failed: ${e}`);
+    }
+
+    // Top test selectors by frequency — calibration data for
+    // `scoring.ubiquitousSelectorThreshold`. A selector at share > threshold is
+    // disqualified as a match, so this table is where the threshold is set from
+    // real data. Emitted here (setup path) so it's captured without needing a
+    // headless analyze run.
+    if (this.debug) {
+      const totalTests = this.registry.getTestFileCount();
+      const top = this.registry.getTopTestSelectors(30);
+      this.log(`top test selectors (of ${totalTests} specs) — share% · count · value:`);
+      for (const { value, count } of top) {
+        const share = totalTests > 0 ? ((100 * count) / totalTests).toFixed(0) : '0';
+        this.log(`  ${share.padStart(3)}%  ${count}  ${value}`);
+      }
+    }
+
     // Redux chain reconciliation — after file entries are in the registry so
     // the chain's action-type strings can also be surfaced through the
     // file-level actionTypeStrings index (used by ActionTypeScorer).
     try {
+      // Count distinct slice names BEFORE buildChains so a "0 chains" outcome
+      // points at the right place. If extractions had slice names but the
+      // chain build still returned empty, that's a reconciliation bug, not
+      // a detection bug.
+      const slicesSeen = new Set<string>();
+      let extractionsWithRole = 0;
+      for (const ext of reduxExtractions) {
+        if (ext.sliceName) slicesSeen.add(ext.sliceName);
+        if (ext.role && ext.role !== 'unknown') extractionsWithRole++;
+      }
+      if (this.debug) {
+        this.log(
+          `redux-chain summary: ${reduxExtractions.length} extractions, ${extractionsWithRole} with a redux role, ${slicesSeen.size} distinct slice names`,
+        );
+      }
       const chains = await reduxChainAnalyzer.buildChains(reduxExtractions);
       this.registry.setReduxChains(chains);
-      if (this.debug) this.log(`redux chains built: ${chains.size}`);
+      if (this.debug) {
+        this.log(`redux chains built: ${chains.size}`);
+        if (chains.size > 0) {
+          const names = Array.from(chains.keys()).slice(0, 10);
+          this.log(`redux chain names (first ${names.length}/${chains.size}): ${names.join(', ')}`);
+        }
+      }
 
       // Promote chain.actionTypes back onto the slice file's
       // actionTypeStrings list so ActionTypeScorer sees them.
@@ -317,7 +518,11 @@ export class RegistryBuilder {
     const targets = new Set<string>();
     for (const stmt of sf.statements) {
       if (ts.isImportDeclaration(stmt)) continue; // ignored
-      if (ts.isExportDeclaration(stmt) && stmt.moduleSpecifier && ts.isStringLiteral(stmt.moduleSpecifier)) {
+      if (
+        ts.isExportDeclaration(stmt) &&
+        stmt.moduleSpecifier &&
+        ts.isStringLiteral(stmt.moduleSpecifier)
+      ) {
         const spec = stmt.moduleSpecifier.text;
         const resolved = this.resolveImports([spec], abs);
         for (const r of resolved) targets.add(r);
@@ -351,14 +556,14 @@ export class RegistryBuilder {
     const patterns = sourceDirs.map((dir) => `${dir}/**/*${extPattern}`);
     const ignorePatterns = [...ignoreDirs.map((d) => `**/${d}/**`), ...excludePatterns];
 
-    const files = await glob(patterns, {
+    // Absolute paths: reads and relative-import resolution then work regardless
+    // of process.cwd() (essential when source/test live in different repos).
+    return glob(patterns, {
       cwd: this.projectRoot,
       ignore: ignorePatterns,
-      absolute: false, // return relative paths (we normalize them ourselves)
-      nodir: true, // onlyFiles equivalent in glob
+      absolute: true,
+      nodir: true,
     });
-
-    return files.map((f) => normalizePath(f, this.projectRoot));
   }
 
   /**
@@ -374,24 +579,36 @@ export class RegistryBuilder {
     testPatterns: string[],
     ignoreDirs: string[],
     excludePatterns: string[] = [],
-  ): Promise<string[]> {
+  ): Promise<Array<{ abs: string; repoRoot: string }>> {
     const ignorePatterns = [...ignoreDirs.map((d) => `**/${d}/**`), ...excludePatterns];
 
     // Fallback: if user didn't configure any testPatterns, sweep common layouts
-    // (`**/*.cy.ts`, `**/*.spec.ts`, `**/*.test.ts`, `**/*.e2e.ts`, plus .tsx/.js/.jsx variants)
     // so pelican isn't silently blind on default installs.
-    const effectivePatterns = testPatterns.length > 0
-      ? testPatterns
-      : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
+    const effectivePatterns =
+      testPatterns.length > 0
+        ? testPatterns
+        : ['**/*.{cy,spec,test,e2e,integration,int}.{ts,tsx,js,jsx,mts,cts}'];
 
-    const files = await glob(effectivePatterns, {
-      cwd: this.projectRoot,
-      ignore: ignorePatterns,
-      absolute: false,
-      nodir: true,
-    });
-
-    return files.map((f) => normalizePath(f, this.projectRoot));
+    // Tests can live in BOTH repos: jest-style specs colocated in the source
+    // repo, Cypress specs in the test repo. Scan both roots and tag each file
+    // with the root it came from (deduping when the two roots are the same).
+    const roots = [...new Set([this.projectRoot, this.testRoot])];
+    const seen = new Set<string>();
+    const out: Array<{ abs: string; repoRoot: string }> = [];
+    for (const repoRoot of roots) {
+      const files = await glob(effectivePatterns, {
+        cwd: repoRoot,
+        ignore: ignorePatterns,
+        absolute: true,
+        nodir: true,
+      });
+      for (const abs of files) {
+        if (seen.has(abs)) continue;
+        seen.add(abs);
+        out.push({ abs, repoRoot });
+      }
+    }
+    return out;
   }
 
   /**
@@ -409,51 +626,104 @@ export class RegistryBuilder {
     for (const candidate of candidates) {
       try {
         const content = await fs.readFile(candidate, 'utf-8');
-        const sourceFile = ts.createSourceFile(
-          candidate,
-          content,
-          ts.ScriptTarget.Latest,
-          true,
-        );
+        const sourceFile = ts.createSourceFile(candidate, content, ts.ScriptTarget.Latest, true);
 
         const result = new Map<string, Record<string, string>>();
         for (const stmt of sourceFile.statements) {
-          if (!ts.isVariableStatement(stmt)) continue;
+          if (!ts.canHaveModifiers(stmt)) continue;
           const isExported = ts
             .getModifiers(stmt)
             ?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword);
           if (!isExported) continue;
 
-          for (const decl of stmt.declarationList.declarations) {
-            if (!ts.isIdentifier(decl.name)) continue;
-            if (!decl.initializer || !ts.isObjectLiteralExpression(decl.initializer)) continue;
+          // Pattern 1: `export const X = { ... }` — also handles
+          //   `export const X = { ... } as const`        (AsExpression)
+          //   `export const X = Object.freeze({ ... })`  (CallExpression)
+          if (ts.isVariableStatement(stmt)) {
+            for (const decl of stmt.declarationList.declarations) {
+              if (!ts.isIdentifier(decl.name) || !decl.initializer) continue;
+              const obj = this.extractStringMapFromExpression(decl.initializer, sourceFile);
+              if (obj && Object.keys(obj).length > 0) result.set(decl.name.text, obj);
+            }
+            continue;
+          }
 
+          // Pattern 2: `export enum X { FOO = '/foo', BAR = '/bar' }`
+          //   and     `export const enum X { ... }`
+          // String-valued enums extract cleanly; numeric/heterogeneous enums are
+          // skipped on a per-member basis.
+          if (ts.isEnumDeclaration(stmt)) {
             const obj: Record<string, string> = {};
-            for (const prop of decl.initializer.properties) {
-              if (!ts.isPropertyAssignment(prop)) continue;
-              const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
-              if (ts.isStringLiteral(prop.initializer)) {
-                obj[key] = prop.initializer.text;
-              } else if (ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
-                obj[key] = prop.initializer.text;
+            for (const member of stmt.members) {
+              if (!ts.isIdentifier(member.name) && !ts.isStringLiteral(member.name)) continue;
+              const key = ts.isIdentifier(member.name) ? member.name.text : member.name.text;
+              if (!member.initializer) continue;
+              if (ts.isStringLiteral(member.initializer)) {
+                obj[key] = member.initializer.text;
+              } else if (ts.isNoSubstitutionTemplateLiteral(member.initializer)) {
+                obj[key] = member.initializer.text;
               }
             }
-            if (Object.keys(obj).length > 0) result.set(decl.name.text, obj);
+            if (Object.keys(obj).length > 0) result.set(stmt.name.text, obj);
+            continue;
           }
         }
 
-        if (result.size > 0) {
-          if (this.debug) {
-            this.log(`resolveTsConstImport: ${candidate} exports [${[...result.keys()].join(', ')}]`);
-          }
-          return result;
+        if (this.debug) {
+          this.log(
+            `resolveTsConstImport: ${candidate} → ${result.size} const-objects [${[...result.keys()].join(', ') || '(empty)'}]`,
+          );
         }
+        if (result.size > 0) return result;
       } catch {
         // try next candidate
       }
     }
 
+    if (this.debug) {
+      this.log(`resolveTsConstImport: ${importPath} (from ${fromFile}) → no candidates matched`);
+    }
     return null;
+  }
+
+  /**
+   * Pulls string key→value pairs out of an expression that's expected to be
+   * an object literal — directly, behind `as const`, or wrapped in
+   * `Object.freeze(...)`. Returns null when the shape isn't one we recognise.
+   */
+  private extractStringMapFromExpression(
+    expr: ts.Expression,
+    sourceFile: ts.SourceFile,
+  ): Record<string, string> | null {
+    // Unwrap `({...} as const)` and `({...} as Readonly<...>)`
+    let inner: ts.Expression = expr;
+    while (ts.isAsExpression(inner) || ts.isParenthesizedExpression(inner)) {
+      inner = inner.expression;
+    }
+    // Unwrap `Object.freeze({...})`
+    if (
+      ts.isCallExpression(inner) &&
+      ts.isPropertyAccessExpression(inner.expression) &&
+      ts.isIdentifier(inner.expression.expression) &&
+      inner.expression.expression.text === 'Object' &&
+      inner.expression.name.text === 'freeze' &&
+      inner.arguments.length === 1
+    ) {
+      inner = inner.arguments[0];
+    }
+    if (!ts.isObjectLiteralExpression(inner)) return null;
+
+    const obj: Record<string, string> = {};
+    for (const prop of inner.properties) {
+      if (!ts.isPropertyAssignment(prop)) continue;
+      const key = prop.name.getText(sourceFile).replace(/['"]/g, '');
+      if (ts.isStringLiteral(prop.initializer)) {
+        obj[key] = prop.initializer.text;
+      } else if (ts.isNoSubstitutionTemplateLiteral(prop.initializer)) {
+        obj[key] = prop.initializer.text;
+      }
+    }
+    return obj;
   }
 
   private candidateFilePathsForImport(importPath: string, fromFile: string): string[] {
@@ -530,7 +800,9 @@ export class RegistryBuilder {
         const parsed = JSON.parse(content) as Record<string, unknown>;
         if (this.debug) {
           const keys = Object.keys(parsed);
-          this.log(`  ✓ resolved: ${candidate} (${keys.length} keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''})`);
+          this.log(
+            `  ✓ resolved: ${candidate} (${keys.length} keys: ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? '...' : ''})`,
+          );
         }
         return parsed;
       } catch {
@@ -541,7 +813,9 @@ export class RegistryBuilder {
     }
 
     if (this.debug && candidates.length === 0) {
-      this.log(`  ⚠ no alias matched for "${importPath}". Configure pathAliases in .pelicanrc.json`);
+      this.log(
+        `  ⚠ no alias matched for "${importPath}". Configure pathAliases in .pelicanrc.json`,
+      );
     }
 
     return null;
@@ -605,7 +879,9 @@ export class RegistryBuilder {
               resolved = c;
               break outer;
             }
-          } catch { /* ignore */ }
+          } catch {
+            /* ignore */
+          }
         }
       }
       if (!resolved) continue;
@@ -623,6 +899,7 @@ export class RegistryBuilder {
       name: path.basename(filePath),
       type: 'source',
       path: normalizePath(filePath, this.projectRoot),
+      repoRoot: this.projectRoot,
       exports: result.exports ?? [],
       imports: this.resolveImports(result.imports ?? [], filePath),
       classes: result.classes ?? [],
@@ -643,11 +920,15 @@ export class RegistryBuilder {
   private convertCypressExtractionToFileEntry(
     result: ICypressExtractionResult,
     filePath: string,
+    repoRoot: string,
   ): IFileEntry {
     return {
       name: path.basename(filePath),
       type: 'test',
-      path: normalizePath(filePath, this.projectRoot),
+      // A spec's registry key is relative to ITS OWN repo root, so cross-repo
+      // specs don't collapse into "../.." paths.
+      path: normalizePath(filePath, repoRoot),
+      repoRoot,
       exports: [],
       // Cypress spec files import page objects, helpers, fixtures, and custom command modules.
       // These imports are needed so the import graph knows what shared helpers a test depends on.

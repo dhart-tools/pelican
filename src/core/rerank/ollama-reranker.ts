@@ -1,11 +1,11 @@
-import { execFile } from "child_process";
-import * as fs from "fs/promises";
-import { promisify } from "util";
+import { execFile } from 'child_process';
+import * as fs from 'fs/promises';
+import { promisify } from 'util';
 
-import { Ollama } from "ollama";
-import pLimit from "p-limit";
+import { Ollama } from 'ollama';
+import pLimit from 'p-limit';
 
-import { IFileEntry } from "@/types/registry";
+import { IFileEntry } from '@/types/registry';
 
 import {
   buildSourceHeader,
@@ -15,7 +15,7 @@ import {
   classifyTest,
   detectSourceProvider,
   detectSourceUIKind,
-} from "./test-payload";
+} from './test-payload';
 
 const execFileP = promisify(execFile);
 
@@ -50,56 +50,56 @@ export const DEFAULT_FILE_CONTENT_CONFIG: IFileContentConfig = {
   linesPerWindow: SAMPLE_LINES_PER_WINDOW,
   stripKeywords: [
     // ── Variable / module declarations ──────────────────────────────
-    "const",
-    "let",
-    "var",
-    "function",
-    "import",
-    "export",
-    "default",
-    "from",
-    "require",
+    'const',
+    'let',
+    'var',
+    'function',
+    'import',
+    'export',
+    'default',
+    'from',
+    'require',
     // ── Async ────────────────────────────────────────────────────────
-    "async",
-    "await",
+    'async',
+    'await',
     // ── Class / OOP ──────────────────────────────────────────────────
-    "class",
-    "extends",
-    "super",
-    "new",
-    "this",
-    "static",
-    "abstract",
-    "override",
+    'class',
+    'extends',
+    'super',
+    'new',
+    'this',
+    'static',
+    'abstract',
+    'override',
     // ── Access modifiers (TS) ────────────────────────────────────────
-    "public",
-    "private",
-    "protected",
-    "readonly",
+    'public',
+    'private',
+    'protected',
+    'readonly',
     // ── TypeScript structural ────────────────────────────────────────
-    "type",
-    "interface",
-    "enum",
-    "namespace",
-    "module",
-    "declare",
-    "implements",
-    "infer",
-    "keyof",
-    "as",
-    "is",
-    "satisfies",
+    'type',
+    'interface',
+    'enum',
+    'namespace',
+    'module',
+    'declare',
+    'implements',
+    'infer',
+    'keyof',
+    'as',
+    'is',
+    'satisfies',
     // ── Return / yield / throw ───────────────────────────────────────
-    "return",
-    "yield",
-    "throw",
+    'return',
+    'yield',
+    'throw',
     // ── Misc operators ───────────────────────────────────────────────
-    "typeof",
-    "instanceof",
-    "void",
-    "delete",
-    "in",
-    "of",
+    'typeof',
+    'instanceof',
+    'void',
+    'delete',
+    'in',
+    'of',
   ],
 };
 
@@ -125,7 +125,7 @@ export interface IOllamaRerankerConfig {
    *   'bucket' — discrete 0-5 confidence (reweights pelican prior; default)
    *   'bool'   — legacy yes/no verdict
    */
-  scoringMode?: "bucket" | "bool";
+  scoringMode?: 'bucket' | 'bool';
   /**
    * Prompt template version:
    *   'v1' — multi-rule R/A rubric with compressed symbols + bucket multiplier.
@@ -136,7 +136,7 @@ export interface IOllamaRerankerConfig {
    * Default 'v2' — produced higher recall in qwen2.5-coder benchmarks where
    * the v1 rubric was over-rejecting borderline candidates.
    */
-  promptVersion?: "v1" | "v2";
+  promptVersion?: 'v1' | 'v2';
   /**
    * When true (default), all surviving candidates for a given source file are
    * scored in a single listwise LLM call — one prefill of the source block
@@ -154,12 +154,12 @@ export interface IOllamaRerankerConfig {
 export const DEFAULT_OLLAMA_CONFIG: IOllamaRerankerConfig = {
   // qwen2.5-coder:7b is the model the production client runs; default to it so
   // dev benchmarks line up with prod recall/precision numbers.
-  model: "qwen2.5-coder:7b",
-  host: "http://localhost:11434",
+  model: 'qwen2.5-coder:7b',
+  host: 'http://localhost:11434',
   concurrency: 3,
   explanations: false,
-  scoringMode: "bucket",
-  promptVersion: "v2",
+  scoringMode: 'bucket',
+  promptVersion: 'v2',
   // Listwise (one LLM call per source) is ~2× faster than per-pair but the
   // model loses per-candidate rigor when many tests share one prompt, so
   // false positives spike. Keep the per-pair path as default until we
@@ -247,13 +247,13 @@ function compressSymbols(blocks: string[]): ISymbolTable {
 
   const parts: string[] = [];
   if (selectorMap.size) {
-    parts.push(`Selectors: ${[...selectorMap.entries()].map(([v, k]) => `${k}=${v}`).join(", ")}`);
+    parts.push(`Selectors: ${[...selectorMap.entries()].map(([v, k]) => `${k}=${v}`).join(', ')}`);
   }
   if (routeMap.size) {
-    parts.push(`Routes: ${[...routeMap.entries()].map(([v, k]) => `${k}=${v}`).join(", ")}`);
+    parts.push(`Routes: ${[...routeMap.entries()].map(([v, k]) => `${k}=${v}`).join(', ')}`);
   }
 
-  return { compressedBlocks, legend: parts.join(" | ") };
+  return { compressedBlocks, legend: parts.join(' | ') };
 }
 
 // ─── Prompt ──────────────────────────────────────────────────────
@@ -289,7 +289,7 @@ interface ISourceRuleFlags {
 function buildKVPrefix(sourceBlock: string, flags: ISourceRuleFlags): string {
   const { compressedBlocks, legend } = compressSymbols([sourceBlock]);
   const compSource = compressedBlocks[0];
-  const legendSection = legend ? `\nLegend: ${legend}\n` : "";
+  const legendSection = legend ? `\nLegend: ${legend}\n` : '';
 
   // Minimal rule set. We spent a week discovering that adding rules
   // (R5-R9, A4-A6) causes wild kept-count swings because LLMs apply
@@ -300,28 +300,28 @@ function buildKVPrefix(sourceBlock: string, flags: ISourceRuleFlags): string {
   // for this source. The trailing "→ no" / "→ yes" is implicit from R/A
   // prefix and dropped. Connectives use & | instead of AND/OR.
   const hard: string[] = [
-    "R1 it_count=0",
-    "R2 kind=component & source ∉ mount_targets",
-    "R5 test in src/__tests__/ & source=.tsx",
+    'R1 it_count=0',
+    'R2 kind=component & source ∉ mount_targets',
+    'R5 test in src/__tests__/ & source=.tsx',
   ];
   if (flags.hasProvider) {
-    hard.push("R3 source.provider ≠ test.provider/login_helper");
+    hard.push('R3 source.provider ≠ test.provider/login_helper');
   }
   if (flags.isOnboarding) {
     hard.push(
-      "R4 source=onboarding & seeded & no signup/signin/onboard/register in describes|visits",
+      'R4 source=onboarding & seeded & no signup/signin/onboard/register in describes|visits',
     );
   }
 
   const accepts: string[] = [
-    "A1 test imports source | source ∈ mount_targets",
-    "A2 distinctive token (¬ app/page/container) overlap: source.exports/routes/selectors/UI ∩ test.describes/visits/text/APIs",
-    "A3 source=machine/hook/reducer/util & domain word in test.describes/visits/imports",
+    'A1 test imports source | source ∈ mount_targets',
+    'A2 distinctive token (¬ app/page/container) overlap: source.exports/routes/selectors/UI ∩ test.describes/visits/text/APIs',
+    'A3 source=machine/hook/reducer/util & domain word in test.describes/visits/imports',
   ];
 
   return `Task: TEST runs SOURCE code? R first (→ no, stop), else A (→ yes, stop), else no.
-R: ${hard.join(" ; ")}
-A: ${accepts.join(" ; ")}
+R: ${hard.join(' ; ')}
+A: ${accepts.join(' ; ')}
 ${legendSection}SOURCE:
 ${compSource}
 
@@ -332,12 +332,13 @@ TEST:
 function buildKVSuffix(
   testBlock: string,
   withExplanation: boolean,
-  mode: "bool" | "bucket",
+  mode: 'bool' | 'bucket',
 ): string {
   let trailer: string;
-  if (mode === "bucket") {
+  if (mode === 'bucket') {
     // 0 reserved for R-rule hits. 1-5 for graded confidence. Unsure → 2.
-    const scale = "0=R-rule hit. 1=likely no. 2=unsure. 3=weak yes. 4=clear yes. 5=direct wire (A1).";
+    const scale =
+      '0=R-rule hit. 1=likely no. 2=unsure. 3=weak yes. 4=clear yes. 5=direct wire (A1).';
     trailer = withExplanation
       ? `${scale} JSON: {"score":0-5,"reason":"≤80 chars"}`
       : `${scale} JSON: {"score":0-5}`;
@@ -394,78 +395,78 @@ confidence: 0=clear no, 1=likely no, 2=unsure, 3=likely yes, 4=yes, 5=clear yes.
 }
 
 const VERDICT_SCHEMA_V2 = {
-  type: "object",
+  type: 'object',
   properties: {
-    relevant: { type: "boolean" },
-    evidence: { type: "string", maxLength: 200 },
-    confidence: { type: "integer", minimum: 0, maximum: 5 },
+    relevant: { type: 'boolean' },
+    evidence: { type: 'string', maxLength: 200 },
+    confidence: { type: 'integer', minimum: 0, maximum: 5 },
   },
-  required: ["relevant", "evidence", "confidence"],
+  required: ['relevant', 'evidence', 'confidence'],
 } as const;
 
 // JSON schemas enforced by Ollama's structured-output mode. llama.cpp grammar
 // forces the model to stop at `maxLength`. Verdict bit emits first, so cutting
 // the prose can only change latency, not the decision.
 const VERDICT_SCHEMA_WITH_REASON = {
-  type: "object",
+  type: 'object',
   properties: {
-    relevant: { type: "boolean" },
-    reason: { type: "string", maxLength: 80 },
+    relevant: { type: 'boolean' },
+    reason: { type: 'string', maxLength: 80 },
   },
-  required: ["relevant", "reason"],
+  required: ['relevant', 'reason'],
 } as const;
 
 const VERDICT_SCHEMA_BOOL_ONLY = {
-  type: "object",
+  type: 'object',
   properties: {
-    relevant: { type: "boolean" },
+    relevant: { type: 'boolean' },
   },
-  required: ["relevant"],
+  required: ['relevant'],
 } as const;
 
 // Bucket mode: single integer 0-5. `minimum`/`maximum` are enforced by
 // Ollama's grammar — the model cannot emit out-of-range values.
 const VERDICT_SCHEMA_BUCKET_ONLY = {
-  type: "object",
+  type: 'object',
   properties: {
-    score: { type: "integer", minimum: 0, maximum: 5 },
+    score: { type: 'integer', minimum: 0, maximum: 5 },
   },
-  required: ["score"],
+  required: ['score'],
 } as const;
 
 const VERDICT_SCHEMA_BUCKET_WITH_REASON = {
-  type: "object",
+  type: 'object',
   properties: {
-    score: { type: "integer", minimum: 0, maximum: 5 },
-    reason: { type: "string", maxLength: 80 },
+    score: { type: 'integer', minimum: 0, maximum: 5 },
+    reason: { type: 'string', maxLength: 80 },
   },
-  required: ["score", "reason"],
+  required: ['score', 'reason'],
 } as const;
 
 // Listwise schemas: JSON array, one entry per candidate. `i` preserves the
 // 1-based index so parse can survive reordering or dropped items.
 const LISTWISE_SCHEMA_BOOL_ONLY = {
-  type: "array",
+  type: 'array',
   items: {
-    type: "object",
+    type: 'object',
     properties: {
-      i: { type: "integer" },
-      r: { type: "boolean" },
+      i: { type: 'integer' },
+      r: { type: 'boolean' },
     },
-    required: ["i", "r"],
+    required: ['i', 'r'],
   },
 } as const;
 
 const LISTWISE_SCHEMA_WITH_REASON = {
-  type: "array",
+  type: 'array',
   items: {
-    type: "object",
+    type: 'object',
     properties: {
-      i: { type: "integer" },
-      r: { type: "boolean" },
-      reason: { type: "string", maxLength: 80 },
+      i: { type: 'integer' },
+      r: { type: 'boolean' },
+      reason: { type: 'string', maxLength: 80 },
     },
-    required: ["i", "r", "reason"],
+    required: ['i', 'r', 'reason'],
   },
 } as const;
 
@@ -476,11 +477,9 @@ function buildListwisePrompt(
 ): string {
   const { compressedBlocks, legend } = compressSymbols([sourceBlock]);
   const compSource = compressedBlocks[0];
-  const legendSection = legend ? `\nSymbol legend — ${legend}\n` : "";
+  const legendSection = legend ? `\nSymbol legend — ${legend}\n` : '';
 
-  const candidateSection = items
-    .map((it) => `[${it.i}]\n${it.block}`)
-    .join("\n---\n");
+  const candidateSection = items.map((it) => `[${it.i}]\n${it.block}`).join('\n---\n');
 
   const trailer = withExplanation
     ? `Reply JSON array only — one entry per candidate, in order. Keep "reason" ≤ 80 chars:
@@ -494,7 +493,7 @@ R1 STUB: test.it_count=0 → false.
 R2 MOUNT MISMATCH: test.kind="component" AND source path/exports not in test.mount_targets → false.
 R3 PROVIDER LOCK: source.provider set (okta|google|cognito|auth0|facebook) AND test.provider/login_helper not SAME provider → false.
 R4 ONBOARDING SKIP: source path or exports mention onboarding/welcome/firstrun/signup-flow AND test.seeded=true AND test describes/visits don't mention signup|signin|onboarding|register → false.
-R5 LAYER MISMATCH: test path matches src/__tests__/.*\.test\.(t|j)s$ (Jest backend unit test) AND source is a frontend bundle entry (index*.tsx|*.tsx component) → false. Those tests never execute frontend bundle code.
+R5 LAYER MISMATCH: test path matches src/__tests__/.*\\.test\\.(t|j)s$ (Jest backend unit test) AND source is a frontend bundle entry (index*.tsx|*.tsx component) → false. Those tests never execute frontend bundle code.
 R6 UNRELATED CYPRESS SIBLING: source is a container/component AND test is a Cypress spec for a SIBLING container/component whose describes/visits/mount_targets don't reference source or anything source exports → false. Token overlap in filenames alone (e.g. "Transaction") is NOT enough.
 
 A1 DIRECT WIRE: test imports source, OR test.mount_targets contains source or any name source exports → true.
@@ -518,7 +517,7 @@ ${trailer}`;
  * Gaps are annotated so the LLM knows lines were skipped.
  */
 function stratifiedSampleLines(content: string, config: IFileContentConfig): string {
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   const { segments, linesPerWindow } = config;
 
   if (lines.length <= segments * linesPerWindow) return content;
@@ -542,11 +541,11 @@ function stratifiedSampleLines(content: string, config: IFileContentConfig): str
       parts.push(`// ··· ${start - prevEnd} lines skipped ···`);
     }
 
-    parts.push(lines.slice(start, end).join("\n"));
+    parts.push(lines.slice(start, end).join('\n'));
     prevEnd = end;
   }
 
-  return parts.join("\n");
+  return parts.join('\n');
 }
 
 // ─── Source payload: adaptive ─────────────────────────────────────
@@ -562,14 +561,14 @@ function stratifiedSampleLines(content: string, config: IFileContentConfig): str
 function buildCompactIdentity(entry: IFileEntry): string {
   const parts: string[] = [`File: ${entry.path}`];
   if (entry.exports.length) {
-    parts.push(`Exports: ${entry.exports.slice(0, 10).join(", ")}`);
+    parts.push(`Exports: ${entry.exports.slice(0, 10).join(', ')}`);
   }
   if (entry.selectors?.length) {
     const sels = entry.selectors
       .map((s) => s.value)
       .filter(Boolean)
       .slice(0, 10)
-      .join(", ");
+      .join(', ');
     if (sels) parts.push(`Selectors: ${sels}`);
   }
   if (entry.routesDefined?.length) {
@@ -577,10 +576,10 @@ function buildCompactIdentity(entry: IFileEntry): string {
       .map((r) => r.path)
       .filter(Boolean)
       .slice(0, 8)
-      .join(", ");
+      .join(', ');
     if (routes) parts.push(`Routes: ${routes}`);
   }
-  return parts.join("\n").slice(0, MAX_IDENTITY_CHARS);
+  return parts.join('\n').slice(0, MAX_IDENTITY_CHARS);
 }
 
 /**
@@ -589,15 +588,15 @@ function buildCompactIdentity(entry: IFileEntry): string {
  * Keeps the first import line for module-identity context.
  */
 function stripImports(content: string): string {
-  const lines = content.split("\n");
+  const lines = content.split('\n');
   let firstImport = -1;
   let lastImport = -1;
 
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].trim();
-    if (t.startsWith("import ") || t.startsWith("// import") || t === "") {
-      if (firstImport === -1 && t.startsWith("import ")) firstImport = i;
-      if (t.startsWith("import ")) lastImport = i;
+    if (t.startsWith('import ') || t.startsWith('// import') || t === '') {
+      if (firstImport === -1 && t.startsWith('import ')) firstImport = i;
+      if (t.startsWith('import ')) lastImport = i;
     } else if (firstImport !== -1) {
       // First non-import, non-blank line after imports → stop
       break;
@@ -609,10 +608,10 @@ function stripImports(content: string): string {
   // Keep one representative import line, skip the rest
   const kept =
     firstImport !== lastImport
-      ? [`${lines[firstImport]} … (${lastImport - firstImport} more imports)`, ""]
-      : [lines[firstImport], ""];
+      ? [`${lines[firstImport]} … (${lastImport - firstImport} more imports)`, '']
+      : [lines[firstImport], ''];
   const body = lines.slice(lastImport + 1);
-  return [...kept, ...body].join("\n");
+  return [...kept, ...body].join('\n');
 }
 
 async function buildAdaptiveSourcePayload(
@@ -624,15 +623,15 @@ async function buildAdaptiveSourcePayload(
 ): Promise<string> {
   const header = buildSourceHeader(entry);
   const identity = buildCompactIdentity(entry);
-  const baseRef = base ?? "HEAD~1";
-  const targetRef = target ?? "HEAD";
+  const baseRef = base ?? 'HEAD~1';
+  const targetRef = target ?? 'HEAD';
 
   // 1. Try git diff with generous unified context.
   //    Diff is already targeted — no keyword stripping needed (LLMs read code natively).
   try {
     const { stdout } = await execFileP(
-      "git",
-      ["diff", "--unified=8", `${baseRef}..${targetRef}`, "--", changedFile],
+      'git',
+      ['diff', '--unified=8', `${baseRef}..${targetRef}`, '--', changedFile],
       { cwd: process.cwd(), maxBuffer: 1024 * 1024 },
     );
     if (stdout.trim().length > 30) {
@@ -646,7 +645,7 @@ async function buildAdaptiveSourcePayload(
   //    No keyword filtering — LLMs understand code structure natively,
   //    and aggressive stripping can gut React components to empty strings.
   try {
-    const raw = await fs.readFile(changedFile, "utf-8");
+    const raw = await fs.readFile(changedFile, 'utf-8');
     const body = stripImports(raw);
     const sampled = stratifiedSampleLines(body, fileContentConfig);
     return `${header}\n\n${identity}\n\nFile content:\n${sampled}`;
@@ -743,16 +742,16 @@ export class OllamaReranker {
       if (entry) {
         let rawForClassify: string | undefined;
         try {
-          rawForClassify = await fs.readFile(testFile, "utf-8");
+          rawForClassify = await fs.readFile(testFile, 'utf-8');
         } catch {
           rawForClassify = undefined;
         }
         const kind = classifyTest(entry, rawForClassify).kind;
-        if (kind === "stub") {
+        if (kind === 'stub') {
           stubRejections.push({
             testFile,
             relevant: false,
-            reason: "Stub — no test cases",
+            reason: 'Stub — no test cases',
           });
           if (this.config.debug) {
             process.stderr.write(`[ollama] pre-reject stub: ${testFile}\n`);
@@ -806,11 +805,11 @@ export class OllamaReranker {
       return [...listResults, ...stubRejections];
     }
 
-    const promptVersion = this.config.promptVersion ?? "v2";
+    const promptVersion = this.config.promptVersion ?? 'v2';
 
     // Per-pair v2 path: neutral SOURCE+TEST prompt, JSON {relevant, evidence,
     // confidence}. Late-fusion happens in SemanticReranker via `confidence`.
-    if (promptVersion === "v2") {
+    if (promptVersion === 'v2') {
       const prefix = buildKVPrefixV2(sourceBlock);
       if (this.config.debug) {
         process.stderr.write(
@@ -824,18 +823,18 @@ export class OllamaReranker {
             const prompt = prefix + buildKVSuffixV2(tb.block);
             const callStart = Date.now();
             if (this.config.debug) {
-              const debugFile = ".pelican/debug-rerank.log";
-              const sep = "=".repeat(80);
+              const debugFile = '.pelican/debug-rerank.log';
+              const sep = '='.repeat(80);
               const logEntry = [
                 `\n${sep}`,
                 `[ollama] V2 SCORING: ${changedFile} → ${tb.testFile} (${i + 1}/${total})`,
                 sep,
                 `── PROMPT (${prompt.length} chars, prefix ${prefix.length}) ──`,
                 prompt.slice(0, 2000),
-                prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : "",
+                prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : '',
                 `── END PROMPT ──\n`,
-              ].join("\n");
-              await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+              ].join('\n');
+              await fs.appendFile(debugFile, logEntry, 'utf-8').catch(() => {});
             }
             try {
               const response = await this.ollama.generate({
@@ -854,9 +853,9 @@ export class OllamaReranker {
                 );
                 await fs
                   .appendFile(
-                    ".pelican/debug-rerank.log",
+                    '.pelican/debug-rerank.log',
                     `── RAW RESPONSE ──\n${response.response}\n── END RESPONSE ──\n`,
-                    "utf-8",
+                    'utf-8',
                   )
                   .catch(() => {});
               }
@@ -864,7 +863,7 @@ export class OllamaReranker {
               allResults.push({ testFile: tb.testFile, ...verdict });
               if (this.config.debug) {
                 const summary = `[ollama] v2 ${tb.testFile}: relevant=${verdict.relevant} conf=${verdict.confidence} — ${verdict.reason}\n`;
-                await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
+                await fs.appendFile('.pelican/debug-rerank.log', summary, 'utf-8').catch(() => {});
                 process.stderr.write(summary);
               }
             } catch (err) {
@@ -874,7 +873,7 @@ export class OllamaReranker {
               allResults.push({
                 testFile: tb.testFile,
                 relevant: true,
-                reason: "LLM unavailable; included as precaution.",
+                reason: 'LLM unavailable; included as precaution.',
                 confidence: 3,
               });
             }
@@ -901,17 +900,17 @@ export class OllamaReranker {
       (sourceEntry.reduxUsage?.actionsDispatched?.length ?? 0) +
         (sourceEntry.reduxUsage?.slicesDefined?.length ?? 0) >
       0;
-    const isUIComponent = kind === "component" || kind === "container" || kind === "entry";
+    const isUIComponent = kind === 'component' || kind === 'container' || kind === 'entry';
     // Flows that have known Cypress bypass shortcuts in this repo class.
     // Conservative — if the source doesn't own one of these flows we skip R7
     // to keep the prefix lean.
     const bypassablePath = /onboard|signin|signup|login|new-?transaction|signout/i.test(
-      `${sourceEntry.path} ${sourceEntry.exports.join(" ")}`,
+      `${sourceEntry.path} ${sourceEntry.exports.join(' ')}`,
     );
     const ruleFlags: ISourceRuleFlags = {
       hasProvider: detectSourceProvider(sourceEntry) !== undefined,
       isOnboarding: /onboard|welcome|firstrun|signup-flow/i.test(
-        `${sourceEntry.path} ${sourceEntry.exports.join(" ")}`,
+        `${sourceEntry.path} ${sourceEntry.exports.join(' ')}`,
       ),
       hasRoutes,
       hasSelectors,
@@ -926,9 +925,9 @@ export class OllamaReranker {
       );
     }
 
-    const mode: "bool" | "bucket" = this.config.scoringMode ?? "bucket";
+    const mode: 'bool' | 'bucket' = this.config.scoringMode ?? 'bucket';
     const schema =
-      mode === "bucket"
+      mode === 'bucket'
         ? withExplanation
           ? VERDICT_SCHEMA_BUCKET_WITH_REASON
           : VERDICT_SCHEMA_BUCKET_ONLY
@@ -950,18 +949,18 @@ export class OllamaReranker {
           const callStart = Date.now();
 
           if (this.config.debug) {
-            const debugFile = ".pelican/debug-rerank.log";
-            const sep = "=".repeat(80);
+            const debugFile = '.pelican/debug-rerank.log';
+            const sep = '='.repeat(80);
             const logEntry = [
               `\n${sep}`,
               `[ollama] SCORING: ${changedFile} → ${tb.testFile} (${i + 1}/${total})`,
               sep,
               `── PROMPT (${prompt.length} chars, prefix ${prefix.length}) ──`,
               prompt.slice(0, 2000),
-              prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : "",
+              prompt.length > 2000 ? `\n... (${prompt.length - 2000} chars truncated) ...` : '',
               `── END PROMPT ──\n`,
-            ].join("\n");
-            await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+            ].join('\n');
+            await fs.appendFile(debugFile, logEntry, 'utf-8').catch(() => {});
           }
 
           try {
@@ -989,23 +988,23 @@ export class OllamaReranker {
               );
               await fs
                 .appendFile(
-                  ".pelican/debug-rerank.log",
+                  '.pelican/debug-rerank.log',
                   `── RAW RESPONSE ──\n${response.response}\n── END RESPONSE ──\n`,
-                  "utf-8",
+                  'utf-8',
                 )
                 .catch(() => {});
             }
 
             const verdict =
-              mode === "bucket"
+              mode === 'bucket'
                 ? parseBucketResponse(response.response)
                 : parseResponse(response.response);
             allResults.push({ testFile: tb.testFile, ...verdict });
 
             if (this.config.debug) {
-              const bucketTag = "bucket" in verdict ? ` bucket=${verdict.bucket}` : "";
+              const bucketTag = 'bucket' in verdict ? ` bucket=${verdict.bucket}` : '';
               const summary = `[ollama] ${tb.testFile}: relevant=${verdict.relevant}${bucketTag} — ${verdict.reason}\n`;
-              await fs.appendFile(".pelican/debug-rerank.log", summary, "utf-8").catch(() => {});
+              await fs.appendFile('.pelican/debug-rerank.log', summary, 'utf-8').catch(() => {});
               process.stderr.write(summary);
             }
           } catch (err) {
@@ -1015,8 +1014,8 @@ export class OllamaReranker {
             allResults.push({
               testFile: tb.testFile,
               relevant: true,
-              reason: "LLM unavailable; included as precaution.",
-              ...(mode === "bucket" ? { bucket: 3 } : {}),
+              reason: 'LLM unavailable; included as precaution.',
+              ...(mode === 'bucket' ? { bucket: 3 } : {}),
             });
           }
 
@@ -1067,18 +1066,18 @@ export class OllamaReranker {
 
       const callStart = Date.now();
       if (this.config.debug) {
-        const debugFile = ".pelican/debug-rerank.log";
-        const sep = "=".repeat(80);
+        const debugFile = '.pelican/debug-rerank.log';
+        const sep = '='.repeat(80);
         const logEntry = [
           `\n${sep}`,
           `[ollama] LISTWISE: ${changedFile} window=${w + 1}..${w + window.length}/${testBlocks.length}`,
           sep,
           `── PROMPT (${prompt.length} chars) ──`,
           prompt.slice(0, 3000),
-          prompt.length > 3000 ? `\n... (${prompt.length - 3000} chars truncated) ...` : "",
+          prompt.length > 3000 ? `\n... (${prompt.length - 3000} chars truncated) ...` : '',
           `── END PROMPT ──\n`,
-        ].join("\n");
-        await fs.appendFile(debugFile, logEntry, "utf-8").catch(() => {});
+        ].join('\n');
+        await fs.appendFile(debugFile, logEntry, 'utf-8').catch(() => {});
       }
 
       try {
@@ -1105,9 +1104,9 @@ export class OllamaReranker {
           );
           await fs
             .appendFile(
-              ".pelican/debug-rerank.log",
+              '.pelican/debug-rerank.log',
               `── RAW RESPONSE ──\n${response.response}\n── END RESPONSE ──\n`,
-              "utf-8",
+              'utf-8',
             )
             .catch(() => {});
         }
@@ -1130,7 +1129,7 @@ export class OllamaReranker {
           out.push({
             testFile: tb.testFile,
             relevant: true,
-            reason: "LLM unavailable; included as precaution.",
+            reason: 'LLM unavailable; included as precaution.',
           });
         }
       }
@@ -1175,7 +1174,7 @@ export class OllamaReranker {
     // show up in raw content, and structured metadata leans on them.
     let rawContent: string | undefined;
     try {
-      rawContent = await fs.readFile(testFile, "utf-8");
+      rawContent = await fs.readFile(testFile, 'utf-8');
     } catch {
       // fine — fall through with metadata-only header
     }
@@ -1196,14 +1195,13 @@ export class OllamaReranker {
     if (rawContent) {
       const sampled = stratifiedSampleLines(rawContent, fileContentConfig);
       const imports = entry.imports.length
-        ? `Imports: ${entry.imports.slice(0, 15).join(", ")}`
-        : "";
-      return [header, "", imports, "", sampled].filter(Boolean).join("\n");
+        ? `Imports: ${entry.imports.slice(0, 15).join(', ')}`
+        : '';
+      return [header, '', imports, '', sampled].filter(Boolean).join('\n');
     }
 
     return `${header}\n\n${buildTestPayload(entry)}`;
   }
-
 }
 
 /**
@@ -1226,11 +1224,11 @@ function parseListwiseResponse(
 ): Array<{ relevant: boolean; reason: string }> {
   const unparseableFallback = Array.from({ length: expectedCount }, () => ({
     relevant: true,
-    reason: "Model response could not be parsed; included as precaution.",
+    reason: 'Model response could not be parsed; included as precaution.',
   }));
 
   try {
-    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
     const match = cleaned.match(/\[[\s\S]*\]/);
     if (!match) return unparseableFallback;
     const parsed = JSON.parse(match[0]);
@@ -1240,25 +1238,25 @@ function parseListwiseResponse(
     // (handled above). Two different failure modes, two different defaults.
     const out: Array<{ relevant: boolean; reason: string }> = Array.from(
       { length: expectedCount },
-      () => ({ relevant: false, reason: "LLM omitted from verdict list" }),
+      () => ({ relevant: false, reason: 'LLM omitted from verdict list' }),
     );
     for (const item of parsed) {
-      if (!item || typeof item !== "object") continue;
+      if (!item || typeof item !== 'object') continue;
       const idxRaw = (item as { i?: unknown }).i;
       const relRaw = (item as { r?: unknown }).r;
       const reasonRaw = (item as { reason?: unknown }).reason;
-      const idx = typeof idxRaw === "number" ? idxRaw - 1 : -1;
+      const idx = typeof idxRaw === 'number' ? idxRaw - 1 : -1;
       if (idx < 0 || idx >= expectedCount) continue;
 
       let relevant: boolean;
-      if (typeof relRaw === "boolean") {
+      if (typeof relRaw === 'boolean') {
         relevant = relRaw;
-      } else if (typeof relRaw === "string") {
+      } else if (typeof relRaw === 'string') {
         relevant = /^(true|yes|1)$/i.test(relRaw.trim());
       } else {
         continue;
       }
-      const reason = typeof reasonRaw === "string" ? reasonRaw.trim() : "";
+      const reason = typeof reasonRaw === 'string' ? reasonRaw.trim() : '';
       out[idx] = { relevant, reason };
     }
     return out;
@@ -1273,18 +1271,16 @@ function parseListwiseResponse(
  * failure return bucket=3 (likely-yes) so pelican prior passes through
  * unchanged — same precautionary-include policy as bool parse.
  */
-function parseBucketResponse(
-  text: string,
-): { relevant: boolean; reason: string; bucket: number } {
+function parseBucketResponse(text: string): { relevant: boolean; reason: string; bucket: number } {
   try {
-    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
+      const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
       let score: number | undefined;
-      if (typeof parsed.score === "number") score = parsed.score;
-      else if (typeof parsed.score === "string") {
+      if (typeof parsed.score === 'number') score = parsed.score;
+      else if (typeof parsed.score === 'string') {
         const n = parseInt(parsed.score, 10);
         if (!Number.isNaN(n)) score = n;
       }
@@ -1298,7 +1294,7 @@ function parseBucketResponse(
   }
   return {
     relevant: true,
-    reason: "Model response could not be parsed; included as precaution.",
+    reason: 'Model response could not be parsed; included as precaution.',
     bucket: 3,
   };
 }
@@ -1309,23 +1305,21 @@ function parseBucketResponse(
  * include policy as the bool/bucket parsers. Caller (SemanticReranker) blends
  * `confidence` with pelican structural score via late-fusion.
  */
-function parseV2Response(
-  text: string,
-): { relevant: boolean; reason: string; confidence: number } {
+function parseV2Response(text: string): { relevant: boolean; reason: string; confidence: number } {
   try {
-    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
-      const evidence = typeof parsed.evidence === "string" ? parsed.evidence.trim() : "";
+      const evidence = typeof parsed.evidence === 'string' ? parsed.evidence.trim() : '';
       let relevant: boolean | undefined;
-      if (typeof parsed.relevant === "boolean") relevant = parsed.relevant;
-      else if (typeof parsed.relevant === "string") {
+      if (typeof parsed.relevant === 'boolean') relevant = parsed.relevant;
+      else if (typeof parsed.relevant === 'string') {
         relevant = /^(true|yes|1)$/i.test(parsed.relevant.trim());
       }
       let confidence: number | undefined;
-      if (typeof parsed.confidence === "number") confidence = parsed.confidence;
-      else if (typeof parsed.confidence === "string") {
+      if (typeof parsed.confidence === 'number') confidence = parsed.confidence;
+      else if (typeof parsed.confidence === 'string') {
         const n = parseInt(parsed.confidence, 10);
         if (!Number.isNaN(n)) confidence = n;
       }
@@ -1348,24 +1342,24 @@ function parseV2Response(
   }
   return {
     relevant: true,
-    reason: "Model response could not be parsed; included as precaution.",
+    reason: 'Model response could not be parsed; included as precaution.',
     confidence: 3,
   };
 }
 
 function parseResponse(text: string): { relevant: boolean; reason: string } {
   try {
-    const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+    const cleaned = text.replace(/```json\n?|\n?```/g, '').trim();
     const match = cleaned.match(/\{[\s\S]*\}/);
     if (match) {
       const parsed = JSON.parse(match[0]);
       // Accept partial shapes — small models (phi3, qwen2.5:3b) sometimes
       // omit `reason` or emit the key as a string instead of a boolean.
-      const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : "";
-      if (typeof parsed.relevant === "boolean") {
+      const reason = typeof parsed.reason === 'string' ? parsed.reason.trim() : '';
+      if (typeof parsed.relevant === 'boolean') {
         return { relevant: parsed.relevant, reason };
       }
-      if (typeof parsed.relevant === "string") {
+      if (typeof parsed.relevant === 'string') {
         return { relevant: /^(true|yes|1)$/i.test(parsed.relevant.trim()), reason };
       }
     }
@@ -1379,7 +1373,6 @@ function parseResponse(text: string): { relevant: boolean; reason: string } {
   const looksFalse = /"relevant"\s*:\s*false\b/i.test(text) || /\bfalse\b/.test(text.slice(0, 80));
   return {
     relevant: !looksFalse,
-    reason: "Model response could not be parsed; included as precaution.",
+    reason: 'Model response could not be parsed; included as precaution.',
   };
 }
-

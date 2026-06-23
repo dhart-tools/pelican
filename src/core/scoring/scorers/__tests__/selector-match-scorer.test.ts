@@ -88,4 +88,46 @@ describe('SelectorMatchScorer', () => {
     expect(signals[0].matched).toBe(false);
     expect(signals[0].reason).toBe('No selectors in source file');
   });
+
+  // Fix #2: ubiquitous-selector disqualification. Requires a registry providing
+  // test-selector frequencies; without one (the cases above) no check applies.
+  const mockRegistry = (freqs: Record<string, number>, total: number) =>
+    ({
+      getDependencies: () => new Set<string>(),
+      getFile: () => undefined,
+      getTestFileCount: () => total,
+      getTestSelectorFrequency: (v: string) => freqs[v] ?? 0,
+    }) as any;
+
+  test('evaluate(): disqualifies a match carried only by a ubiquitous selector', () => {
+    mockContext.changedFile!.selectors = [{ attr: ESelectorAttr.TEST_ID, value: 'Type_' }];
+    mockContext.testFile!.cypress!.selectors = [
+      { type: ESelectorAttr.TEST_ID, value: 'Type_', raw: '' },
+    ];
+    mockContext.registry = mockRegistry({ Type_: 50 }, 100); // 50% of specs → ubiquitous
+    mockContext.config = { scoring: { ubiquitousSelectorThreshold: 0.1 } } as any;
+
+    const signals = scorer.evaluate('src/Grid.tsx', 'firmware.cy.ts', mockContext as IScorerContext);
+    expect(signals[0].matched).toBe(false);
+    expect(signals[0].reason).toContain('ubiquitous');
+  });
+
+  test('evaluate(): keeps the match on a discriminating selector, ignoring ubiquitous ones', () => {
+    mockContext.changedFile!.selectors = [
+      { attr: ESelectorAttr.TEST_ID, value: 'Type_' },
+      { attr: ESelectorAttr.TEST_ID, value: 'facility-name-input' },
+    ];
+    mockContext.testFile!.cypress!.selectors = [
+      { type: ESelectorAttr.TEST_ID, value: 'Type_', raw: '' },
+      { type: ESelectorAttr.TEST_ID, value: 'facility-name-input', raw: '' },
+    ];
+    mockContext.registry = mockRegistry({ Type_: 50, 'facility-name-input': 2 }, 100);
+    mockContext.config = { scoring: { ubiquitousSelectorThreshold: 0.1 } } as any;
+
+    const signals = scorer.evaluate('src/Grid.tsx', 'facility.cy.ts', mockContext as IScorerContext);
+    expect(signals[0].matched).toBe(true);
+    expect(signals[0].reason).toContain('facility-name-input');
+    expect(signals[0].reason).not.toContain('Type_');
+    expect(signals[0].reason).toContain('ubiquitous ignored');
+  });
 });

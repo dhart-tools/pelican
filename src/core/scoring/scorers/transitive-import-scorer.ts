@@ -21,11 +21,15 @@ export class TransitiveImportScorer extends BaseScorer {
     const importerCount = registry.getDependents(changedFile).size;
     if (importerCount > HIGH_FANOUT_IMPORTERS) {
       return [
-        this.createSignal(false, `High-fanout source (${importerCount} importers) — transitive match is noise`, {
-          changedFile,
-          testFile,
-          importerCount,
-        }),
+        this.createSignal(
+          false,
+          `High-fanout source (${importerCount} importers) — transitive match is noise`,
+          {
+            changedFile,
+            testFile,
+            importerCount,
+          },
+        ),
       ];
     }
 

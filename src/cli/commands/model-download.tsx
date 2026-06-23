@@ -1,9 +1,8 @@
+import { Command } from 'commander';
 import { Box, Text, useApp } from 'ink';
+import { render } from 'ink';
 import Spinner from 'ink-spinner';
 import React, { useEffect, useState } from 'react';
-
-import { Command } from 'commander';
-import { render } from 'ink';
 
 import { Header } from '@/cli/components/Header';
 import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
@@ -103,9 +102,7 @@ function ModelDownloadApp() {
             </Text>
           </Box>
           <Box paddingX={2}>
-            <Text color={palette.dim}>
-              pelican analyze will now use semantic reranking.
-            </Text>
+            <Text color={palette.dim}>pelican analyze will now use semantic reranking.</Text>
           </Box>
         </>
       )}
@@ -124,8 +121,8 @@ function ModelDownloadApp() {
             )}
             <Box paddingLeft={2} marginTop={1}>
               <Text color={palette.dim}>
-                pelican will still work without the reranker — structural
-                scorers alone will produce suggestions.
+                pelican will still work without the reranker — structural scorers alone will produce
+                suggestions.
               </Text>
             </Box>
           </Box>

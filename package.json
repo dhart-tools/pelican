@@ -3,17 +3,21 @@
   "version": "1.0.0",
   "description": "Semantic test suggester for Cypress",
   "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
   "bin": {
     "pelican": "./dist/cli/entry.js"
   },
   "scripts": {
-    "build": "tsc && esbuild src/cli/entry.ts --bundle --platform=node --format=esm --packages=external --tsconfig=tsconfig.json --outfile=dist/cli/entry.js",
+    "build": "tsc && node scripts/build.mjs",
     "dev": "tsx src/cli/entry.ts",
     "start": "node dist/cli/entry.js",
     "pelican": "node dist/cli/entry.js",
     "link": "npm link",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
     "test:jest": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:ci": "NODE_OPTIONS='--experimental-vm-modules' jest --selectProjects core",
     "lint": "eslint 'src/**/*.{ts,tsx}' --fix"
   },
   "dependencies": {
@@ -55,13 +59,5 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.21.0",
     "typescript": "^5.7.3"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "onnxruntime-node",
-      "protobufjs",
-      "sharp"
-    ]
   }
 }

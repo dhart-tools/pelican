@@ -1,5 +1,10 @@
 import { BaseScorer } from '@/core/scoring/scorers/base';
 import { getScorerConfig } from '@/core/scoring/scoring-config';
+import {
+  DEFAULT_UBIQUITOUS_SELECTOR_THRESHOLD,
+  formatSelectorShares,
+  isUbiquitousSelector,
+} from '@/core/scoring/selector-ubiquity';
 import { IScorerContext, ISignal } from '@/types';
 import { EScorerType } from '@/utils/enums';
 import { normalizeTestSelector } from '@/utils/selector-normalize';
@@ -25,12 +30,14 @@ export class DependentSelectorScorer extends BaseScorer {
   }
 
   evaluate(changedFile: string, testFile: string, context: IScorerContext): ISignal[] {
-    const { testFile: testEntry, changedFile: changedEntry, registry } = context;
+    const { testFile: testEntry, changedFile: changedEntry, registry, config } = context;
 
     // Skip if changed file already has its own selectors — SelectorMatchScorer handles that.
     const ownSelectors = changedEntry.selectors || [];
     if (ownSelectors.length >= 3) {
-      return [this.createSignal(false, 'Source has own selectors; SelectorMatchScorer covers this')];
+      return [
+        this.createSignal(false, 'Source has own selectors; SelectorMatchScorer covers this'),
+      ];
     }
 
     const testSelectors = testEntry.cypress?.selectors || [];
@@ -99,31 +106,64 @@ export class DependentSelectorScorer extends BaseScorer {
     }
 
     if (exactMatches.length === 0 && prefixMatches.length === 0) {
-      return [this.createSignal(false, 'No dependent selectors match test', {
-        changedFile,
-        testFile,
-        dependentSelectorCount: selectorOrigin.size,
-      })];
+      return [
+        this.createSignal(false, 'No dependent selectors match test', {
+          changedFile,
+          testFile,
+          dependentSelectorCount: selectorOrigin.size,
+        }),
+      ];
     }
 
-    const allMatches = [...exactMatches, ...prefixMatches];
+    // Fix #2: disqualify ubiquitous selectors. A reverse-dep match on a shared
+    // grid/nav selector floods the result set just as badly as a forward one;
+    // keep the signal only on discriminating (non-ubiquitous) matches.
+    const threshold =
+      config?.scoring?.ubiquitousSelectorThreshold ?? DEFAULT_UBIQUITOUS_SELECTOR_THRESHOLD;
+    const keptExact = exactMatches.filter(
+      (m) => !isUbiquitousSelector(m.value, registry, threshold),
+    );
+    const keptPrefix = prefixMatches.filter(
+      (m) => !isUbiquitousSelector(m.source, registry, threshold),
+    );
+
+    if (keptExact.length === 0 && keptPrefix.length === 0) {
+      const dropped = [...exactMatches.map((m) => m.value), ...prefixMatches.map((m) => m.source)];
+      return [
+        this.createSignal(
+          false,
+          `All ${new Set(dropped).size} dependent selector match(es) ubiquitous (>${(threshold * 100).toFixed(0)}% of specs) — disqualified: ${formatSelectorShares(dropped, registry)}`,
+          { changedFile, testFile, disqualified: dropped },
+        ),
+      ];
+    }
+
+    const allMatches = [...keptExact, ...keptPrefix];
     const minDepth = Math.min(...allMatches.map((m) => m.depth));
     const viaFiles = [...new Set(allMatches.map((m) => m.via))];
-    const matchedValues = exactMatches.map((m) => m.value);
+    const matchedValues = keptExact.map((m) => m.value);
+    const ignored = exactMatches.length + prefixMatches.length - allMatches.length;
 
     const sig = this.createSignal(
       true,
-      `Dependent selectors match: ${matchedValues.join(', ')}${prefixMatches.length ? ` (+${prefixMatches.length} prefix)` : ''} via ${viaFiles.join(', ')} (d${minDepth})`,
-      { changedFile, testFile, exactMatches, prefixMatches, viaFiles, minDepth },
+      `Dependent selectors match: ${matchedValues.join(', ')}${keptPrefix.length ? ` (+${keptPrefix.length} prefix)` : ''} via ${viaFiles.join(', ')} (d${minDepth})${ignored ? ` [${ignored} ubiquitous ignored]` : ''}`,
+      {
+        changedFile,
+        testFile,
+        exactMatches: keptExact,
+        prefixMatches: keptPrefix,
+        viaFiles,
+        minDepth,
+      },
     );
 
     // Weight: base weight dampened by depth and match quality.
     // This is an indirect signal — keep it below SelectorMatchScorer.
     let w = this.weight;
-    if (exactMatches.length === 0) w *= 0.6; // prefix-only
+    if (keptExact.length === 0) w *= 0.6; // prefix-only
     if (minDepth >= 2) w *= 0.6;
 
-    const matchCount = exactMatches.length + prefixMatches.length;
+    const matchCount = keptExact.length + keptPrefix.length;
     w *= Math.min(1, matchCount / 3);
 
     sig.weight = w;

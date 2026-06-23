@@ -4,6 +4,51 @@ import { IFileEntry } from '@/types/registry';
 
 const MAX_PAYLOAD_CHARS = 2000;
 
+/**
+ * Lean structured extract of a raw spec — the evidence the LLM rerank judges on.
+ *
+ * Pulls the signal-dense, primary-intent parts from the WHOLE file: the purpose
+ * comment, every describe/it title, the cy.* action verbs, and the .should
+ * assertion targets. Deliberately LEAN — eval across labeled cases showed that
+ * enriching this (full bodies, or structural facts like routes/selectors) makes
+ * the judge HEDGE toward keeping → lower precision. It also avoids the arbitrary
+ * first-N-char truncation, which on big specs is mostly before() boilerplate.
+ *
+ * Pure: operates on the raw source text. Empty input → ''.
+ */
+export function buildStructuredTestExcerpt(source: string): string {
+  const c = source;
+  if (!c.trim()) return '';
+
+  const headMatch = c.match(/\/\*+([\s\S]*?)\*\//) || c.match(/(?:^\s*\/\/.*\n)+/m);
+  const purpose = headMatch
+    ? headMatch[0].replace(/[/*]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400)
+    : '';
+
+  const titles = [
+    ...[...c.matchAll(/describe\(\s*[`'"]([^`'"]{1,140})/g)].map((m) => m[1].trim()),
+    ...[...c.matchAll(/\bit\(\s*[`'"]([^`'"]{1,140})/g)].map((m) => m[1].trim()),
+  ];
+  const uniqTitles = [...new Set(titles)].slice(0, 20);
+
+  const cmds = [...new Set([...c.matchAll(/cy\.([a-zA-Z][a-zA-Z0-9]*)/g)].map((m) => m[1]))].slice(
+    0,
+    40,
+  );
+  const asserts = [
+    ...new Set([...c.matchAll(/\.should\(\s*[`'"]([^`'"]{1,40})/g)].map((m) => m[1])),
+  ].slice(0, 15);
+
+  return [
+    purpose ? `PURPOSE: ${purpose}` : '',
+    `SCENARIOS: ${uniqTitles.join(' | ') || '—'}`,
+    `ACTIONS: ${cmds.map((x) => 'cy.' + x).join(', ') || '—'}`,
+    `ASSERTIONS: ${asserts.join(', ') || '—'}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
 const PROVIDERS = ['okta', 'google', 'cognito', 'auth0', 'facebook'] as const;
 type Provider = (typeof PROVIDERS)[number];
 
@@ -45,10 +90,7 @@ export interface ITestClassification {
  * `mountTargets` and `seeded` need the actual file content; `fileContent`
  * optional. When omitted they remain empty/false.
  */
-export function classifyTest(
-  entry: IFileEntry,
-  fileContent?: string,
-): ITestClassification {
+export function classifyTest(entry: IFileEntry, fileContent?: string): ITestClassification {
   const itCount = entry.cypress?.itBlocks.length ?? 0;
   const isComponentFile = /\.cy\.(jsx?|tsx?)$/i.test(entry.path);
 
@@ -75,10 +117,9 @@ export function classifyTest(
   }
 
   const base = path.basename(entry.path).toLowerCase();
-  const provider = (PROVIDERS.find((p) => base.includes(p))
-    ?? (loginHelper
-      ? PROVIDERS.find((p) => loginHelper.toLowerCase().includes(p))
-      : undefined));
+  const provider =
+    PROVIDERS.find((p) => base.includes(p)) ??
+    (loginHelper ? PROVIDERS.find((p) => loginHelper.toLowerCase().includes(p)) : undefined);
 
   return {
     kind,
@@ -151,9 +192,7 @@ function extractBalancedBody(content: string, openBrace: number): string | null 
 }
 
 function isCommentOrWhitespace(body: string): boolean {
-  const stripped = body
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/[^\n]*/g, '');
+  const stripped = body.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
   return stripped.trim() === '';
 }
 
@@ -165,7 +204,11 @@ function isCommentOrWhitespace(body: string): boolean {
 export function buildSourceHeader(entry: IFileEntry): string {
   const provider = detectSourceProvider(entry);
   const entryPoint = isSourceEntryPoint(entry);
-  const routes = entry.routesDefined?.map((r) => r.path).filter(Boolean).slice(0, 8).join(', ');
+  const routes = entry.routesDefined
+    ?.map((r) => r.path)
+    .filter(Boolean)
+    .slice(0, 8)
+    .join(', ');
   const sels = entry.selectors
     ?.map((s) => s.value)
     .filter(Boolean)
@@ -189,7 +232,14 @@ export function buildSourceHeader(entry: IFileEntry): string {
   return lines.join('\n');
 }
 
-export type SourceUIKind = 'component' | 'container' | 'machine' | 'hook' | 'reducer' | 'util' | 'entry';
+export type SourceUIKind =
+  | 'component'
+  | 'container'
+  | 'machine'
+  | 'hook'
+  | 'reducer'
+  | 'util'
+  | 'entry';
 
 /**
  * Classify the source's runtime role — drives R8/R9 folder-gate rules.
@@ -254,9 +304,7 @@ export function buildTestHeader(entry: IFileEntry, fileContent?: string): string
  */
 export function detectBypassCommands(entry: IFileEntry): string[] {
   const cmds = entry.cypress?.customCommandsUsed ?? [];
-  return cmds.filter((c) =>
-    /^(make|seed|login\w*By|programmatic|create|setup)/i.test(c),
-  );
+  return cmds.filter((c) => /^(make|seed|login\w*By|programmatic|create|setup)/i.test(c));
 }
 
 /**
@@ -305,7 +353,9 @@ export function buildSourcePayload(entry: IFileEntry): string {
   const parts: string[] = [];
 
   const basename = basenameTokens(entry.path);
-  parts.push(basename ? `Source component: ${basename} (${entry.path})` : `Source file: ${entry.path}`);
+  parts.push(
+    basename ? `Source component: ${basename} (${entry.path})` : `Source file: ${entry.path}`,
+  );
 
   if (entry.exports.length) {
     parts.push(`Exports: ${entry.exports.slice(0, 20).join(', ')}`);
@@ -317,11 +367,19 @@ export function buildSourcePayload(entry: IFileEntry): string {
     parts.push(`Classes: ${entry.classes.slice(0, 10).join(', ')}`);
   }
   if (entry.selectors?.length) {
-    const sels = entry.selectors.map((s) => s.value).filter(Boolean).slice(0, 20).join(', ');
+    const sels = entry.selectors
+      .map((s) => s.value)
+      .filter(Boolean)
+      .slice(0, 20)
+      .join(', ');
     if (sels) parts.push(`Data-test selectors: ${sels}`);
   }
   if (entry.routesDefined?.length) {
-    const routes = entry.routesDefined.map((r) => r.path).filter(Boolean).slice(0, 15).join(', ');
+    const routes = entry.routesDefined
+      .map((r) => r.path)
+      .filter(Boolean)
+      .slice(0, 15)
+      .join(', ');
     if (routes) parts.push(`Defines routes: ${routes}`);
   }
   if (entry.translationKeys?.length) {
@@ -346,11 +404,11 @@ export function buildTestPayload(entry: IFileEntry): string {
   const parts: string[] = [];
 
   const basename = basenameTokens(entry.path);
-  const isCypress = entry.cypress && (
-    entry.cypress.describeBlocks.length > 0 ||
-    entry.cypress.itBlocks.length > 0 ||
-    entry.cypress.visitedRoutes.length > 0
-  );
+  const isCypress =
+    entry.cypress &&
+    (entry.cypress.describeBlocks.length > 0 ||
+      entry.cypress.itBlocks.length > 0 ||
+      entry.cypress.visitedRoutes.length > 0);
 
   if (isCypress) {
     parts.push(basename ? `Cypress test: ${basename} (${entry.path})` : `Test file: ${entry.path}`);
@@ -360,6 +418,14 @@ export function buildTestPayload(entry: IFileEntry): string {
     }
     if (cy.itBlocks.length) {
       parts.push(`Tests: ${cy.itBlocks.slice(0, 15).join(' | ')}`);
+    }
+    // The custom commands a spec invokes are the strongest behavioural signal
+    // for an LLM judge: `startProvisioningFromPCU` / `moveDevice` (drives the
+    // flow) reads very differently from a spec that only asserts on selectors.
+    // This is the discriminator that separates "exercises the change" from
+    // "merely shows the same screen".
+    if (cy.customCommandsUsed.length) {
+      parts.push(`Uses commands: ${cy.customCommandsUsed.slice(0, 25).join(', ')}`);
     }
     if (cy.visitedRoutes.length) {
       parts.push(`Visits routes: ${cy.visitedRoutes.join(', ')}`);

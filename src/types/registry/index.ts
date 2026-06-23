@@ -13,6 +13,10 @@ export interface IFileEntry {
   name: string;
   type: 'source' | 'test';
   path: string;
+  /** Absolute path to the repo root this file was scanned from. Lets per-file
+   * git history run in the right repo when source and tests live in separate
+   * repos. Absent on registries built before two-repo support. */
+  repoRoot?: string;
 
   // From Source Extraction
   exports: string[];
@@ -79,6 +83,8 @@ export interface IRegistry {
   getDependents(filePath: string): Set<string>;
   getTestSelectorFrequency(value: string): number;
   getTestFileCount(): number;
+  /** Most-queried test selectors, descending. For --debug threshold calibration. */
+  getTopTestSelectors(limit: number): Array<{ value: string; count: number }>;
 
   // Build methods
   buildFromFileEntries(entries: IFileEntry[]): void;

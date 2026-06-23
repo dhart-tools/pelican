@@ -19,6 +19,13 @@ export interface ISignal {
   matched: boolean;
   metadata?: object;
   reason?: string; // Human-readable reason
+  /**
+   * When explicitly false, this matched signal does NOT satisfy the anchor gate
+   * even though its `type` is normally an anchor. Used by filename-match to
+   * demote a match that rests only on ambiguous (corpus-ubiquitous) tokens — it
+   * then needs a real co-signal to keep the candidate. Absent/true = normal.
+   */
+  anchorEligible?: boolean;
 }
 
 /**

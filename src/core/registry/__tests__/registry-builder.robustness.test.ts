@@ -66,6 +66,8 @@ describe('RegistryBuilder Robustness', () => {
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
       testPatterns: ['test/**/*.cy.ts'],
+      sourceRoot: process.cwd(),
+      testRoot: process.cwd(),
     });
 
     // Registry should still build, but file should be missing
@@ -78,6 +80,8 @@ describe('RegistryBuilder Robustness', () => {
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
       testPatterns: ['test/**/*.cy.ts'],
+      sourceRoot: process.cwd(),
+      testRoot: process.cwd(),
     });
 
     expect(registry.files.size).toBe(0);
@@ -91,6 +95,8 @@ describe('RegistryBuilder Robustness', () => {
     const registry = await builder.buildFromDirectories({
       sourceDirs: ['src'],
       testPatterns: [],
+      sourceRoot: process.cwd(),
+      testRoot: process.cwd(),
     });
 
     // Should be normalized to src/file.ts
@@ -107,6 +113,8 @@ describe('RegistryBuilder Robustness', () => {
       sourceDirs: ['src'],
       testPatterns: [],
       ignoreDirs: ['ignored'],
+      sourceRoot: process.cwd(),
+      testRoot: process.cwd(),
     });
 
     expect(globMock).toHaveBeenCalledWith(

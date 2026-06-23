@@ -40,10 +40,7 @@ export class ColocationScorer extends BaseScorer {
     return [signal];
   }
 
-  private classify(
-    sourceDir: string,
-    testDir: string,
-  ): { kind: string; factor: number } | null {
+  private classify(sourceDir: string, testDir: string): { kind: string; factor: number } | null {
     if (sourceDir === testDir) return { kind: 'same-dir', factor: 1 };
 
     const srcParts = sourceDir.split('/').filter(Boolean);
