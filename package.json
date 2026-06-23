@@ -17,6 +17,7 @@
     "link": "npm link",
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
     "test:jest": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "test:ci": "NODE_OPTIONS='--experimental-vm-modules' jest --selectProjects core",
     "lint": "eslint 'src/**/*.{ts,tsx}' --fix"
   },
   "dependencies": {
