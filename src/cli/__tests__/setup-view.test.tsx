@@ -15,7 +15,7 @@ describe('SetupView provider flow', () => {
       <SetupView {...base} phase="provider-select" selectedProviderIndex={1} />,
     );
     expect(lastFrame()).toContain('●  GitHub Copilot');
-    expect(lastFrame()).toContain('uses your company Copilot access');
+    expect(lastFrame()).toContain('uses your Copilot access');
   });
 
   it('shows the global install command and explicit confirmation', () => {
@@ -26,12 +26,18 @@ describe('SetupView provider flow', () => {
     expect(lastFrame()).toContain('y confirm · n skip');
   });
 
-  it('hands model selection to the Copilot /model command', () => {
+  it('shows Copilot models and the config field where the choice is saved', () => {
     const { lastFrame } = render(
-      <SetupView {...base} phase="copilot-model-select" selectedProvider="copilot" />,
+      <SetupView
+        {...base}
+        phase="copilot-model-select"
+        selectedProvider="copilot"
+        selectedCopilotModelIndex={1}
+      />,
     );
-    expect(lastFrame()).toContain('/model');
-    expect(lastFrame()).toContain('then exit Copilot');
+    expect(lastFrame()).toContain('●  claude-sonnet-4.6');
+    expect(lastFrame()).toContain('company policy may limit access');
+    expect(lastFrame()).toContain('rerank.copilotModel');
   });
 
   it('shows --rerank in the next command for the local provider', () => {

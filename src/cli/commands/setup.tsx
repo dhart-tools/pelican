@@ -10,12 +10,8 @@ import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
 import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
-import {
-  installCopilot,
-  isCopilotInstalled,
-  loginCopilot,
-  openCopilotModelPicker,
-} from '@/cli/copilot-setup';
+import { installCopilot, isCopilotInstalled, loginCopilot } from '@/cli/copilot-setup';
+import { SETUP_COPILOT_MODELS } from '@/cli/setup-copilot-models';
 import { SETUP_MODELS } from '@/cli/setup-models';
 import { SETUP_PROVIDERS, SetupProvider } from '@/cli/setup-providers';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
@@ -50,10 +46,16 @@ async function persistRemoteRerank(
   configPath: string,
   enabled: boolean,
   provider?: 'copilot',
+  copilotModel?: string,
 ): Promise<void> {
   const content = await fs.readFile(configPath, 'utf-8');
   const cfg = JSON.parse(content);
-  cfg.rerank = { ...(cfg.rerank ?? {}), enabled, ...(provider ? { provider } : {}) };
+  cfg.rerank = {
+    ...(cfg.rerank ?? {}),
+    enabled,
+    ...(provider ? { provider } : {}),
+    ...(copilotModel ? { copilotModel } : {}),
+  };
   await fs.writeFile(configPath, JSON.stringify(cfg, null, 2));
 }
 
@@ -307,6 +309,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     detectedConfig: null,
     projectName: path.basename(process.cwd()),
     selectedModelIndex: 2, // default: qwen3.5:latest
+    selectedCopilotModelIndex: 0, // default: auto
     selectedProviderIndex: 0,
   });
 
@@ -314,6 +317,8 @@ function SetupApp({ options }: { options: ISetupOptions }) {
   const [confirmedProvider, setConfirmedProvider] = useState<SetupProvider | null>(null);
   const [installDecision, setInstallDecision] = useState<boolean | null>(null);
   const [authDecision, setAuthDecision] = useState<boolean | null>(null);
+  const [copilotModelCursorIdx, setCopilotModelCursorIdx] = useState(0);
+  const [confirmedCopilotModel, setConfirmedCopilotModel] = useState<string | null>(null);
   // Local model-select cursor — kept in sync with state.selectedModelIndex for rendering
   const [cursorIdx, setCursorIdx] = useState(0);
   // Set when user confirms a model; triggers the pull effect below
@@ -321,6 +326,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
   // Prevent double-confirming
   const confirmed = useRef(false);
   const providerConfirmed = useRef(false);
+  const copilotModelConfirmed = useRef(false);
 
   // ── Keyboard handling for model selection ──────────────────────
   useInput(
@@ -357,6 +363,26 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         return;
       }
 
+      if (state.phase === 'copilot-model-select') {
+        if (key.upArrow) {
+          setCopilotModelCursorIdx((i) => {
+            const next = Math.max(0, i - 1);
+            setState((s) => ({ ...s, selectedCopilotModelIndex: next }));
+            return next;
+          });
+        } else if (key.downArrow) {
+          setCopilotModelCursorIdx((i) => {
+            const next = Math.min(SETUP_COPILOT_MODELS.length - 1, i + 1);
+            setState((s) => ({ ...s, selectedCopilotModelIndex: next }));
+            return next;
+          });
+        } else if (key.return && !copilotModelConfirmed.current) {
+          copilotModelConfirmed.current = true;
+          setConfirmedCopilotModel(SETUP_COPILOT_MODELS[copilotModelCursorIdx].id);
+        }
+        return;
+      }
+
       if (state.phase !== 'model-select') return;
       if (key.upArrow) {
         setCursorIdx((i) => {
@@ -380,6 +406,7 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         'provider-select',
         'copilot-install-confirm',
         'copilot-auth-confirm',
+        'copilot-model-select',
         'model-select',
       ].includes(state.phase),
     },
@@ -692,11 +719,10 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     void handleInstallDecision();
   }, [installDecision]);
 
-  // Copilot owns authentication and model persistence. Ink releases raw input
-  // when these phases become inactive, then the child receives the terminal.
+  // Copilot owns authentication. Ink releases raw input while login runs, then
+  // Pelican presents its own model selection instead of opening Copilot's UI.
   useEffect(() => {
     if (authDecision == null) return;
-    const configPath = options.config || '.pelicanrc.json';
 
     async function finishCopilotSetup() {
       try {
@@ -706,25 +732,8 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           await loginCopilot();
         }
         setState((s) => ({ ...s, phase: 'copilot-model-select' }));
-        await yieldTerminal();
-        await openCopilotModelPicker();
-        await persistRemoteRerank(configPath, true, 'copilot');
-        setState((s) => ({
-          ...s,
-          phase: 'done',
-          steps: [
-            ...s.steps,
-            {
-              name: 'reranker',
-              status: 'success' as const,
-              detail: 'GitHub Copilot ready · model managed by /model',
-              section: 'installed' as const,
-              kind: 'model' as const,
-            },
-          ],
-        }));
       } catch (err) {
-        await persistRemoteRerank(configPath, false, 'copilot');
+        await persistRemoteRerank(options.config || '.pelicanrc.json', false, 'copilot');
         setState((s) => ({
           ...s,
           phase: 'error',
@@ -735,6 +744,43 @@ function SetupApp({ options }: { options: ISetupOptions }) {
 
     void finishCopilotSetup();
   }, [authDecision]);
+
+  useEffect(() => {
+    if (!confirmedCopilotModel) return;
+
+    async function saveCopilotModel() {
+      try {
+        await persistRemoteRerank(
+          options.config || '.pelicanrc.json',
+          true,
+          'copilot',
+          confirmedCopilotModel!,
+        );
+        setState((s) => ({
+          ...s,
+          phase: 'done',
+          steps: [
+            ...s.steps,
+            {
+              name: 'reranker',
+              status: 'success' as const,
+              detail: `GitHub Copilot ready · ${confirmedCopilotModel}`,
+              section: 'installed' as const,
+              kind: 'model' as const,
+            },
+          ],
+        }));
+      } catch (err) {
+        setState((s) => ({
+          ...s,
+          phase: 'error',
+          error: `Could not save Copilot model: ${err instanceof Error ? err.message : String(err)}`,
+        }));
+      }
+    }
+
+    void saveCopilotModel();
+  }, [confirmedCopilotModel]);
 
   // ── Local model pull ────────────────────────────────────────────
   useEffect(() => {

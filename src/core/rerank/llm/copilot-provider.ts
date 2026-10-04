@@ -24,6 +24,11 @@ export type CopilotRunner = (
   options: ICopilotRunOptions,
 ) => Promise<ICopilotRunResult>;
 
+export interface ICopilotProviderOptions {
+  model?: string;
+  runner?: CopilotRunner;
+}
+
 const defaultRunner: CopilotRunner = (args, options) =>
   new Promise((resolve, reject) => {
     const prepared = prepareCommand('copilot', args, {
@@ -93,8 +98,13 @@ function processError(err: unknown, timeoutMs?: number): LLMProviderError {
  */
 export class CopilotProvider implements ILLMProvider {
   readonly id = 'copilot';
+  private readonly model: string;
+  private readonly runner: CopilotRunner;
 
-  constructor(private readonly runner: CopilotRunner = defaultRunner) {}
+  constructor(options: ICopilotProviderOptions = {}) {
+    this.model = options.model ?? 'auto';
+    this.runner = options.runner ?? defaultRunner;
+  }
 
   async complete(messages: ILLMMessage[], opts: ILLMCompleteOptions = {}): Promise<string> {
     const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'pelican-copilot-'));
@@ -104,6 +114,7 @@ export class CopilotProvider implements ILLMProvider {
           '-p',
           buildPrompt(messages),
           '-s',
+          `--model=${this.model}`,
           '--no-auto-update',
           '--no-color',
           '--no-custom-instructions',

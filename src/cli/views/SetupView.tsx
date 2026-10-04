@@ -6,6 +6,7 @@ import { Header } from '@/cli/components/Header';
 import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
 import { Panel } from '@/cli/components/Panel';
 import { SectionDivider } from '@/cli/components/SectionDivider';
+import { SETUP_COPILOT_MODELS } from '@/cli/setup-copilot-models';
 import { SETUP_MODELS, downloadMinutes } from '@/cli/setup-models';
 import { SETUP_PROVIDERS } from '@/cli/setup-providers';
 import { palette } from '@/cli/theme';
@@ -142,6 +143,42 @@ function Confirmation({ title, detail }: { title: string; detail: string }) {
       </Box>
       <Box paddingX={5} marginTop={1}>
         <Text color={palette.muted}>y confirm · n skip</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function CopilotModelSelectMenu({ selectedIndex }: { selectedIndex: number }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionLabel label="Choose Copilot model" />
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.dim}>GitHub-supported models · company policy may limit access</Text>
+      </Box>
+      <Box flexDirection="column" marginTop={1}>
+        {SETUP_COPILOT_MODELS.map((model, index) => {
+          const active = index === selectedIndex;
+          return (
+            <Box key={model.id} paddingX={5}>
+              <Text color={active ? palette.brand : palette.muted} bold>
+                {active ? '●' : '○'}
+              </Text>
+              <Text>{'  '}</Text>
+              <Text color={active ? palette.cyan : palette.text} bold>
+                {model.id.padEnd(24)}
+              </Text>
+              <Text color={active ? palette.sub : palette.dim}>{model.detail}</Text>
+            </Box>
+          );
+        })}
+      </Box>
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.muted}>↑↓ navigate · enter to confirm</Text>
+      </Box>
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.dim}>saved as </Text>
+        <Text color={palette.cyan}>rerank.copilotModel</Text>
+        <Text color={palette.dim}> in .pelicanrc.json</Text>
       </Box>
     </Box>
   );
@@ -314,16 +351,7 @@ export function SetupView(state: ISetupState) {
       )}
 
       {state.phase === 'copilot-model-select' && (
-        <Box flexDirection="column" marginTop={1}>
-          <SectionLabel label="Choose Copilot model" />
-          <Box paddingX={5} marginTop={1}>
-            <Text color={palette.sub}>In Copilot, run </Text>
-            <Text color={palette.cyan} bold>
-              /model
-            </Text>
-            <Text color={palette.sub}> · choose a model · then exit Copilot</Text>
-          </Box>
-        </Box>
+        <CopilotModelSelectMenu selectedIndex={state.selectedCopilotModelIndex ?? 0} />
       )}
 
       {isModelSelect && (

@@ -113,12 +113,24 @@ describe('loadProjectConfig', () => {
 
   it('preserves Copilot provider and local Ollama model choices independently', async () => {
     mockConfig({
-      rerank: { enabled: true, provider: 'copilot', ollamaModel: 'qwen2.5-coder:3b' },
+      rerank: {
+        enabled: true,
+        provider: 'copilot',
+        copilotModel: 'claude-sonnet-4.6',
+        ollamaModel: 'qwen2.5-coder:3b',
+      },
     });
     const config = await loadProjectConfig();
     expect(config.rerank?.provider).toBe('copilot');
+    expect(config.rerank?.copilotModel).toBe('claude-sonnet-4.6');
     expect(config.rerank?.ollamaModel).toBe('qwen2.5-coder:3b');
     expect(config.rerank?.model).toBe('nvidia/nemotron-3-nano-30b-a3b:free');
+  });
+
+  it('defaults the Copilot model to auto', async () => {
+    mockConfig({ rerank: { enabled: true, provider: 'copilot' } });
+    const config = await loadProjectConfig();
+    expect(config.rerank?.copilotModel).toBe('auto');
   });
 });
 

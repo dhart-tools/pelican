@@ -7,6 +7,7 @@ const cfg: IRerankConfig = {
   enabled: true,
   provider: 'openrouter',
   model: 'test/model',
+  copilotModel: 'auto',
   apiKeyEnv: 'X',
   baseUrl: 'http://localhost',
   candidateBand: { min: 0.4, max: 0.9 },

@@ -6,6 +6,7 @@ const base: IRerankConfig = {
   enabled: true,
   provider: 'openrouter',
   model: 'nvidia/nemotron-nano-3-30b-a3b',
+  copilotModel: 'auto',
   apiKeyEnv: 'OPENROUTER_API_KEY',
   baseUrl: 'https://openrouter.ai/api/v1',
   candidateBand: { min: 0.4, max: 1.0 },

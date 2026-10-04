@@ -170,6 +170,8 @@ export interface ISetupState {
   projectName?: string;
   /** Currently highlighted model index during model-select phase. */
   selectedModelIndex?: number;
+  /** Currently highlighted model index during Copilot model selection. */
+  selectedCopilotModelIndex?: number;
   /** Currently highlighted AI provider during provider-select phase. */
   selectedProviderIndex?: number;
   /** Provider selected during this setup run. */

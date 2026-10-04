@@ -57,7 +57,3 @@ function runInteractive(args: string[]): Promise<void> {
 export async function loginCopilot(): Promise<void> {
   await runInteractive(['login']);
 }
-
-export async function openCopilotModelPicker(): Promise<void> {
-  await runInteractive([]);
-}

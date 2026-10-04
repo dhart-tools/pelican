@@ -49,8 +49,10 @@ export interface IRerankConfig {
   /** Which LLM backend to call. Only the value drives the factory; the shape is
    * provider-agnostic so more backends slot in later. */
   provider: RerankProvider;
-  /** OpenRouter model slug. Copilot uses the choice persisted by its `/model` command. */
+  /** OpenRouter model slug. */
   model: string;
+  /** GitHub Copilot CLI model. `auto` lets Copilot choose an available model. */
+  copilotModel: string;
   /** Local Ollama model used by `analyze --rerank`. */
   ollamaModel?: string;
   /** OpenRouter API-key env var (preferred — keeps the secret out

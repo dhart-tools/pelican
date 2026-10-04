@@ -72,6 +72,7 @@ const DEFAULT_CONFIG: IProjectConfig = {
     // at $0 (rate-limited); drop `:free` + add OpenRouter credits for higher
     // throughput. Override per project.
     model: 'nvidia/nemotron-3-nano-30b-a3b:free',
+    copilotModel: 'auto',
     apiKeyEnv: 'OPENROUTER_API_KEY',
     baseUrl: 'https://openrouter.ai/api/v1',
     candidateBand: { min: 0.4, max: 1.0 },

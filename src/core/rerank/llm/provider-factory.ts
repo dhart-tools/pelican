@@ -35,7 +35,7 @@ export function createProvider(
       });
     }
     case 'copilot':
-      return new CopilotProvider();
+      return new CopilotProvider({ model: config.copilotModel });
     default:
       throw new LLMProviderError(`unknown rerank provider: ${String(config.provider)}`);
   }
