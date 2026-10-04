@@ -179,6 +179,7 @@ Everything lives in **`.pelicanrc.json`** at your repo root, in four clear block
     "enabled": false,                   // turn on the OpenRouter or Copilot pass
     "provider": "openrouter",           // "openrouter" or "copilot"
     "model": "nvidia/nemotron-3-nano-30b-a3b", // OpenRouter only
+    "copilotModel": "auto",             // Copilot CLI model selected during setup
     "ollamaModel": "qwen3.5:latest",    // local `analyze --rerank` only
     "apiKeyEnv": "OPENROUTER_API_KEY",  // env var NAME — preferred over inline apiKey
     "candidateBand": { "min": 0.4, "max": 1.0 },
@@ -209,7 +210,8 @@ Static analysis is great at *recall* but floods on *precision*: a change to `car
 |---|---|
 | `enabled` | Off by default. Provider setup/auth errors make Pelican warn and fall back to structural results. |
 | `provider` | `openrouter` or `copilot`. Local Ollama is a separate `--rerank` path. |
-| `model` | Any OpenRouter slug. Copilot uses the model selected in its own `/model` picker. |
+| `model` | Any OpenRouter slug. |
+| `copilotModel` | Model passed to Copilot CLI on every request. `auto` lets Copilot choose an available model. |
 | `candidateBand` | Only tests scoring in `[min, max)` are judged; below `min` already gone, at/above `max` auto-kept. |
 | `dropConfidence` | **The recall guard.** A test is dropped *only* when the model says "not relevant" with confidence ≥ this (default `0.9`). Any doubt → kept. |
 | `judgeMode` | `strict` = keep only tests that *primarily exercise* the change (matches how a tester picks). `broad` = keep anything a regression *could* break. |
@@ -234,7 +236,7 @@ Static analysis is great at *recall* but floods on *precision*: a change to `car
 | Choice | Setup and runtime |
 |---|---|
 | **Local model** | Installs/checks Ollama, saves `rerank.ollamaModel`, and runs only when you pass `pelican analyze --rerank …`. It does not enable OpenRouter. |
-| **GitHub Copilot** | Checks the Copilot CLI, offers to install it, hands authentication and model choice to Copilot, then saves `rerank.provider: "copilot"` with `rerank.enabled: true`. Run normal `pelican analyze …`; no `--rerank` flag is needed. |
+| **GitHub Copilot** | Checks the Copilot CLI, offers to install it, hands authentication to Copilot, then lets you choose a model in Pelican. It saves `rerank.provider: "copilot"`, `rerank.copilotModel`, and `rerank.enabled: true`. Run normal `pelican analyze …`; no `--rerank` flag is needed. |
 | **Skip AI reranking** | Leaves `rerank.enabled: false`; Pelican uses static analysis only. |
 
 OpenRouter remains manually configured: set `rerank.enabled: true`, `rerank.provider: "openrouter"`, and `OPENROUTER_API_KEY`, then run normal `pelican analyze …`.
@@ -245,7 +247,7 @@ Choose **GitHub Copilot** in `pelican setup`. Pelican then:
 
 1. Checks for the real Copilot CLI. If it is missing, Pelican shows `npm install -g @github/copilot` and installs it only after you confirm. It never uses `sudo`.
 2. Offers to run `copilot login`. Copilot stores and reuses the credential (normally in the OS credential store; it may offer its config file when no store is available); Pelican stores no token or login flag.
-3. Opens Copilot so you can enter `/model`, choose from the models available to your account, and exit. To change the model later, run `copilot` and use `/model` again (**singular**, not `/models`).
+3. Shows GitHub-supported models inside Pelican. Your choice is saved as `rerank.copilotModel` and passed to every Copilot request. Company policy can restrict which models your account may use; if that happens, choose another model in `.pelicanrc.json` or rerun `pelican setup`. `auto` is the recommended portable choice.
 
 To use another GitHub account, start `copilot` and use:
 
@@ -258,7 +260,7 @@ To use another GitHub account, start `copilot` and use:
 
 You can also run `copilot login` directly from your terminal after logging out.
 
-At runtime Pelican sends only the rerank prompt to Copilot in a temporary empty directory. Repository instructions, built-in/workspace MCP integrations, and tools are disabled for that call. If Copilot is missing, logged out, times out, or returns an invalid response, Pelican warns and keeps the static-analysis candidates. It does not retry Copilot calls.
+At runtime Pelican sends only the rerank prompt to the configured `rerank.copilotModel` in a temporary empty directory. Repository instructions, built-in/workspace MCP integrations, and tools are disabled for that call. If Copilot is missing, logged out, rejects the selected model, times out, or returns an invalid response, Pelican warns and keeps the static-analysis candidates. It does not retry Copilot calls.
 
 ---
 
@@ -317,7 +319,7 @@ For Copilot, select the `copilot` provider and give the job a supported Copilot 
 
 Both hosted providers fail open: authentication, network, timeout, and response errors retain the static candidates rather than dropping tests.
 
-An ephemeral runner uses Copilot's default model unless you also set `COPILOT_MODEL` to a model available to your account; the interactive `/model` choice is stored only in that machine's Copilot configuration.
+An ephemeral runner uses the `rerank.copilotModel` committed in `.pelicanrc.json`; set it to a model available to the CI account, or use `auto`.
 
 ---
 
