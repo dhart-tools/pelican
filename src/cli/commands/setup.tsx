@@ -10,7 +10,14 @@ import { Ollama } from 'ollama';
 import React, { useState, useEffect, useRef } from 'react';
 
 import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
+import {
+  installCopilot,
+  isCopilotInstalled,
+  loginCopilot,
+  openCopilotModelPicker,
+} from '@/cli/copilot-setup';
 import { SETUP_MODELS } from '@/cli/setup-models';
+import { SETUP_PROVIDERS, SetupProvider } from '@/cli/setup-providers';
 import { ISetupState, ISetupStep, IProjectConfig, ISetupOptions } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { SetupView } from '@/cli/views/SetupView';
@@ -23,22 +30,34 @@ const REGISTRY_CACHE_PATH = '.pelican/registry.json';
 const OLLAMA_HOST = 'http://localhost:11434';
 
 /**
- * Persist the selected model into the project's .pelicanrc.json under
- * `rerank.ollamaModel`. Without this, setup would download the model but
- * analyze would still read DEFAULT_OLLAMA_CONFIG.model at runtime — the
- * user's choice would be silently ignored.
+ * Persist the selected local model. Local Ollama is controlled by the
+ * `--rerank` flag, so selecting it must not enable the separate remote-provider
+ * path (`rerank.enabled`).
  */
 async function persistModelChoice(configPath: string, model: string): Promise<void> {
   try {
     const content = await fs.readFile(configPath, 'utf-8');
     const cfg = JSON.parse(content);
-    cfg.rerank = { ...(cfg.rerank ?? {}), enabled: true, ollamaModel: model };
+    cfg.rerank = { ...(cfg.rerank ?? {}), enabled: false, ollamaModel: model };
     await fs.writeFile(configPath, JSON.stringify(cfg, null, 2));
   } catch {
     // Config missing or unreadable — skip silently. analyze will fall back
     // to the built-in default, which is still functional.
   }
 }
+
+async function persistRemoteRerank(
+  configPath: string,
+  enabled: boolean,
+  provider?: 'copilot',
+): Promise<void> {
+  const content = await fs.readFile(configPath, 'utf-8');
+  const cfg = JSON.parse(content);
+  cfg.rerank = { ...(cfg.rerank ?? {}), enabled, ...(provider ? { provider } : {}) };
+  await fs.writeFile(configPath, JSON.stringify(cfg, null, 2));
+}
+
+const yieldTerminal = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
  * Scans package.json and filesystem to auto-detect project configuration.
@@ -288,18 +307,56 @@ function SetupApp({ options }: { options: ISetupOptions }) {
     detectedConfig: null,
     projectName: path.basename(process.cwd()),
     selectedModelIndex: 2, // default: qwen3.5:latest
+    selectedProviderIndex: 0,
   });
 
+  const [providerCursorIdx, setProviderCursorIdx] = useState(0);
+  const [confirmedProvider, setConfirmedProvider] = useState<SetupProvider | null>(null);
+  const [installDecision, setInstallDecision] = useState<boolean | null>(null);
+  const [authDecision, setAuthDecision] = useState<boolean | null>(null);
   // Local model-select cursor — kept in sync with state.selectedModelIndex for rendering
   const [cursorIdx, setCursorIdx] = useState(0);
   // Set when user confirms a model; triggers the pull effect below
   const [confirmedModel, setConfirmedModel] = useState<string | null>(null);
   // Prevent double-confirming
   const confirmed = useRef(false);
+  const providerConfirmed = useRef(false);
 
   // ── Keyboard handling for model selection ──────────────────────
   useInput(
-    (_, key) => {
+    (input, key) => {
+      if (state.phase === 'provider-select') {
+        if (key.upArrow) {
+          setProviderCursorIdx((i) => {
+            const next = Math.max(0, i - 1);
+            setState((s) => ({ ...s, selectedProviderIndex: next }));
+            return next;
+          });
+        } else if (key.downArrow) {
+          setProviderCursorIdx((i) => {
+            const next = Math.min(SETUP_PROVIDERS.length - 1, i + 1);
+            setState((s) => ({ ...s, selectedProviderIndex: next }));
+            return next;
+          });
+        } else if (key.return && !providerConfirmed.current) {
+          providerConfirmed.current = true;
+          setConfirmedProvider(SETUP_PROVIDERS[providerCursorIdx].id);
+        }
+        return;
+      }
+
+      if (state.phase === 'copilot-install-confirm') {
+        if (input.toLowerCase() === 'y') setInstallDecision(true);
+        if (input.toLowerCase() === 'n') setInstallDecision(false);
+        return;
+      }
+
+      if (state.phase === 'copilot-auth-confirm') {
+        if (input.toLowerCase() === 'y') setAuthDecision(true);
+        if (input.toLowerCase() === 'n') setAuthDecision(false);
+        return;
+      }
+
       if (state.phase !== 'model-select') return;
       if (key.upArrow) {
         setCursorIdx((i) => {
@@ -318,10 +375,17 @@ function SetupApp({ options }: { options: ISetupOptions }) {
         setConfirmedModel(SETUP_MODELS[cursorIdx].name);
       }
     },
-    { isActive: state.phase === 'model-select' },
+    {
+      isActive: [
+        'provider-select',
+        'copilot-install-confirm',
+        'copilot-auth-confirm',
+        'model-select',
+      ].includes(state.phase),
+    },
   );
 
-  // ── Phase 1–4: detect → registry → ollama check/install → model-select ──
+  // ── Phase 1–3: detect → registry → provider selection ──────────
   useEffect(() => {
     async function run() {
       try {
@@ -441,11 +505,60 @@ function SetupApp({ options }: { options: ISetupOptions }) {
           ),
         }));
 
-        // Phase 4: Check/install ollama
+        // --auto performs only detection/config/registry work. Provider setup is
+        // intentionally interactive and must never block automation.
+        setState((s) => ({ ...s, phase: options.auto ? 'done' : 'provider-select' }));
+      } catch (err: unknown) {
+        setState((s) => ({
+          ...s,
+          phase: 'error',
+          error: err instanceof Error ? err.message : String(err),
+        }));
+      }
+    }
+
+    run();
+  }, []);
+
+  // ── Phase 4: provider-specific setup ───────────────────────────
+  useEffect(() => {
+    if (!confirmedProvider) return;
+    const configPath = options.config || '.pelicanrc.json';
+
+    async function runProviderSetup() {
+      try {
+        setState((s) => ({ ...s, selectedProvider: confirmedProvider! }));
+
+        if (confirmedProvider === 'skip') {
+          await persistRemoteRerank(configPath, false);
+          setState((s) => ({ ...s, phase: 'done' }));
+          return;
+        }
+
+        if (confirmedProvider === 'copilot') {
+          setState((s) => ({ ...s, phase: 'checking-copilot' }));
+          const installed = await isCopilotInstalled();
+          setState((s) => ({
+            ...s,
+            phase: installed ? 'copilot-auth-confirm' : 'copilot-install-confirm',
+            steps: installed
+              ? [
+                  ...s.steps,
+                  {
+                    name: 'copilot',
+                    status: 'success' as const,
+                    detail: 'CLI installed',
+                    section: 'installed' as const,
+                  },
+                ]
+              : s.steps,
+          }));
+          return;
+        }
+
+        await persistRemoteRerank(configPath, false);
         setState((s) => ({ ...s, phase: 'checking-ollama' }));
-
         const ollamaInstalled = await isOllamaInstalled();
-
         if (!ollamaInstalled) {
           setState((s) => ({
             ...s,
@@ -482,19 +595,14 @@ function SetupApp({ options }: { options: ISetupOptions }) {
                     }
                   : step,
               ),
+              phase: 'done',
             }));
-            // Non-fatal — user can install manually. Skip to done.
-            setState((s) => ({ ...s, phase: 'done' }));
             return;
           }
         }
 
-        // Ensure service is running before model pull
-        if (!(await isOllamaRunning())) {
-          await startOllamaService();
-        }
+        if (!(await isOllamaRunning())) await startOllamaService();
 
-        // Phase 5: Fetch locally installed models + measure speed in parallel
         const ollama = new Ollama({ host: OLLAMA_HOST });
         const [installedList, speedBps] = await Promise.all([
           ollama
@@ -503,15 +611,13 @@ function SetupApp({ options }: { options: ISetupOptions }) {
             .catch(() => [] as string[]),
           measureInternetSpeed(),
         ]);
-
-        // Phase 6: Model selection (waits for user input via useInput)
         setState((s) => ({
           ...s,
           phase: 'model-select',
           internetSpeedBps: speedBps,
           installedModels: installedList,
         }));
-      } catch (err: unknown) {
+      } catch (err) {
         setState((s) => ({
           ...s,
           phase: 'error',
@@ -520,10 +626,117 @@ function SetupApp({ options }: { options: ISetupOptions }) {
       }
     }
 
-    run();
-  }, []);
+    void runProviderSetup();
+  }, [confirmedProvider]);
 
-  // ── Phase 5+: pull confirmed model ──────────────────────────────
+  // Install only after explicit approval. A refusal leaves Copilot disabled and
+  // prints the manual command in the setup result.
+  useEffect(() => {
+    if (installDecision == null) return;
+    const configPath = options.config || '.pelicanrc.json';
+
+    async function handleInstallDecision() {
+      if (!installDecision) {
+        await persistRemoteRerank(configPath, false, 'copilot');
+        setState((s) => ({
+          ...s,
+          phase: 'done',
+          steps: [
+            ...s.steps,
+            {
+              name: 'copilot',
+              status: 'error' as const,
+              detail: 'not installed · run npm install -g @github/copilot',
+              section: 'installed' as const,
+            },
+          ],
+        }));
+        return;
+      }
+
+      try {
+        setState((s) => ({
+          ...s,
+          phase: 'installing-copilot',
+          steps: [
+            ...s.steps,
+            {
+              name: 'copilot',
+              status: 'loading' as const,
+              detail: 'npm install -g @github/copilot',
+              section: 'installed' as const,
+            },
+          ],
+        }));
+        await installCopilot();
+        if (!(await isCopilotInstalled())) throw new Error('installation could not be verified');
+        setState((s) => ({
+          ...s,
+          phase: 'copilot-auth-confirm',
+          steps: s.steps.map((step) =>
+            step.name === 'copilot'
+              ? { ...step, status: 'success' as const, detail: 'CLI installed' }
+              : step,
+          ),
+        }));
+      } catch (err) {
+        await persistRemoteRerank(configPath, false, 'copilot');
+        setState((s) => ({
+          ...s,
+          phase: 'error',
+          error: `Copilot install failed: ${err instanceof Error ? err.message : String(err)}. Run npm install -g @github/copilot manually.`,
+        }));
+      }
+    }
+
+    void handleInstallDecision();
+  }, [installDecision]);
+
+  // Copilot owns authentication and model persistence. Ink releases raw input
+  // when these phases become inactive, then the child receives the terminal.
+  useEffect(() => {
+    if (authDecision == null) return;
+    const configPath = options.config || '.pelicanrc.json';
+
+    async function finishCopilotSetup() {
+      try {
+        if (authDecision) {
+          setState((s) => ({ ...s, phase: 'copilot-login' }));
+          await yieldTerminal();
+          await loginCopilot();
+        }
+        setState((s) => ({ ...s, phase: 'copilot-model-select' }));
+        await yieldTerminal();
+        await openCopilotModelPicker();
+        await persistRemoteRerank(configPath, true, 'copilot');
+        setState((s) => ({
+          ...s,
+          phase: 'done',
+          steps: [
+            ...s.steps,
+            {
+              name: 'reranker',
+              status: 'success' as const,
+              detail: 'GitHub Copilot ready · model managed by /model',
+              section: 'installed' as const,
+              kind: 'model' as const,
+            },
+          ],
+        }));
+      } catch (err) {
+        await persistRemoteRerank(configPath, false, 'copilot');
+        setState((s) => ({
+          ...s,
+          phase: 'error',
+          error: `Copilot setup did not complete: ${err instanceof Error ? err.message : String(err)}`,
+        }));
+      }
+    }
+
+    void finishCopilotSetup();
+  }, [authDecision]);
+
+  // ── Local model pull ────────────────────────────────────────────
   useEffect(() => {
     if (!confirmedModel) return;
 

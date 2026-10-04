@@ -135,10 +135,17 @@ export type SetupPhase =
   | 'confirming'
   | 'saving'
   | 'building-registry'
+  | 'provider-select'
   | 'checking-ollama'
   | 'installing-ollama'
   | 'model-select'
   | 'pulling-model'
+  | 'checking-copilot'
+  | 'copilot-install-confirm'
+  | 'installing-copilot'
+  | 'copilot-auth-confirm'
+  | 'copilot-login'
+  | 'copilot-model-select'
   | 'done'
   | 'error';
 
@@ -163,6 +170,10 @@ export interface ISetupState {
   projectName?: string;
   /** Currently highlighted model index during model-select phase. */
   selectedModelIndex?: number;
+  /** Currently highlighted AI provider during provider-select phase. */
+  selectedProviderIndex?: number;
+  /** Provider selected during this setup run. */
+  selectedProvider?: 'ollama' | 'copilot' | 'skip';
   /** Measured internet speed in bytes/sec. Used to personalise download time estimates. */
   internetSpeedBps?: number;
   /** Models already present in the local Ollama store. */

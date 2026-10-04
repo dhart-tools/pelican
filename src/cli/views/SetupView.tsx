@@ -7,6 +7,7 @@ import { ModelDownloadProgress } from '@/cli/components/ModelDownloadProgress';
 import { Panel } from '@/cli/components/Panel';
 import { SectionDivider } from '@/cli/components/SectionDivider';
 import { SETUP_MODELS, downloadMinutes } from '@/cli/setup-models';
+import { SETUP_PROVIDERS } from '@/cli/setup-providers';
 import { palette } from '@/cli/theme';
 import { ISetupState, ISetupStep } from '@/cli/types';
 
@@ -104,6 +105,48 @@ function isInstalled(modelName: string, installedModels: string[]): boolean {
   );
 }
 
+function ProviderSelectMenu({ selectedIndex }: { selectedIndex: number }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionLabel label="Choose AI reranker" />
+      <Box flexDirection="column" marginTop={1}>
+        {SETUP_PROVIDERS.map((provider, index) => {
+          const active = index === selectedIndex;
+          return (
+            <Box key={provider.id} paddingX={5}>
+              <Text color={active ? palette.brand : palette.muted} bold>
+                {active ? '●' : '○'}
+              </Text>
+              <Text>{'  '}</Text>
+              <Text color={active ? palette.cyan : palette.text} bold>
+                {provider.name.padEnd(20)}
+              </Text>
+              <Text color={active ? palette.sub : palette.dim}>{provider.detail}</Text>
+            </Box>
+          );
+        })}
+      </Box>
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.muted}>↑↓ navigate · enter to confirm</Text>
+      </Box>
+    </Box>
+  );
+}
+
+function Confirmation({ title, detail }: { title: string; detail: string }) {
+  return (
+    <Box flexDirection="column" marginTop={1}>
+      <SectionLabel label={title} />
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.sub}>{detail}</Text>
+      </Box>
+      <Box paddingX={5} marginTop={1}>
+        <Text color={palette.muted}>y confirm · n skip</Text>
+      </Box>
+    </Box>
+  );
+}
+
 function ModelSelectMenu({
   selectedIndex,
   internetSpeedBps,
@@ -198,6 +241,7 @@ function ModelSelectMenu({
 export function SetupView(state: ISetupState) {
   const isDone = state.phase === 'done';
   const isError = state.phase === 'error';
+  const isProviderSelect = state.phase === 'provider-select';
   const isModelSelect = state.phase === 'model-select';
 
   const borderColor = isError ? palette.rose : isDone ? palette.emerald : palette.border;
@@ -253,6 +297,35 @@ export function SetupView(state: ISetupState) {
         </>
       )}
 
+      {isProviderSelect && <ProviderSelectMenu selectedIndex={state.selectedProviderIndex ?? 0} />}
+
+      {state.phase === 'copilot-install-confirm' && (
+        <Confirmation
+          title="Install GitHub Copilot CLI?"
+          detail="npm install -g @github/copilot · changes your global npm environment"
+        />
+      )}
+
+      {state.phase === 'copilot-auth-confirm' && (
+        <Confirmation
+          title="Authenticate GitHub Copilot now?"
+          detail="Copilot owns and stores the credential; Pelican never reads it"
+        />
+      )}
+
+      {state.phase === 'copilot-model-select' && (
+        <Box flexDirection="column" marginTop={1}>
+          <SectionLabel label="Choose Copilot model" />
+          <Box paddingX={5} marginTop={1}>
+            <Text color={palette.sub}>In Copilot, run </Text>
+            <Text color={palette.cyan} bold>
+              /model
+            </Text>
+            <Text color={palette.sub}> · choose a model · then exit Copilot</Text>
+          </Box>
+        </Box>
+      )}
+
       {isModelSelect && (
         <ModelSelectMenu
           selectedIndex={state.selectedModelIndex ?? 1}
@@ -272,6 +345,7 @@ export function SetupView(state: ISetupState) {
             <Text color={palette.text} bold>
               pelican analyze
             </Text>
+            {state.selectedProvider === 'ollama' && <Text color={palette.amber}> --rerank</Text>}
             <Text color={palette.dim}> --files </Text>
             <Text color={palette.cyan}>{'<path>'}</Text>
           </Box>

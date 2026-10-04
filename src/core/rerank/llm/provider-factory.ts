@@ -1,5 +1,6 @@
 import { IRerankConfig } from '@/types/config';
 
+import { CopilotProvider } from './copilot-provider';
 import { OpenRouterProvider } from './openrouter-provider';
 import { ILLMProvider, LLMProviderError } from './provider';
 
@@ -33,6 +34,8 @@ export function createProvider(
         maxRetries: config.maxRetries,
       });
     }
+    case 'copilot':
+      return new CopilotProvider();
     default:
       throw new LLMProviderError(`unknown rerank provider: ${String(config.provider)}`);
   }

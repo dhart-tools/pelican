@@ -24,7 +24,7 @@ export interface ITemporalConfig {
 }
 
 /** LLM provider id. New providers are added to this union + the factory. */
-export type RerankProvider = 'openrouter';
+export type RerankProvider = 'openrouter' | 'copilot';
 
 /**
  * How strictly the LLM judges a candidate's relevance to the change.
@@ -49,16 +49,18 @@ export interface IRerankConfig {
   /** Which LLM backend to call. Only the value drives the factory; the shape is
    * provider-agnostic so more backends slot in later. */
   provider: RerankProvider;
-  /** Provider model slug, e.g. 'anthropic/claude-sonnet-4.5' or 'z-ai/glm-4.6'. */
+  /** OpenRouter model slug. Copilot uses the choice persisted by its `/model` command. */
   model: string;
-  /** Name of the env var holding the API key (preferred — keeps the secret out
+  /** Local Ollama model used by `analyze --rerank`. */
+  ollamaModel?: string;
+  /** OpenRouter API-key env var (preferred — keeps the secret out
    * of the config file). Default 'OPENROUTER_API_KEY'. */
   apiKeyEnv: string;
   /** API key inline. Convenient but RISKY — anything in the config file can be
    * committed/shared/logged. Prefer apiKeyEnv. When set, this wins over the env
    * var. Keep this config out of version control. */
   apiKey?: string;
-  /** Provider base URL (override for proxies/self-host). */
+  /** OpenRouter base URL (override for proxies/self-host). */
   baseUrl: string;
   /** Only candidates whose pelican score falls in [min, max) are sent to the
    * LLM. Below min: already dropped. At/above max: auto-kept (strong structural
@@ -91,7 +93,7 @@ export interface IRerankConfig {
   /** Per-request timeout (ms). On timeout/error the candidate is KEPT (fail-open
    * → recall-safe). */
   timeoutMs: number;
-  /** Retries on a rate-limit (429) or transient 5xx, with exponential backoff
+  /** OpenRouter retries on a rate-limit (429) or transient 5xx, with exponential backoff
    * honouring any Retry-After header. After these are exhausted the call
    * fails open (candidate kept). Default 3. */
   maxRetries: number;

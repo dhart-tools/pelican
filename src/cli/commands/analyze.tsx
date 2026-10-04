@@ -579,6 +579,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         const reranker = new SemanticReranker({
           debug: options.debug,
+          ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
           ...(options.biEncoder === false && { biEncoderPrefilter: false }),
           ...(options.base && { base: options.base }),
           ...(options.target && { target: options.target }),
@@ -877,6 +878,7 @@ export async function runHeadless(
   // see Ink TUI in this mode.
   const reranker = new SemanticReranker({
     debug,
+    ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
     ...(options.biEncoder === false && { biEncoderPrefilter: false }),
     ...(options.base && { base: options.base }),
     ...(options.target && { target: options.target }),
