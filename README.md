@@ -179,8 +179,6 @@ Everything lives in **`.pelicanrc.json`** at your repo root, in four clear block
     "enabled": false,                   // turn on the OpenRouter or Copilot pass
     "provider": "openrouter",           // "openrouter" or "copilot"
     "model": "nvidia/nemotron-3-nano-30b-a3b", // OpenRouter only
-    "copilotModel": "auto",             // Copilot CLI model selected during setup
-    "ollamaModel": "qwen3.5:latest",    // local `analyze --rerank` only
     "apiKeyEnv": "OPENROUTER_API_KEY",  // env var NAME — preferred over inline apiKey
     "candidateBand": { "min": 0.4, "max": 1.0 },
     "protectAnchors": false,            // judge anchors too (don't auto-keep)
@@ -248,6 +246,19 @@ Choose **GitHub Copilot** in `pelican setup`. Pelican then:
 1. Checks for the real Copilot CLI. If it is missing, Pelican shows `npm install -g @github/copilot` and installs it only after you confirm. It never uses `sudo`.
 2. Offers to run `copilot login`. Copilot stores and reuses the credential (normally in the OS credential store; it may offer its config file when no store is available); Pelican stores no token or login flag.
 3. Shows GitHub-supported models inside Pelican. Your choice is saved as `rerank.copilotModel` and passed to every Copilot request. Company policy can restrict which models your account may use; if that happens, choose another model in `.pelicanrc.json` or rerun `pelican setup`. `auto` is the recommended portable choice.
+
+After Copilot setup, the provider-specific part of the config contains only:
+
+```jsonc
+"rerank": {
+  "enabled": true,
+  "provider": "copilot",
+  "copilotModel": "auto"
+  // shared controls such as candidateBand and timeoutMs may follow
+}
+```
+
+OpenRouter-only fields (`model`, `apiKeyEnv`, `apiKey`, `baseUrl`, and `maxRetries`) are removed when you switch to Copilot. The in-memory config loader still supplies safe defaults internally; they are not written back into `.pelicanrc.json`.
 
 To use another GitHub account, start `copilot` and use:
 

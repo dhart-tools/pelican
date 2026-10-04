@@ -11,6 +11,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 import { loadProjectConfig, getMergedAliases, getIgnoreDirs } from '@/cli/config-loader';
 import { installCopilot, isCopilotInstalled, loginCopilot } from '@/cli/copilot-setup';
+import { configureCopilotRerank } from '@/cli/rerank-config';
 import { SETUP_COPILOT_MODELS } from '@/cli/setup-copilot-models';
 import { SETUP_MODELS } from '@/cli/setup-models';
 import { SETUP_PROVIDERS, SetupProvider } from '@/cli/setup-providers';
@@ -50,12 +51,9 @@ async function persistRemoteRerank(
 ): Promise<void> {
   const content = await fs.readFile(configPath, 'utf-8');
   const cfg = JSON.parse(content);
-  cfg.rerank = {
-    ...(cfg.rerank ?? {}),
-    enabled,
-    ...(provider ? { provider } : {}),
-    ...(copilotModel ? { copilotModel } : {}),
-  };
+  cfg.rerank = provider
+    ? configureCopilotRerank(cfg.rerank ?? {}, enabled, copilotModel)
+    : { ...(cfg.rerank ?? {}), enabled };
   await fs.writeFile(configPath, JSON.stringify(cfg, null, 2));
 }
 
