@@ -294,7 +294,7 @@ pelican demo                   # guided walkthrough, no setup required
 | `-b, --base <ref>` / `-t, --target <ref>` | Derive the change from a git range (default `HEAD~1..HEAD`) |
 | `-o, --output <tui\|json\|list>` | Output format (default `tui`) |
 | `--ci` | Non-interactive, JSON to stdout — for pipelines |
-| `--rerank` | Add the local Ollama semantic reranker; Copilot/OpenRouter are enabled through config instead |
+| `--rerank` | Add the local Ollama semantic reranker when no hosted provider is enabled; a configured Copilot/OpenRouter provider takes precedence |
 | `--min-confidence <n>` / `--max-results <n>` | Override config thresholds for this run |
 | `--all` | Show every suggestion (ignore the result cap) |
 | `--expanded` | Per-source-file breakdown instead of the combined list |

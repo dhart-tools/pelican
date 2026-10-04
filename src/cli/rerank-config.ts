@@ -23,3 +23,11 @@ export function configureCopilotRerank(
     ...(copilotModel ? { copilotModel } : {}),
   };
 }
+
+/** A configured hosted provider takes precedence over the legacy local flag. */
+export function shouldUseOllamaRerank(
+  requested: boolean | undefined,
+  hostedProviderEnabled: boolean,
+): boolean {
+  return requested === true && !hostedProviderEnabled;
+}

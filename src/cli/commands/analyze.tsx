@@ -13,6 +13,7 @@ import {
   getMergedAliases,
   getIgnoreDirs,
 } from '@/cli/config-loader';
+import { shouldUseOllamaRerank } from '@/cli/rerank-config';
 import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult, IProjectConfig } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
@@ -570,12 +571,25 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
           return;
         }
 
-        // Phase 4: Warm up reranker model.
-        //
-        // We deliberately trigger model load BEFORE scoring so the UI can
-        // Phase 4: Check Ollama reranker.
-        // Non-blocking — if unavailable, .pelican.lock cache still works.
-        setState((s) => ({ ...s, phase: 'checking-reranker' }));
+        // A configured hosted provider is the selected reranker. `--rerank`
+        // enables local Ollama only when no hosted provider is enabled, so a
+        // Copilot/OpenRouter setup never unexpectedly runs both providers.
+        const hostedProvider = config.rerank?.enabled ? config.rerank.provider : undefined;
+        const hostedStatus =
+          hostedProvider === 'copilot'
+            ? 'github copilot selected'
+            : hostedProvider === 'openrouter'
+              ? 'openrouter selected'
+              : undefined;
+        const useOllamaReranker = shouldUseOllamaRerank(options.rerank, hostedProvider != null);
+
+        // Phase 4: Check the selected reranker. Ollama warm-up is non-blocking;
+        // if unavailable, .pelican.lock cache still works.
+        setState((s) => ({
+          ...s,
+          phase: 'checking-reranker',
+          rerankerStatus: hostedStatus ?? (useOllamaReranker ? 'checking ollama' : 'not enabled'),
+        }));
 
         const reranker = new SemanticReranker({
           debug: options.debug,
@@ -597,9 +611,10 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
 
         let rerankerUnavailable = false;
         let rerankerError: string | undefined;
-        if (options.rerank === true) {
+        if (useOllamaReranker) {
           try {
             await reranker.warmUp();
+            setState((s) => ({ ...s, rerankerStatus: 'ollama ready' }));
           } catch (err) {
             rerankerUnavailable = true;
             rerankerError =
@@ -612,6 +627,7 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
               ...s,
               rerankerUnavailable: true,
               rerankerError,
+              rerankerStatus: 'ollama unavailable · using lock cache',
             }));
           }
         } else {
@@ -876,6 +892,8 @@ export async function runHeadless(
   // Headless progress: write to stderr with a throttled once-per-5%-per-file
   // line so JSON on stdout stays clean. CI logs capture stderr; users don't
   // see Ink TUI in this mode.
+  const hostedProvider = config.rerank?.enabled ? config.rerank.provider : undefined;
+  const useOllamaReranker = shouldUseOllamaRerank(options.rerank, hostedProvider != null);
   const reranker = new SemanticReranker({
     debug,
     ...(config.rerank?.ollamaModel && { ollamaModel: config.rerank.ollamaModel }),
@@ -892,7 +910,7 @@ export async function runHeadless(
     },
   });
 
-  let rerankerUnavailable = options.rerank !== true;
+  let rerankerUnavailable = !useOllamaReranker;
   if (!rerankerUnavailable) {
     try {
       await reranker.warmUp();

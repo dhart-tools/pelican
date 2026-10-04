@@ -55,7 +55,7 @@ export function AnalyzeView(state: IAnalyzeState) {
       case 'detecting-changes':
         return `${state.changedFiles.length} file${state.changedFiles.length !== 1 ? 's' : ''}`;
       case 'checking-reranker':
-        return state.rerankerUnavailable ? 'unavailable · using lock cache' : 'ollama ready';
+        return state.rerankerStatus ?? 'not enabled';
       default:
         return undefined;
     }

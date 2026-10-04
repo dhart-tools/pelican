@@ -1,4 +1,4 @@
-import { configureCopilotRerank } from '@/cli/rerank-config';
+import { configureCopilotRerank, shouldUseOllamaRerank } from '@/cli/rerank-config';
 
 describe('configureCopilotRerank', () => {
   it('removes fields owned by OpenRouter and Ollama while preserving shared controls', () => {
@@ -28,5 +28,15 @@ describe('configureCopilotRerank', () => {
       maxCandidates: 40,
       timeoutMs: 30000,
     });
+  });
+});
+
+describe('shouldUseOllamaRerank', () => {
+  it('does not add Ollama when a hosted provider is enabled', () => {
+    expect(shouldUseOllamaRerank(true, true)).toBe(false);
+  });
+
+  it('uses Ollama when explicitly requested without a hosted provider', () => {
+    expect(shouldUseOllamaRerank(true, false)).toBe(true);
   });
 });

@@ -24,6 +24,20 @@ describe('AnalyzeView', () => {
     expect(lastFrame()).toContain('scoring relevance');
   });
 
+  it('shows Copilot instead of Ollama when Copilot is selected', () => {
+    const { lastFrame } = render(
+      <AnalyzeView
+        phase="done"
+        changedFiles={['src/Button.tsx']}
+        results={[]}
+        progress={100}
+        rerankerStatus="github copilot selected"
+      />,
+    );
+    expect(lastFrame()).toContain('github copilot selected');
+    expect(lastFrame()).not.toContain('ollama ready');
+  });
+
   it('displays results table when done with results', () => {
     const { lastFrame } = render(
       <AnalyzeView
