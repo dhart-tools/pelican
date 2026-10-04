@@ -22,6 +22,11 @@ const base: IRerankConfig = {
 };
 
 describe('createProvider — key resolution', () => {
+  it('creates Copilot without an OpenRouter API key', () => {
+    const p = createProvider({ ...base, provider: 'copilot' }, {});
+    expect(p.id).toBe('copilot');
+  });
+
   it('uses the inline apiKey when set', () => {
     const p = createProvider({ ...base, apiKey: 'sk-inline' }, {});
     expect(p.id).toBe('openrouter');
