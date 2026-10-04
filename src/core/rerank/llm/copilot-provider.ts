@@ -3,6 +3,8 @@ import * as fs from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 
+import { prepareCommand } from '@/utils/subprocess';
+
 import { ILLMCompleteOptions, ILLMMessage, ILLMProvider, LLMProviderError } from './provider';
 
 const MAX_BUFFER = 1024 * 1024;
@@ -24,22 +26,23 @@ export type CopilotRunner = (
 
 const defaultRunner: CopilotRunner = (args, options) =>
   new Promise((resolve, reject) => {
+    const prepared = prepareCommand('copilot', args, {
+      ...process.env,
+      COPILOT_AUTO_UPDATE: 'false',
+      GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS: 'false',
+      GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS: 'false',
+      GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP: 'false',
+    });
     execFile(
-      'copilot',
-      args,
+      prepared.command,
+      prepared.args,
       {
         cwd: options.cwd,
         timeout: options.timeoutMs,
         killSignal: 'SIGTERM',
         maxBuffer: MAX_BUFFER,
         encoding: 'utf-8',
-        env: {
-          ...process.env,
-          COPILOT_AUTO_UPDATE: 'false',
-          GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS: 'false',
-          GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS: 'false',
-          GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP: 'false',
-        },
+        env: prepared.env,
       },
       (error, stdout, stderr) => {
         if (error) {

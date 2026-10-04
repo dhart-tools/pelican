@@ -1,6 +1,8 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 
+import { prepareCommand } from '@/utils/subprocess';
+
 const execFileP = promisify(execFile);
 
 export type CopilotSetupRunner = (
@@ -10,7 +12,11 @@ export type CopilotSetupRunner = (
 ) => Promise<{ stdout: string; stderr: string }>;
 
 const defaultRunner: CopilotSetupRunner = async (command, args, options) => {
-  const { stdout, stderr } = await execFileP(command, args, options);
+  const prepared = prepareCommand(command, args);
+  const { stdout, stderr } = await execFileP(prepared.command, prepared.args, {
+    ...options,
+    env: prepared.env,
+  });
   return { stdout: String(stdout), stderr: String(stderr) };
 };
 
@@ -32,7 +38,11 @@ export async function installCopilot(run: CopilotSetupRunner = defaultRunner): P
 
 function runInteractive(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const child = spawn('copilot', args, { stdio: 'inherit' });
+    const prepared = prepareCommand('copilot', args);
+    const child = spawn(prepared.command, prepared.args, {
+      stdio: 'inherit',
+      env: prepared.env,
+    });
     child.once('error', reject);
     child.once('exit', (code, signal) => {
       if (code === 0) {
