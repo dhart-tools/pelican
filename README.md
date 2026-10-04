@@ -120,7 +120,7 @@ npm run build
 npm link              # puts `pelican` on your PATH
 
 # 2. tell Pelican where your code (and tests) live
-pelican setup         # interactive — writes .pelicanrc.json
+pelican setup         # writes .pelicanrc.json and chooses an AI reranker
 
 # 3. analyze a change
 pelican analyze --files src/cart-totals.ts
@@ -176,9 +176,10 @@ Everything lives in **`.pelicanrc.json`** at your repo root, in four clear block
   },
 
   "rerank": {
-    "enabled": false,                   // turn on to add the LLM precision pass
-    "provider": "openrouter",
-    "model": "nvidia/nemotron-3-nano-30b-a3b",
+    "enabled": false,                   // turn on the OpenRouter or Copilot pass
+    "provider": "openrouter",           // "openrouter" or "copilot"
+    "model": "nvidia/nemotron-3-nano-30b-a3b", // OpenRouter only
+    "ollamaModel": "qwen3.5:latest",    // local `analyze --rerank` only
     "apiKeyEnv": "OPENROUTER_API_KEY",  // env var NAME — preferred over inline apiKey
     "candidateBand": { "min": 0.4, "max": 1.0 },
     "protectAnchors": false,            // judge anchors too (don't auto-keep)
@@ -188,7 +189,7 @@ Everything lives in **`.pelicanrc.json`** at your repo root, in four clear block
     "highPrecision": false,             // true = send the whole changed file + diff
     "maxCandidates": 40,
     "concurrency": 4,
-    "maxRetries": 3,
+    "maxRetries": 3,                   // OpenRouter only
     "timeoutMs": 30000
   }
 }
@@ -196,7 +197,7 @@ Everything lives in **`.pelicanrc.json`** at your repo root, in four clear block
 
 > **Two repos?** Source and tests in separate checkouts (e.g. `dm-web` + `bic-unity-dm-tests`)? Set `test.root` to the test repo. Pelican scans both, resolves cross-repo imports through `pathAliases`, and tracks each file's own git history.
 
-> **Security:** prefer `apiKeyEnv` (the env-var *name*) over an inline `apiKey` — a config file gets committed, shared, and logged. If you use inline `apiKey`, keep `.pelicanrc.json` out of version control.
+> **Security:** for OpenRouter, prefer `apiKeyEnv` (the env-var *name*) over an inline `apiKey` — a config file gets committed, shared, and logged. If you use inline `apiKey`, keep `.pelicanrc.json` out of version control. Pelican never reads or stores GitHub Copilot credentials.
 
 ---
 
@@ -206,8 +207,9 @@ Static analysis is great at *recall* but floods on *precision*: a change to `car
 
 | Knob | What it does |
 |---|---|
-| `enabled` | Off by default. No key set → Pelican warns loudly and falls back to structural results. |
-| `model` | Any OpenRouter slug. Default is a small, fast NVIDIA Nemotron that reasons well; add `:free` to run at $0 (rate-limited), or keep it paid for no per-minute cap. |
+| `enabled` | Off by default. Provider setup/auth errors make Pelican warn and fall back to structural results. |
+| `provider` | `openrouter` or `copilot`. Local Ollama is a separate `--rerank` path. |
+| `model` | Any OpenRouter slug. Copilot uses the model selected in its own `/model` picker. |
 | `candidateBand` | Only tests scoring in `[min, max)` are judged; below `min` already gone, at/above `max` auto-kept. |
 | `dropConfidence` | **The recall guard.** A test is dropped *only* when the model says "not relevant" with confidence ≥ this (default `0.9`). Any doubt → kept. |
 | `judgeMode` | `strict` = keep only tests that *primarily exercise* the change (matches how a tester picks). `broad` = keep anything a regression *could* break. |
@@ -224,6 +226,39 @@ Static analysis is great at *recall* but floods on *precision*: a change to `car
      ─ Direct Impact · @cart-totals.ts
        the change to formatTotal() drives the price the test asserts on
 ```
+
+### Choose an AI reranker
+
+`pelican setup` offers three choices:
+
+| Choice | Setup and runtime |
+|---|---|
+| **Local model** | Installs/checks Ollama, saves `rerank.ollamaModel`, and runs only when you pass `pelican analyze --rerank …`. It does not enable OpenRouter. |
+| **GitHub Copilot** | Checks the Copilot CLI, offers to install it, hands authentication and model choice to Copilot, then saves `rerank.provider: "copilot"` with `rerank.enabled: true`. Run normal `pelican analyze …`; no `--rerank` flag is needed. |
+| **Skip AI reranking** | Leaves `rerank.enabled: false`; Pelican uses static analysis only. |
+
+OpenRouter remains manually configured: set `rerank.enabled: true`, `rerank.provider: "openrouter"`, and `OPENROUTER_API_KEY`, then run normal `pelican analyze …`.
+
+### GitHub Copilot CLI setup
+
+Choose **GitHub Copilot** in `pelican setup`. Pelican then:
+
+1. Checks for the real Copilot CLI. If it is missing, Pelican shows `npm install -g @github/copilot` and installs it only after you confirm. It never uses `sudo`.
+2. Offers to run `copilot login`. Copilot stores and reuses the credential (normally in the OS credential store; it may offer its config file when no store is available); Pelican stores no token or login flag.
+3. Opens Copilot so you can enter `/model`, choose from the models available to your account, and exit. To change the model later, run `copilot` and use `/model` again (**singular**, not `/models`).
+
+To use another GitHub account, start `copilot` and use:
+
+```text
+/user list       # show saved accounts
+/user switch     # choose another saved account
+/logout          # remove the current login
+/login           # authenticate another account
+```
+
+You can also run `copilot login` directly from your terminal after logging out.
+
+At runtime Pelican sends only the rerank prompt to Copilot in a temporary empty directory. Repository instructions, built-in/workspace MCP integrations, and tools are disabled for that call. If Copilot is missing, logged out, times out, or returns an invalid response, Pelican warns and keeps the static-analysis candidates. It does not retry Copilot calls.
 
 ---
 
@@ -246,6 +281,7 @@ pelican demo                   # guided walkthrough, no setup required
 | `-b, --base <ref>` / `-t, --target <ref>` | Derive the change from a git range (default `HEAD~1..HEAD`) |
 | `-o, --output <tui\|json\|list>` | Output format (default `tui`) |
 | `--ci` | Non-interactive, JSON to stdout — for pipelines |
+| `--rerank` | Add the local Ollama semantic reranker; Copilot/OpenRouter are enabled through config instead |
 | `--min-confidence <n>` / `--max-results <n>` | Override config thresholds for this run |
 | `--all` | Show every suggestion (ignore the result cap) |
 | `--expanded` | Per-source-file breakdown instead of the combined list |
@@ -265,7 +301,23 @@ pelican demo                   # guided walkthrough, no setup required
     npx cypress run --spec "$(jq -r '.results[].suggestedTests[].testFile' picked.json | paste -sd,)"
 ```
 
-Add `rerank.enabled` and an `OPENROUTER_API_KEY` secret and the same command runs the LLM precision pass — recall stays safe, the list gets tighter.
+For OpenRouter, enable `rerank`, select the `openrouter` provider, and add an `OPENROUTER_API_KEY` secret.
+
+For Copilot, select the `copilot` provider and give the job a supported Copilot token. A dedicated fine-grained personal access token with the **Copilot Requests** account permission is recommended; classic personal access tokens are not supported. Copilot checks `COPILOT_GITHUB_TOKEN`, then `GH_TOKEN`, then `GITHUB_TOKEN`:
+
+```yaml
+- name: Install GitHub Copilot CLI
+  run: npm install -g @github/copilot
+
+- name: Pick the tests that matter with Copilot
+  env:
+    COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+  run: pelican analyze --base origin/main --target HEAD --ci > picked.json
+```
+
+Both hosted providers fail open: authentication, network, timeout, and response errors retain the static candidates rather than dropping tests.
+
+An ephemeral runner uses Copilot's default model unless you also set `COPILOT_MODEL` to a model available to your account; the interactive `/model` choice is stored only in that machine's Copilot configuration.
 
 ---
 
@@ -342,7 +394,7 @@ src/
     registry/     the file registry + two-repo builder
     scoring/      the engine, anchor gate, 16 scorers
     git/          per-repo history provider (creation + co-change)
-    rerank/llm/   provider abstraction, OpenRouter, the recall-safe reranker
+    rerank/llm/   provider abstraction, OpenRouter/Copilot, the recall-safe reranker
   types/          shared contracts
 ```
 
