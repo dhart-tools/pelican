@@ -7,7 +7,7 @@ const WINDOWS_COMMAND =
   `$ErrorActionPreference = 'Stop'; ` +
   `try { ` +
   `$childCommand = $env:${CHILD_COMMAND_ENV}; ` +
-  `$childArgs = @($env:${CHILD_ARGS_ENV} | ConvertFrom-Json); ` +
+  `$childArgs = $env:${CHILD_ARGS_ENV} | ConvertFrom-Json; ` +
   `& $childCommand @childArgs; ` +
   `if ($null -eq $LASTEXITCODE) { exit 0 }; ` +
   `exit $LASTEXITCODE ` +
