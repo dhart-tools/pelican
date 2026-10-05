@@ -205,8 +205,9 @@ async function applyLLMRerank(
   // parallel files below never multiply into (files × candidates) requests.
   const limiter = createLimiter(rc.concurrency);
   if (debug) {
+    const model = rc.provider === 'copilot' ? rc.copilotModel : rc.model;
     debugLog(
-      `rerank: provider=${rc.provider} model=${rc.model} band=[${rc.candidateBand.min},${rc.candidateBand.max}) ` +
+      `rerank: provider=${rc.provider} model=${model} band=[${rc.candidateBand.min},${rc.candidateBand.max}) ` +
         `protectAnchors=${rc.protectAnchors} keepThreshold=${rc.keepThreshold} ` +
         `concurrency=${rc.concurrency} maxRetries=${rc.maxRetries}`,
     );
@@ -577,9 +578,9 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
         const hostedProvider = config.rerank?.enabled ? config.rerank.provider : undefined;
         const hostedStatus =
           hostedProvider === 'copilot'
-            ? 'github copilot selected'
+            ? `github copilot · ${config.rerank?.copilotModel ?? 'auto'}`
             : hostedProvider === 'openrouter'
-              ? 'openrouter selected'
+              ? `openrouter · ${config.rerank?.model ?? 'default model'}`
               : undefined;
         const useOllamaReranker = shouldUseOllamaRerank(options.rerank, hostedProvider != null);
 

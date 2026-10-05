@@ -31,10 +31,10 @@ describe('AnalyzeView', () => {
         changedFiles={['src/Button.tsx']}
         results={[]}
         progress={100}
-        rerankerStatus="github copilot selected"
+        rerankerStatus="github copilot · gpt-5.3-codex"
       />,
     );
-    expect(lastFrame()).toContain('github copilot selected');
+    expect(lastFrame()).toContain('github copilot · gpt-5.3-codex');
     expect(lastFrame()).not.toContain('ollama ready');
   });
 
