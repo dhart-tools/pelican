@@ -296,7 +296,8 @@ pelican demo                   # guided walkthrough, no setup required
 | `--ci` | Non-interactive, JSON to stdout — for pipelines |
 | `--rerank` | Add the local Ollama semantic reranker when no hosted provider is enabled; a configured Copilot/OpenRouter provider takes precedence |
 | `--min-confidence <n>` / `--max-results <n>` | Override config thresholds for this run |
-| `--all` | Show every suggestion (ignore the result cap) |
+| `--extended` | Include SHOULD CHECK suggestions; the default focused view contains MUST RUN only |
+| `--all` | Ignore the result-count cap within the selected mode; use `--extended --all` for the complete broader list |
 | `--expanded` | Per-source-file breakdown instead of the combined list |
 | `--debug` | Write full scoring diagnostics to `./analyze-debug.log` |
 | `--no-cache` | Bypass the `.pelican.lock` cache |
@@ -382,7 +383,7 @@ Scores map to three bands you actually act on:
 | **SHOULD CHECK** | Medium — a real but less certain connection |
 | **GOOD TO HAVE** | Low — worth a glance if the area is sensitive |
 
-Tune the cutoffs with `behaviour.minConfidence` (keep/drop) and `behaviour.highConfidence` (HIGH vs MEDIUM).
+`pelican analyze` returns MUST RUN by default, which also prevents lower-confidence candidates from consuming hosted-LLM tokens. Pass `--extended` to include SHOULD CHECK. Tune the cutoffs with `behaviour.minConfidence` (keep/drop) and `behaviour.highConfidence` (HIGH vs MEDIUM).
 
 </details>
 
