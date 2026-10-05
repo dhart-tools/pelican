@@ -321,13 +321,13 @@ async function applyLLMRerank(
         postRerankCount: kept.length,
       };
     }),
-  );
+  ).finally(() => provider.dispose?.());
 
   // Rerank ran but EVERY model call failed → reasoning is silently absent and
   // nothing was actually filtered. Warn loudly (recall is preserved by
   // fail-open, but the user must know the LLM didn't run).
   if (judgedTotal > 0 && failedTotal === judgedTotal) {
-    const msg = `every rerank call failed (${failedTotal}/${judgedTotal}) — check network/API key; showing structural results`;
+    const msg = `every rerank call failed (${failedTotal}/${judgedTotal}) — check provider authentication/model access or run with --debug; showing structural results`;
     process.stderr.write(`[pelican] ${msg}\n`);
     if (debug) debugLog(msg);
     onWarn?.(msg);

@@ -3,9 +3,14 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { prepareCommand } from '@/utils/subprocess';
+import { npmShimCommand, prepareCommand } from '@/utils/subprocess';
 
 describe('prepareCommand', () => {
+  it('selects npm .cmd shims explicitly on Windows', () => {
+    expect(npmShimCommand('copilot', 'win32')).toBe('copilot.cmd');
+    expect(npmShimCommand('copilot', 'darwin')).toBe('copilot');
+  });
+
   it('keeps direct argument-array execution outside Windows', () => {
     const env = { PATH: '/usr/bin' };
     expect(prepareCommand('copilot', ['--version'], env, 'darwin')).toEqual({

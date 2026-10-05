@@ -1,96 +1,138 @@
 import * as fs from 'fs';
 
-import { CopilotProvider, CopilotRunner } from '@/core/rerank/llm/copilot-provider';
+import { CopilotProvider } from '@/core/rerank/llm/copilot-provider';
 import { LLMProviderError } from '@/core/rerank/llm/provider';
 
 const messages = [
   { role: 'system' as const, content: 'Return JSON only.' },
-  { role: 'user' as const, content: 'Judge this diff: $(touch should-not-run)' },
+  { role: 'user' as const, content: 'Judge this candidate.' },
 ];
 
-describe('CopilotProvider', () => {
-  it('runs an isolated text-only prompt and removes its temporary directory', async () => {
-    let workingDirectory = '';
-    const runner: CopilotRunner = async (args, options) => {
-      workingDirectory = options.cwd;
-      expect(fs.existsSync(workingDirectory)).toBe(true);
-      expect(args).toEqual([
-        '-p',
-        '[SYSTEM MESSAGE]\nReturn JSON only.\n\n[USER MESSAGE]\nJudge this diff: $(touch should-not-run)',
-        '-s',
-        '--model=claude-sonnet-4.6',
-        '--no-auto-update',
-        '--no-color',
-        '--no-custom-instructions',
-        '--disable-builtin-mcps',
-        '--available-tools=ask_user',
-        '--no-ask-user',
-      ]);
-      expect(options.timeoutMs).toBe(1234);
-      return { stdout: '  {"relevant":true}\n', stderr: '' };
-    };
+function createSdkMocks() {
+  const session = {
+    sessionId: 'session-1',
+    sendAndWait: jest.fn(
+      async (): Promise<{ data: { content: string } } | undefined> => ({
+        data: { content: '  {"relevant":true}\n' },
+      }),
+    ),
+    abort: jest.fn(async () => undefined),
+    disconnect: jest.fn(async () => undefined),
+  };
+  const client = {
+    start: jest.fn(async () => undefined),
+    getAuthStatus: jest.fn(
+      async (): Promise<{ isAuthenticated: boolean; statusMessage?: string }> => ({
+        isAuthenticated: true,
+      }),
+    ),
+    createSession: jest.fn(async () => session),
+    deleteSession: jest.fn(async () => undefined),
+    stop: jest.fn(async () => [] as Error[]),
+    forceStop: jest.fn(async () => undefined),
+  };
+  return { client, session };
+}
 
-    const provider = new CopilotProvider({ model: 'claude-sonnet-4.6', runner });
+describe('CopilotProvider', () => {
+  it('uses one isolated SDK client and a tool-free session per completion', async () => {
+    const { client, session } = createSdkMocks();
+    let clientDirectory = '';
+    const provider = new CopilotProvider({
+      model: 'claude-haiku-4.5',
+      clientFactory: (options) => {
+        clientDirectory = options.workingDirectory ?? '';
+        expect(fs.existsSync(clientDirectory)).toBe(true);
+        expect(options).toEqual(
+          expect.objectContaining({
+            useLoggedInUser: true,
+            logLevel: 'error',
+          }),
+        );
+        return client;
+      },
+    });
+
     await expect(provider.complete(messages, { timeoutMs: 1234 })).resolves.toBe(
       '{"relevant":true}',
     );
-    expect(fs.existsSync(workingDirectory)).toBe(false);
+    await expect(provider.complete(messages, { timeoutMs: 1234 })).resolves.toBe(
+      '{"relevant":true}',
+    );
+
+    expect(client.start).toHaveBeenCalledTimes(1);
+    expect(client.getAuthStatus).toHaveBeenCalledTimes(1);
+    expect(client.createSession).toHaveBeenCalledTimes(2);
+    expect(client.createSession).toHaveBeenCalledWith({
+      model: 'claude-haiku-4.5',
+      workingDirectory: clientDirectory,
+      configDirectory: clientDirectory,
+      enableConfigDiscovery: false,
+      availableTools: [],
+      tools: [],
+      mcpServers: {},
+      customAgents: [],
+      skillDirectories: [],
+      includedBuiltinSkills: [],
+      systemMessage: { mode: 'replace', content: 'Return JSON only.' },
+    });
+    expect(session.sendAndWait).toHaveBeenCalledWith({ prompt: 'Judge this candidate.' }, 1234);
+    expect(session.disconnect).toHaveBeenCalledTimes(2);
+    expect(client.deleteSession).toHaveBeenCalledTimes(2);
+
+    await provider.dispose();
+    expect(client.stop).toHaveBeenCalledTimes(1);
+    expect(fs.existsSync(clientDirectory)).toBe(false);
   });
 
-  it('rejects an empty response and still removes its temporary directory', async () => {
-    let workingDirectory = '';
-    const provider = new CopilotProvider({
-      runner: async (_args, options) => {
-        workingDirectory = options.cwd;
-        return { stdout: '  ', stderr: '' };
-      },
-    });
-
-    await expect(provider.complete(messages)).rejects.toThrow(/empty response/);
-    expect(fs.existsSync(workingDirectory)).toBe(false);
-  });
-
-  it('turns a missing executable into an actionable provider error', async () => {
-    const provider = new CopilotProvider({
-      runner: async () => {
-        throw Object.assign(new Error('spawn copilot ENOENT'), { code: 'ENOENT' });
-      },
-    });
-
-    await expect(provider.complete(messages)).rejects.toThrow(/npm install -g @github\/copilot/);
-  });
-
-  it('adds a login hint to authentication failures', async () => {
-    const provider = new CopilotProvider({
-      runner: async () => {
-        throw Object.assign(new Error('exit 1'), { stderr: 'Not authenticated' });
-      },
-    });
-
-    await expect(provider.complete(messages)).rejects.toThrow(/copilot login/);
-  });
-
-  it('adds a login hint when authentication failure is only in the error message', async () => {
-    const provider = new CopilotProvider({
-      runner: async () => {
-        throw Object.assign(new Error('Login required'), { stderr: '' });
-      },
-    });
-
-    await expect(provider.complete(messages)).rejects.toThrow(/copilot login/);
-  });
-
-  it('reports a killed process as a timeout', async () => {
-    const provider = new CopilotProvider({
-      runner: async () => {
-        throw Object.assign(new Error('killed'), { killed: true });
-      },
-    });
+  it('aborts a timed-out session before cleaning it up', async () => {
+    const { client, session } = createSdkMocks();
+    session.sendAndWait.mockRejectedValueOnce(new Error('Timeout after 500ms'));
+    const provider = new CopilotProvider({ clientFactory: () => client });
 
     await expect(provider.complete(messages, { timeoutMs: 500 })).rejects.toEqual(
       expect.objectContaining<Partial<LLMProviderError>>({
         message: expect.stringContaining('timed out after 500ms'),
       }),
     );
+    expect(session.abort).toHaveBeenCalledTimes(1);
+    expect(session.disconnect).toHaveBeenCalledTimes(1);
+    expect(client.deleteSession).toHaveBeenCalledWith('session-1');
+    await provider.dispose();
+  });
+
+  it('rejects an empty response and still cleans up the session', async () => {
+    const { client, session } = createSdkMocks();
+    session.sendAndWait.mockResolvedValueOnce(undefined);
+    const provider = new CopilotProvider({ clientFactory: () => client });
+
+    await expect(provider.complete(messages)).rejects.toThrow(/empty response/);
+    expect(session.disconnect).toHaveBeenCalledTimes(1);
+    expect(client.deleteSession).toHaveBeenCalledTimes(1);
+    await provider.dispose();
+  });
+
+  it('turns a missing login into an actionable provider error', async () => {
+    const { client } = createSdkMocks();
+    client.getAuthStatus.mockResolvedValueOnce({
+      isAuthenticated: false,
+      statusMessage: 'No GitHub OAuth token provided',
+    });
+    const provider = new CopilotProvider({ clientFactory: () => client });
+
+    await expect(provider.complete(messages)).rejects.toThrow(/copilot login/);
+    expect(client.stop).toHaveBeenCalledTimes(1);
+    await provider.dispose();
+  });
+
+  it('force-stops the SDK runtime when graceful cleanup reports errors', async () => {
+    const { client } = createSdkMocks();
+    client.stop.mockResolvedValueOnce([new Error('cleanup failed')]);
+    const provider = new CopilotProvider({ clientFactory: () => client });
+
+    await provider.complete(messages);
+    await provider.dispose();
+
+    expect(client.forceStop).toHaveBeenCalledTimes(1);
   });
 });

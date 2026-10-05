@@ -20,6 +20,15 @@ export interface IPreparedCommand {
 }
 
 /**
+ * Select an npm-generated command shim explicitly on Windows. This avoids a
+ * same-named PowerShell wrapper earlier on PATH (for example VS Code's
+ * copilot.ps1) from intercepting and re-quoting arguments.
+ */
+export function npmShimCommand(command: string, platform: string = process.platform): string {
+  return platform === 'win32' ? `${command}.cmd` : command;
+}
+
+/**
  * Node cannot directly execute Windows .cmd/.ps1 command shims. Route them
  * through PowerShell while carrying arguments in JSON via the environment, so
  * prompt text is never interpolated into shell code.

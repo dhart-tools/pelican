@@ -1,7 +1,7 @@
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 
-import { prepareCommand } from '@/utils/subprocess';
+import { npmShimCommand, prepareCommand } from '@/utils/subprocess';
 
 const execFileP = promisify(execFile);
 
@@ -25,7 +25,9 @@ export async function isCopilotInstalled(
   run: CopilotSetupRunner = defaultRunner,
 ): Promise<boolean> {
   try {
-    const { stdout, stderr } = await run('copilot', ['--version'], { timeout: 5000 });
+    const { stdout, stderr } = await run(npmShimCommand('copilot'), ['--version'], {
+      timeout: 5000,
+    });
     return /^GitHub Copilot CLI \d+\.\d+\.\d+/m.test(`${stdout}\n${stderr}`);
   } catch {
     return false;
@@ -38,7 +40,7 @@ export async function installCopilot(run: CopilotSetupRunner = defaultRunner): P
 
 function runInteractive(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const prepared = prepareCommand('copilot', args);
+    const prepared = prepareCommand(npmShimCommand('copilot'), args);
     const child = spawn(prepared.command, prepared.args, {
       stdio: 'inherit',
       env: prepared.env,

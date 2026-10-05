@@ -23,6 +23,8 @@ export interface ILLMProvider {
   /** Send a chat completion, return the assistant's raw text. Throws on
    * HTTP/timeout/transport error — the caller decides fail-open policy. */
   complete(messages: ILLMMessage[], opts?: ILLMCompleteOptions): Promise<string>;
+  /** Release provider-owned processes or connections after a rerank pass. */
+  dispose?(): Promise<void>;
 }
 
 export class LLMProviderError extends Error {
