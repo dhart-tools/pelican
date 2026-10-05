@@ -278,6 +278,8 @@ export interface IAnalyzeOptions {
   all?: boolean;
   /** Set by --expanded flag. Shows the per-source-file breakdown instead of the dedup'd combined list. */
   expanded?: boolean;
+  /** Include SHOULD CHECK results. By default analyze returns MUST RUN results only. */
+  extended?: boolean;
   /** Set to false by --no-bi-encoder. Skips embedding cosine prefilter; pelican structural rank acts as the prefilter. */
   biEncoder?: boolean;
 }

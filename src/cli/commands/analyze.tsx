@@ -14,6 +14,7 @@ import {
   getIgnoreDirs,
 } from '@/cli/config-loader';
 import { shouldUseOllamaRerank } from '@/cli/rerank-config';
+import { filterByResultMode } from '@/cli/result-mode';
 import { IAnalyzeState, IAnalyzeOptions, IAnalyzeResult, IProjectConfig } from '@/cli/types';
 import { loadTheme } from '@/cli/user-config';
 import { AnalyzeView } from '@/cli/views/AnalyzeView';
@@ -713,6 +714,8 @@ function AnalyzeApp({ options }: { options: IAnalyzeOptions }) {
             }
           }
 
+          finalResults = filterByResultMode(finalResults, thresholds.high, options.extended);
+
           setState((s) => ({
             ...s,
             completedFiles: [...(s.completedFiles ?? []), changedFile],
@@ -985,8 +988,11 @@ export async function runHeadless(
         reranked = pelicanOnly(relevant, thresholds);
       }
     }
+    reranked = filterByResultMode(reranked, thresholds.high, options.extended);
     if (debug) {
-      debugLog(`  rerank: ${preRerankCount} → ${reranked.length} after semantic filter`);
+      debugLog(
+        `  rerank: ${preRerankCount} → ${reranked.length} after semantic filter (${options.extended ? 'extended' : 'must-run-only'} mode)`,
+      );
     }
     return {
       changedFile,
@@ -1065,6 +1071,7 @@ export const analyzeCommand = new Command('analyze')
   .option('--min-confidence <number>', 'Minimum confidence threshold (default: from config)')
   .option('--max-results <number>', 'Maximum number of results (default: from config)')
   .option('--all', 'Show all suggestions (overrides --max-results)')
+  .option('--extended', 'Include SHOULD CHECK suggestions (default: MUST RUN only)')
   .option('--expanded', 'Show per-source-file breakdown instead of combined list')
   .option('--ci', 'Non-interactive mode (alias for --output json)')
   .option(
